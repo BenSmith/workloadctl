@@ -11,19 +11,27 @@ RUN dnf install --setopt=install_weak_deps=False --nodocs -y \
     fuzzel \
     grim \
     htop \
+    imv \
     labwc \
+    mako \
     mesa-dri-drivers \
     mesa-libEGL \
     mesa-libGL \
     mesa-vulkan-drivers \
+    nano \
     neovim \
     procps-ng \
     slurp \
     sudo \
+    swappy \
     swaybg \
+    util-linux \
     waybar \
     wayvnc \
+    wdisplays \
+    wf-recorder \
     wl-clipboard \
+    wlr-randr \
     xorg-x11-server-Xwayland \
     && dnf clean all
 
@@ -33,8 +41,8 @@ RUN useradd -m -s /bin/bash -G wheel desktop && \
     chmod 0440 /etc/sudoers.d/desktop
 
 # Foot terminal config
-RUN mkdir -p /etc/xdg/foot && \
-    printf '[main]\nfont=Fira Code:size=14\n' > /etc/xdg/foot/foot.ini
+RUN mkdir -p /etc/xdg/foot
+COPY --link --chmod=0644 foot.ini /etc/xdg/foot/foot.ini
 
 COPY --link --chmod=0644 labwc-config/rc.xml /etc/xdg/labwc/rc.xml
 COPY --link --chmod=0755 labwc-config/autostart /etc/xdg/labwc/autostart

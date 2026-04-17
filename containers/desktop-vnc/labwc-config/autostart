@@ -1,3 +1,4 @@
 #!/bin/bash
 swaybg -c '#2e3440' &
 waybar &
+mako &
