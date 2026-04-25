@@ -10,8 +10,25 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULE_NAME="desktop-wayfire"
+MODULES_LOAD_CONF="/etc/modules-load.d/vkms.conf"
+UDEV_RULE="/etc/udev/rules.d/70-vkms.rules"
 
 enable() {
+    echo "  [host] Configuring vkms kernel module..."
+    echo "vkms" > "$MODULES_LOAD_CONF"
+    cat > "$UDEV_RULE" <<'RULES'
+SUBSYSTEM=="drm", DEVPATH=="*/platform/vkms/*", KERNEL=="card*",    SYMLINK+="dri/vkms"
+SUBSYSTEM=="drm", DEVPATH=="*/platform/vkms/*", KERNEL=="renderD*", SYMLINK+="dri/vkms-render"
+RULES
+    udevadm control --reload-rules
+    modprobe vkms
+    udevadm trigger --subsystem-match=drm --settle
+    if [ ! -e /dev/dri/vkms ] || [ ! -e /dev/dri/vkms-render ]; then
+        echo "  ERROR: /dev/dri/vkms symlinks not created after udev settle" >&2
+        return 1
+    fi
+    echo "  [host] vkms ready: /dev/dri/vkms, /dev/dri/vkms-render"
+
     echo "  [host] Installing SELinux policy module..."
     TE_FILE="${SCRIPT_DIR}/${MODULE_NAME}.te"
     if [ ! -f "$TE_FILE" ]; then
