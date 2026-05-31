@@ -1,0 +1,71 @@
+name: workloadctl tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['workloadctl/**']
+
+jobs:
+  test:
+    runs-on: native
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure build tooling
+        run: |
+          for pkg in just rpm-build python3; do
+            bin=${pkg/rpm-build/rpmbuild}
+            command -v "$bin" >/dev/null || sudo dnf install -y "$pkg"
+          done
+          python3 --version
+          just --version
+
+      - name: Lint (py_compile)
+        working-directory: workloadctl
+        run: just lint
+
+      - name: Unit tests
+        working-directory: workloadctl
+        run: just test
+
+      - name: Build RPM
+        working-directory: workloadctl
+        run: just rpm-build
+
+      - name: Upload RPM artifact
+        uses: forgejo/upload-artifact@v4
+        with:
+          name: workloadctl-rpm
+          path: workloadctl/rpmbuild/RPMS/**/*.rpm
+          if-no-files-found: error
+
+  publish:
+    needs: test
+    runs-on: native
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Download RPM artifact
+        uses: forgejo/download-artifact@v4
+        with:
+          name: workloadctl-rpm
+          path: /tmp/rpm-stage/
+
+      - name: Publish to Forgejo package registry
+        env:
+          PKG_PUBLISH_TOKEN: ${{ secrets.PKG_PUBLISH_TOKEN }}
+        run: |
+          rpm=$(echo /tmp/rpm-stage/workloadctl-*.rpm)
+          code=$(curl -sS -o /tmp/pkg-upload.log -w "%{http_code}" \
+            -H "Authorization: token ${PKG_PUBLISH_TOKEN}" \
+            --upload-file "$rpm" \
+            "https://git.local/api/packages/ben/rpm")
+          # 201 = uploaded, 409 = version already exists (idempotent)
+          if [ "$code" != "201" ] && [ "$code" != "409" ]; then
+            echo "Upload failed (HTTP $code):"
+            cat /tmp/pkg-upload.log
+            exit 1
+          fi
+          echo "Published $(basename $rpm) (HTTP $code)"
