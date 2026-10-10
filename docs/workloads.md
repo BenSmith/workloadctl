@@ -18,6 +18,7 @@
 - [VM Workloads](#vm-workloads)
 - [Managing Workloads](#managing-workloads)
 - [Device Access](#device-access)
+- [Remote Development from an IDE](#remote-development-from-an-ide)
 - [Troubleshooting](#troubleshooting)
 - [Known Limitations](#known-limitations)
 - [Security Considerations](#security-considerations)
@@ -2714,6 +2715,32 @@ uid=10001 gid=10001 groups=10001,39,104,105
 **Why:** The container's `/etc/group` has different GIDs for these groups. We use host GIDs because device files (like `/dev/dri/renderD128`) have host GIDs, and the kernel checks permissions using host GIDs.
 
 **Impact:** This is cosmetic - device access works correctly. Group names just don't appear in containers.
+
+---
+
+## Remote Development from an IDE
+
+An IDE with a remote mode — JetBrains Remote Development, VS Code's Remote - SSH — keeps its window on the client and runs its server half where the code is. A container workload can be that place without listening on anything: the client's ssh uses a ProxyCommand that logs into the host and runs an sshd inside the workload over the pipe.
+
+```
+Host myproj
+    User dev
+    ProxyCommand ssh -T -a -x admin@hypervisor sudo workloadctl exec myproj -- ide-sshd
+```
+
+`exec` runs as the container's own user, so the sshd and everything the IDE starts through it run as that user, under the workload's seccomp profile, SELinux type and egress policy. The account on the host needs `sudo` without a password, since a ProxyCommand has no terminal to prompt on.
+
+What the workload needs:
+
+- **An sshd to run per connection** in the image: `sshd -i` with the user's own host key and authorized keys, no agent or X11 forwarding, and local forwarding allowed, which is how the IDE reaches its server half on the workload's loopback.
+- **A home volume.** The IDE uploads its server half there on first connect (a JetBrains backend is 5-6 GB per build) and keeps its caches and settings beside it.
+- **`ptrace` for a debugger** — `seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]` (see [Seccomp Filtering](#seccomp-filtering)).
+
+The `remote-dev` bundle is all of that with C/C++, Rust and Python toolchains; its `README.md` has the setup:
+
+```bash
+sudo workloadctl init remote-dev --as myproj
+```
 
 ---
 

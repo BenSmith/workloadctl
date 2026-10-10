@@ -1,0 +1,21 @@
+#!/bin/sh
+# sshd for an IDE's remote development, one per connection over stdin and
+# stdout: the IDE's ProxyCommand runs `workloadctl exec NAME -- ide-sshd`,
+# so nothing in the workload listens. The host key is the workload's own,
+# made on first use.
+key=$HOME/.config/ide-sshd/host_ed25519
+if [ ! -f "$key" ]; then
+    mkdir -p "${key%/*}" &&
+        ssh-keygen -q -t ed25519 -N "" -C "" -f "$key" >&2 || exit
+fi
+# sshd starts each session with a fresh environment: carry the workload's
+# own into them, and bash as the shell an IDE's terminal starts.
+set --
+for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
+    case $v in HOME|PATH|PWD|SHLVL|_|TERM|SHELL) continue ;; esac
+    value=$(printenv "$v" | sed 's/[\\"]/\\&/g')
+    set -- "$@" "\"$v=$value\""
+done
+set -- "$@" '"SHELL=/usr/bin/bash"'
+exec /usr/sbin/sshd -i -f /etc/ssh/ide-sshd_config -o "HostKey $key" \
+    -o "SetEnv $*"

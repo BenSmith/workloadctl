@@ -107,11 +107,19 @@ def script_env(**overrides):
     FORCE_COLOR in CPython's resolution, so this holds regardless of what the
     ambient environment asked for, and an override still wins over both for a
     test that genuinely wants to see colour.
+
+    WORKLOAD_SECCOMP_BASELINE names the checkout's baseline, so a generator
+    run here derives a `seccomp_allow` workload's profile from the baseline
+    this tree ships: not from whatever the host has installed, nor skips the
+    workload on a host with none. A shipped bundle with `seccomp_allow`
+    (remote-dev) rendered nothing in the bundle tests until this was set.
     """
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [LIB_DIR] + ([MOATERY_CHECKOUT] if MOATERY_CHECKOUT else []))
     env["NO_COLOR"] = "1"
+    env["WORKLOAD_SECCOMP_BASELINE"] = str(
+        REPO_ROOT / "seccomp-workload-baseline.json")
     env.update({key: str(value) for key, value in overrides.items()})
     return env
 

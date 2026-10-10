@@ -1,0 +1,11 @@
+# ide-sshd's: the workload's user alone, by key, with no forwarding back
+# out of the workload. Its host key is given on the command line.
+PidFile none
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+AllowAgentForwarding no
+AllowTcpForwarding local
+X11Forwarding no
+PermitTunnel no
+Subsystem sftp internal-sftp

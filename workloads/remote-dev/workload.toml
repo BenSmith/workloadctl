@@ -1,0 +1,32 @@
+# remote-dev — remote development from an IDE, with nothing listening
+#
+# The IDE's ssh reaches the workload through a ProxyCommand that runs
+# `sudo workloadctl exec NAME -- ide-sshd` on the host: one sshd per
+# connection over that pipe, as the workload's own user. The IDE's server
+# half (a JetBrains backend, the VS Code Server) runs here beside the
+# toolchain; its window stays on the client.
+#
+# Setup: README.md.
+
+[workload]
+name = "remote-dev"
+
+[container]
+image = "registry.local/workloads/remote-dev:latest"
+pull = "missing"
+command = ["sleep", "infinity"]
+
+[security]
+userns = "keep-id:uid=1000,gid=1000"
+# A debugger traces the program it runs.
+seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]
+
+[storage]
+# The IDE uploads its server half into the home: a JetBrains backend is
+# 5-6 GB per build.
+volumes = ["./home:/home/dev"]
+
+# Marks the image locally buildable: `workloadctl build` produces the same
+# ref into root's store, which overrides the registry copy on the next
+# enable/update. CI publishes the canonical copy to registry.local.
+[build]

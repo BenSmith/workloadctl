@@ -1,0 +1,30 @@
+# Remote development from an IDE: ide-sshd, and the C/C++, Rust and
+# Python toolchains with gdb. A project's own go in with
+#   sudo workloadctl edit NAME Containerfile
+#
+# Build:
+#   sudo workloadctl build remote-dev
+
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf install --setopt=install_weak_deps=False --nodocs -y \
+    cargo \
+    clippy \
+    cmake \
+    gcc-c++ \
+    gdb \
+    git \
+    make \
+    ninja-build \
+    openssh-server \
+    procps-ng \
+    python3 \
+    rust \
+    rust-src \
+    rustfmt \
+    which \
+  && dnf clean all \
+  && useradd -u 1000 -m dev
+
+COPY --chmod=755 ide-sshd /usr/local/bin/ide-sshd
+COPY --chmod=644 ide-sshd_config /etc/ssh/ide-sshd_config
