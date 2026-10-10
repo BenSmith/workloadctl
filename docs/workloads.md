@@ -2106,6 +2106,7 @@ When you run `workloadctl enable`, it performs pre-flight checks and setup befor
 
 **Auto-created by `enable`:**
 - Any volume directories declared in `[storage].volumes` whose host path is relative (starts with `./`), i.e. lives inside the workload's home directory (`/var/lib/workloads/{name}/`). These are created owned by root and immediately chowned to the workload user after the workload user account is created.
+- For a volume mounted inside another (`./home:/home/dev` and `@/cache:/home/dev/.cache/tool/dist`), the missing directories its mount point needs inside the outer volume's directory (`data/home/.cache/tool`), owned by the workload user. Left to the container runtime, they would be created as the container's root, and the workload user could not write to them. Directories already there are left as they are.
 
 **Must exist before `enable` can complete:**
 - Files declared in `[setup].required_files` — `enable` prints instructions (with hints) and exits if any are missing. These files require user-supplied content (config files, keys, etc.) so they cannot be created automatically.

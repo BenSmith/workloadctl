@@ -184,6 +184,48 @@ def _provision_dir_secure(root_dir, host_path, uid, gid, mode):
         os.close(dir_fd)
 
 
+def _make_missing_dirs_secure(root_dir, host_path, uid, gid, mode):
+    """Create the directories missing on the way to `host_path` (a descendant
+    of `root_dir`), `host_path` included, owned by the workload user. A
+    directory already there is left as it is: it is the workload's own.
+
+    The same no-follow walk as `_provision_dir_secure`, so a symlink on the
+    path refuses rather than redirects. Returns True on success, False if a
+    component was unsafe.
+    """
+    try:
+        parts = host_path.relative_to(root_dir).parts
+    except ValueError:
+        return False
+    if ".." in parts:
+        log(f"  WARNING: refusing to create {host_path}: '..' in path")
+        return False
+    dir_fd = os.open(str(root_dir), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts:
+            try:
+                os.mkdir(part, mode, dir_fd=dir_fd)
+                made = True
+            except FileExistsError:
+                made = False
+            try:
+                child_fd = os.open(
+                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=dir_fd)
+            except OSError as exc:
+                log(f"  WARNING: refusing to create {host_path}: unsafe "
+                    f"path component {part!r} ({exc.strerror})")
+                return False
+            os.close(dir_fd)
+            dir_fd = child_fd
+            if made:
+                os.fchown(dir_fd, uid, gid)
+                os.fchmod(dir_fd, mode)
+        return True
+    finally:
+        os.close(dir_fd)
+
+
 def _descend_nofollow(root_dir, parts, what: str):
     """Open the directory at `parts` below `root_dir`, one literal component at a
     time, never following a symlink — the non-creating half of the walk

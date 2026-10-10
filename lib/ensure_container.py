@@ -16,12 +16,13 @@ module's docstring for why the copy matters.
 
 import grp
 import os
+import posixpath
 import stat
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import service_runtime
-from config_parser import workload_root_dir
+from config_parser import parse_volume_spec, workload_root_dir
 from workload_lib import (
     expand_volume_path, normalize_containers, workload_state_dir,
 )
@@ -31,7 +32,7 @@ from workload_uid import (
 )
 import ensure_common
 from ensure_common import (
-    _provision_dir_secure, _descend_nofollow,
+    _provision_dir_secure, _descend_nofollow, _make_missing_dirs_secure,
 )
 
 
@@ -282,6 +283,43 @@ def setup_volume_directories(pw, config):
         if not host_path.exists():
             ensure_common.log(f"  Creating volume directory {host_path}")
         _provision_dir_secure(root_dir, host_path, pw.pw_uid, pw.pw_gid, 0o755)
+
+    for ctr in normalize_containers(config):
+        for parent in _nested_mount_parents(
+                ctr.get("storage", {}).get("volumes", []), state_dir):
+            try:
+                parent.relative_to(root_dir)
+            except ValueError:
+                continue  # Inside a directory the admin supplies
+            _make_missing_dirs_secure(root_dir, parent, pw.pw_uid, pw.pw_gid,
+                                      0o755)
+
+
+def _nested_mount_parents(volume_specs, state_dir):
+    """The host directories one volume's mount point needs inside another's.
+
+    A volume mounted below another (`./home:/home/dev` and
+    `@/x:/home/dev/.cache/x`) has its mount point's parents in the outer
+    volume's directory. The runtime creates any that are missing as the
+    container's root, which the workload user cannot write to, so they are
+    made here first. The mount point itself is left to the runtime: the
+    mount hides it, and for a file it is a file.
+    """
+    mounts = []
+    for spec in volume_specs:
+        host, guest, _opts = parse_volume_spec(
+            expand_volume_path(spec, str(state_dir)))
+        if host.startswith("/") and guest.startswith("/"):
+            mounts.append((Path(host), PurePosixPath(posixpath.normpath(guest))))
+    for _host, guest in mounts:
+        outers = [(h, g) for h, g in mounts
+                  if g != guest and guest.is_relative_to(g)]
+        if not outers:
+            continue
+        outer_host, outer_guest = max(outers, key=lambda m: len(m[1].parts))
+        parent = guest.parent.relative_to(outer_guest)
+        if parent.parts:
+            yield outer_host / parent
 
 
 def enable_linger(pw):

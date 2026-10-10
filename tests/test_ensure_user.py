@@ -2886,6 +2886,106 @@ class TestSetupVolumeDirectoriesSkipBranches(unittest.TestCase):
                 self.mod.setup_volume_directories(pw, config)  # must not raise
 
 
+class TestSetupVolumeDirectoriesNestedMounts(unittest.TestCase):
+    """A volume mounted inside another has its mount point's parents in the
+    outer volume's directory. crun creates missing ones as the container's
+    root, so on a fresh home `./home:/home/dev` plus
+    `@/b:/home/dev/.cache/JetBrains/RemoteDev/dist` left ~/.cache and
+    ~/.cache/JetBrains unwritable to the workload user (proven on a host,
+    2026-10-10). They must exist, owned by the workload user, before the
+    container starts.
+    """
+
+    def setUp(self):
+        self.mod = ensure_container
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "myapp"
+        (self.root / "state").mkdir(parents=True)
+        self.outside = Path(tmp.name) / "outside"
+        self.outside.mkdir()
+        self.home = self.root / "data" / "home"
+
+    def _run(self, volumes=None, containers=None):
+        config = {"workload": {"name": "myapp"}}
+        if containers is None:
+            config["storage"] = {"volumes": volumes}
+        else:
+            config["containers"] = containers
+        chowned = []
+
+        def fchown(fd, uid, gid):
+            chowned.append(Path(os.readlink(f"/proc/self/fd/{fd}")))
+
+        pw = _fake_pw(self.root / "state", uid=10001, gid=10001)
+        with mock.patch.object(self.mod, "workload_state_dir",
+                               lambda n: self.root / "state"), \
+             mock.patch.object(self.mod, "workload_root_dir",
+                               lambda n: self.root), \
+             mock.patch("os.fchown", side_effect=fchown), \
+             mock.patch("os.fchmod"):
+            self.mod.setup_volume_directories(pw, config)
+        return chowned
+
+    def test_parents_of_a_nested_mount_point_are_the_users(self):
+        chowned = self._run([
+            "./home:/home/dev",
+            "@/backends:/home/dev/.cache/JetBrains/RemoteDev/dist:ro",
+        ])
+        parents = [self.home / ".cache",
+                   self.home / ".cache" / "JetBrains",
+                   self.home / ".cache" / "JetBrains" / "RemoteDev"]
+        for parent in parents:
+            self.assertTrue(parent.is_dir(), parent)
+            self.assertIn(parent, chowned)
+        # The mount hides the mount point; the runtime makes it.
+        self.assertFalse((parents[-1] / "dist").exists())
+
+    def test_a_directory_already_there_is_left_alone(self):
+        (self.home / ".cache").mkdir(parents=True, mode=0o700)
+        chowned = self._run([
+            "./home:/home/dev",
+            "@/backends:/home/dev/.cache/JetBrains/dist",
+        ])
+        self.assertNotIn(self.home / ".cache", chowned)
+        self.assertEqual((self.home / ".cache").stat().st_mode & 0o777, 0o700)
+        self.assertIn(self.home / ".cache" / "JetBrains", chowned)
+
+    def test_the_nearest_enclosing_volume_holds_them(self):
+        self._run([
+            "./home:/home/dev",
+            "./cache:/home/dev/.cache",
+            "@/backends:/home/dev/.cache/x/dist",
+        ])
+        self.assertTrue((self.root / "data" / "cache" / "x").is_dir())
+        self.assertFalse((self.home / ".cache").exists())
+
+    def test_inside_a_directory_outside_the_tree_nothing_is_made(self):
+        self._run([
+            f"{self.outside}:/home/dev",
+            "@/backends:/home/dev/.cache/dist",
+        ])
+        self.assertEqual(list(self.outside.iterdir()), [])
+
+    def test_a_symlink_on_the_way_is_refused(self):
+        self.home.mkdir(parents=True)
+        (self.home / ".cache").symlink_to(self.outside)
+        self._run([
+            "./home:/home/dev",
+            "@/backends:/home/dev/.cache/x/dist",
+        ])
+        self.assertEqual(list(self.outside.iterdir()), [])
+
+    def test_volumes_nest_only_within_one_container(self):
+        self._run(containers=[
+            {"name": "a", "container": {"image": "x"},
+             "storage": {"volumes": ["./a:/data"]}},
+            {"name": "b", "container": {"image": "x"},
+             "storage": {"volumes": ["./b:/data/sub/dist"]}},
+        ])
+        self.assertEqual(list((self.root / "data" / "a").iterdir()), [])
+
+
 class TestBuildCloudInitIsoValidation(unittest.TestCase):
     """Guest-user validation and legacy-ISO cleanup branches."""
 
