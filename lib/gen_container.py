@@ -181,10 +181,11 @@ def _credential_loads(svc, credentials):
         svc.blank()
 
 
-def _exec_start_pre(svc, mode, name, container, has_secret_env_vars, gpu_vendor, uid):
-    """ExecStartPre chain: write-env, nvidia CDI-spec check, and (single mode
-    only) the fresh-pause cleanup that works around the pasta stale-pause bug."""
-    if has_secret_env_vars:
+def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid):
+    """ExecStartPre chain: write-env (the --env-file and the [[secrets.files]]
+    copies), nvidia CDI-spec check, and (single mode only) the fresh-pause
+    cleanup that works around the pasta stale-pause bug."""
+    if writes_secrets:
         # Multi-container: pass the local container name so workload-write-env
         # resolves *that* container's env vars only and writes the matching
         # per-container secrets file. Single-mode keeps the legacy one-arg form.
@@ -497,7 +498,8 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
 
     _credential_loads(svc, credentials)
 
-    _exec_start_pre(svc, mode, name, container, spec.has_secret_env_vars, gpu_vendor,
+    _exec_start_pre(svc, mode, name, container,
+                    spec.has_secret_env_vars or spec.has_secret_files, gpu_vendor,
                     uid)
 
     _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, spec.pull_policy,

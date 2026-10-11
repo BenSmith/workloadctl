@@ -32,7 +32,8 @@ from guest_ca import CA_ENV_VARS, CA_BUNDLE_PATH
 from broker_config import container_uses_credentials
 from egress_policy import container_uses_resolve
 from workload_addr import resolve_address
-from secrets_template import SECRET_PATTERN, validate_env_key
+from secrets_template import (
+    SECRET_PATTERN, secret_files_dir, validate_env_key)
 from gen_common import log_msg, _external_host_path
 from validation import valid_userns_mode
 from workload_seccomp import (
@@ -245,6 +246,12 @@ class RunSpec:
     def extra_groups(self) -> list:
         return self.workload.get("security", {}).get("extra_groups", [])
 
+    @property
+    def has_secret_files(self) -> bool:
+        """Does this container declare any [[secrets.files]]? Then the unit
+        runs workload-write-env, which writes the copies they mount."""
+        return bool(self.container.get("secrets", {}).get("files"))
+
     @cached_property
     def has_secret_env_vars(self) -> bool:
         """Does any [container.environment] value reference ${SECRET:...}?
@@ -309,14 +316,15 @@ def _health_check_args(container):
 def _secret_mount_args(spec):
     """--volume flags bind-mounting [[secrets.files]] credentials.
 
-    Credentials are decrypted by systemd to
-    /run/credentials/{container_name}.service/{credential_name}; in
-    multi-container modes that's the per-container service unit, not the
-    umbrella, so the bind-mount source must use container_name, not the
-    workload name.
+    The source is the copy workload-write-env makes at each start in the
+    workload's runtime dir (secret_files_dir), not systemd's decrypted file:
+    that one is labelled init_var_run_t, which no container domain may read.
+    `:Z` relabels the copy to this container's own category pair. In
+    multi-container modes the copy is per container, keyed on
+    container_name.
     """
     container, container_name = spec.container, spec.container_name
-    service_name = f"{container_name}.service"
+    files_dir = secret_files_dir(spec.uid, container_name)
     secrets_config = container.get("secrets", {})
     secrets_files = secrets_config.get("files", [])
 
@@ -329,8 +337,7 @@ def _secret_mount_args(spec):
             log_msg("WARNING: secrets.files entry missing 'credential' or 'path', skipping", level="warning")
             continue
 
-        # Credential will be decrypted to /run/credentials/{service}/
-        source_path = f"/run/credentials/{service_name}/{credential_name}"
+        source_path = f"{files_dir}/{credential_name}"
 
         # Validate and default to read-only for security.
         file_mode = file_spec.get("mode", "ro")
@@ -343,7 +350,8 @@ def _secret_mount_args(spec):
             )
             file_mode = "ro"
 
-        args.append(f"--volume {dq(source_path)}:{dq(container_path)}:{file_mode}")
+        args.append(
+            f"--volume {dq(source_path)}:{dq(container_path)}:{file_mode},Z")
         log_msg(f"  Mounting credential '{credential_name}' to {container_path} (mode: {file_mode})")
     return args
 

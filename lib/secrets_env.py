@@ -19,13 +19,17 @@ never fail the start.
 """
 import os
 import pwd
+import shutil
+import stat
 import sys
 from pathlib import Path
 
 from secrets_template import (
+    CREDENTIAL_NAME_PATTERN,
     SECRET_PATTERN,
     auto_detect_credentials,
     resolve_secret_env_vars,
+    secret_files_dir,
     validate_env_key,
 )
 from workload_lib import (
@@ -35,6 +39,7 @@ from workload_lib import (
 )
 
 ENV_DIR = Path(os.environ.get("WORKLOAD_ENV_DIR", "/run/workload-env"))
+RUNTIME_ROOT = os.environ.get("WORKLOAD_RUNTIME_ROOT", "/run/user")
 
 
 class EnvFileError(Exception):
@@ -152,14 +157,136 @@ def write_env_file(path: Path, lines: list[str], name: str) -> None:
         os.chown(path, pw.pw_uid, pw.pw_gid)
 
 
+def secret_file_specs(entry: dict) -> list[tuple[str, str]]:
+    """(credential, mode) for each [[secrets.files]] entry, checked.
+
+    The credential name becomes a file name in the copy, so it is held to
+    the credential grammar; an entry the generator skipped (no credential
+    or no path) is skipped here too.
+    """
+    specs = []
+    for spec in entry.get("secrets", {}).get("files", []):
+        credential, path = spec.get("credential"), spec.get("path")
+        if not credential or not path:
+            continue
+        if not CREDENTIAL_NAME_PATTERN.fullmatch(str(credential)):
+            raise EnvFileError(
+                f"[[secrets.files]] credential {credential!r} is not a "
+                f"credential name ([a-zA-Z0-9_-]+)")
+        mode = spec.get("mode", "ro")
+        specs.append((credential, "rw" if mode == "rw" else "ro"))
+    return specs
+
+
+def _open_dir_nofollow(name, dir_fd=None) -> int:
+    return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                   dir_fd=dir_fd)
+
+
+def _remove_entry(name: str, dir_fd: int) -> None:
+    """Remove `name` under dir_fd without following it: a link is
+    unlinked, a directory removed by fd (shutil.rmtree's dir_fd form
+    does not follow links)."""
+    try:
+        st = os.lstat(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(st.st_mode):
+        shutil.rmtree(name, dir_fd=dir_fd)
+    else:
+        os.unlink(name, dir_fd=dir_fd)
+
+
+def write_secret_files(uid: int, gid: int, container_name: str,
+                       specs: list[tuple[str, str]],
+                       creds_dir: str | None,
+                       runtime_root: str = RUNTIME_ROOT) -> None:
+    """Copy each credential to secret_files_dir(), fresh at every start.
+
+    The runtime dir belongs to the workload user, who can plant links in
+    it, and this runs as root: every component is opened without
+    following a link, the container's dir is recreated root-owned and
+    0700 so nothing can be planted in it while the files are written, and
+    only then is it handed to the workload user for podman to relabel.
+    """
+    target = secret_files_dir(uid, container_name, runtime_root)
+    run_fd = _open_dir_nofollow(str(target.parent.parent))
+    try:
+        if specs:
+            try:
+                os.mkdir(target.parent.name, 0o700, dir_fd=run_fd)
+            except FileExistsError:
+                pass
+        try:
+            top_fd = _open_dir_nofollow(target.parent.name, dir_fd=run_fd)
+        except FileNotFoundError:
+            return  # nothing declared and nothing left from before
+        try:
+            os.fchown(top_fd, uid, gid)
+            os.fchmod(top_fd, 0o700)
+            _remove_entry(target.name, top_fd)
+            if not specs:
+                return
+            if not creds_dir:
+                raise EnvFileError("CREDENTIALS_DIRECTORY not set")
+            os.mkdir(target.name, 0o700, dir_fd=top_fd)
+            dir_fd = _open_dir_nofollow(target.name, dir_fd=top_fd)
+            try:
+                for credential, mode in specs:
+                    try:
+                        value = (Path(creds_dir) / credential).read_bytes()
+                    except FileNotFoundError as e:
+                        raise EnvFileError(
+                            f"credential {credential!r} was not loaded "
+                            f"into {creds_dir}") from e
+                    fd = os.open(
+                        credential,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                        0o600, dir_fd=dir_fd)
+                    try:
+                        os.write(fd, value)
+                        os.fchown(fd, uid, gid)
+                        # Readable by every uid in the container, which is
+                        # what a bind-mounted file is; the 0700 dirs above
+                        # and the :Z label keep it from everything else.
+                        os.fchmod(fd, 0o644 if mode == "rw" else 0o444)
+                    finally:
+                        os.close(fd)
+                os.fchown(dir_fd, uid, gid)
+            finally:
+                os.close(dir_fd)
+        finally:
+            os.close(top_fd)
+    finally:
+        os.close(run_fd)
+
+
 def write_secrets_env(name: str, container: str | None) -> None:
     """The whole helper for one container: select, resolve, write -- or
-    remove what a previous config wrote."""
+    remove what a previous config wrote. The env file and the secret files
+    are independent: a container may have either, both or neither."""
     config = load_workload_config(name)
     entry = select_container(config, name, container)
+    creds_dir = os.environ.get("CREDENTIALS_DIRECTORY")
     path = ENV_DIR / env_file_name(name, container)
-    if not declares_secrets(entry):
+    if declares_secrets(entry):
+        lines = secret_lines(entry, creds_dir)
+        write_env_file(path, lines, name)
+    else:
         remove_stale(path)
+
+    specs = secret_file_specs(entry)
+    try:
+        pw = pwd.getpwnam(workload_username(name))
+    except KeyError:
+        # workload-ensure-user runs first, so the user exists on a host. The
+        # copies' path is keyed on its uid; without one there is nothing to
+        # write, and the container's mount then fails on its missing source.
+        if specs:
+            print(f"WARNING: User {workload_username(name)} not found, "
+                  f"secret files not written", file=sys.stderr)
         return
-    lines = secret_lines(entry, os.environ.get("CREDENTIALS_DIRECTORY"))
-    write_env_file(path, lines, name)
+    container_name = env_file_name(name, container).removesuffix(".secrets")
+    if not specs and not (Path(RUNTIME_ROOT) / str(pw.pw_uid)).is_dir():
+        return
+    write_secret_files(pw.pw_uid, pw.pw_gid, container_name, specs, creds_dir)

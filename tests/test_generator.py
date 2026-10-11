@@ -899,16 +899,23 @@ class TestGeneratorSecrets(unittest.TestCase):
         self.assertIn("--volume", service)
         self.assertIn("tls-cert", service)
         self.assertIn("/etc/ssl/cert.pem", service)
-        # Single-container: source path uses the workload-level service name.
-        self.assertIn("/run/credentials/workload-filemount.service/tls-cert", service)
-        # No env-file needed (no secret env vars)
+        # The source is write-env's copy in the workload's runtime dir, not
+        # systemd's init_var_run_t file, and :Z relabels it to the container's
+        # own category pair (audit F19: from /run/credentials the container
+        # got EACCES).
+        self.assertRegex(
+            service,
+            r'--volume "/run/user/\d+/workload-secrets/workload-filemount/'
+            r'tls-cert":"/etc/ssl/cert\.pem":ro,Z')
+        self.assertNotIn("/run/credentials/", service.split("ExecStart=")[-1])
+        # No env-file (no secret env vars), but write-env runs to make the copy.
         self.assertNotIn("--env-file", service)
-        self.assertNotIn("workload-write-env", service)
+        self.assertIn("workload-write-env filemount", service)
 
     def test_secret_file_volume_mount_multi_container(self):
-        # Regression: in multi-container mode the credential is loaded onto the
-        # per-container service, so the bind-mount source must reference that
-        # unit's /run/credentials/ dir — not the umbrella's.
+        # In multi-container mode the credential is loaded onto the
+        # per-container service, which runs write-env for that container, so
+        # the mount source is that container's copy -- not the umbrella's.
         write_config(self.config_dir, "multi-creds", """\
             [workload]
             name = "multi-creds"
@@ -933,11 +940,12 @@ class TestGeneratorSecrets(unittest.TestCase):
         app_service = (Path(self.services_dir) / "workload-multi-creds-app.service").read_text()
 
         self.assertIn("LoadCredentialEncrypted=tls-cert:", app_service)
-        self.assertIn(
-            "/run/credentials/workload-multi-creds-app.service/tls-cert",
+        self.assertRegex(
             app_service,
-        )
-        self.assertNotIn("/run/credentials/workload-multi-creds.service/", app_service)
+            r'"/run/user/\d+/workload-secrets/workload-multi-creds-app/tls-cert":'
+            r'"/etc/ssl/cert\.pem":ro,Z')
+        self.assertIn("workload-write-env multi-creds app", app_service)
+        self.assertNotIn("workload-secrets/workload-multi-creds/", app_service)
 
     def test_secret_files_do_not_clobber_workload_mode(self):
         # Regression (B1): the secrets.files loop assigned its per-file mount

@@ -37,6 +37,24 @@ def validate_env_key(key: str) -> bool:
 # Pattern matching ${SECRET:name} references in env var values
 SECRET_PATTERN = re.compile(r'\$\{SECRET:([a-zA-Z0-9_-]+)}')
 
+# A credential name, as ${SECRET:name} and [[secrets.files]] use it. A file
+# credential is also a file name in the copy below, so nothing else is let in.
+CREDENTIAL_NAME_PATTERN = re.compile(r'[a-zA-Z0-9_-]+')
+
+
+def secret_files_dir(uid: int, container_name: str,
+                     runtime_root: str = "/run/user") -> Path:
+    """Where one container's [[secrets.files]] copies are written at start.
+
+    systemd decrypts a credential into /run/credentials/<unit>/, labelled
+    init_var_run_t, which no container domain may read, so the file cannot
+    be bind-mounted from there. workload-write-env copies it here instead:
+    the workload's own runtime dir, tmpfs and 0700, and writable inside the
+    unit's ProtectSystem=strict, so podman can relabel the copy with :Z to
+    the container's own category pair.
+    """
+    return Path(runtime_root) / str(uid) / "workload-secrets" / container_name
+
 # Single combined pattern for substitute_template. Folding every form — the three
 # placeholders AND the `$$` literal-dollar escape — into one left-to-right pass is
 # a security property, not just an optimization: re.sub never re-scans the text it
