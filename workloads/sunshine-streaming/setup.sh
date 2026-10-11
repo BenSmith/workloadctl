@@ -34,7 +34,7 @@ RELAY_UNIT="/etc/systemd/system/${RELAY_SERVICE}"
 # Homelab-CA-signed TLS cert for Sunshine's web UI (https://<host>:47990).
 # The leaf is minted here on the host and mounted read-only into the container
 # (./tls -> /etc/sunshine/tls); the CA *private key* never enters the container.
-TLS_DIR="/var/lib/workloads/${WORKLOAD_NAME}/data/tls"
+TLS_DIR="${WORKLOAD_DATA_DIR:?not set — run via workloadctl enable/disable}/tls"
 # Where to find the shared Homelab CA. The public root ships in the image trust
 # store; the private key is the per-host 0400 file you place for the caddy
 # workload (the homelab PKI authority). Override either with env vars.
@@ -64,6 +64,19 @@ SUNSHINE_UDP_HI=$(( SUNSHINE_PORT + 11 ))
 AVAHI_SERVICE_DIR="/etc/avahi/services"
 AVAHI_SERVICE="${AVAHI_SERVICE_DIR}/${WORKLOAD_NAME}-sunshine.service"
 
+# The workload user owns its data/ tree and can plant links in it, and this
+# runs as root: every path written below is refused if it is a symlink, so a
+# planted link cannot steer a write, a chmod or a mkdir onto a host path.
+refuse_symlink() {
+    local p
+    for p in "$@"; do
+        if [ -L "$p" ]; then
+            echo "  [host] ERROR: $p is a symlink; refusing to write through it." >&2
+            exit 1
+        fi
+    done
+}
+
 mint_tls_cert() {
     # Mint a Homelab-CA-signed leaf so the Sunshine web UI is browser-trusted
     # (no security warning) at https://<host>:47990. Done host-side so the CA
@@ -78,6 +91,9 @@ mint_tls_cert() {
         echo "         HOMELAB_CA_KEY, then re-run enable."
         return 0
     fi
+
+    refuse_symlink "$TLS_DIR" "$TLS_DIR/cert.pem" "$TLS_DIR/pkey.pem" \
+        "$TLS_DIR/ca.srl"
 
     if [ -f "$TLS_DIR/cert.pem" ] && [ -f "$TLS_DIR/pkey.pem" ]; then
         echo "  [host] TLS cert already present ($TLS_DIR) — leaving as-is"

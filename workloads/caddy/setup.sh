@@ -25,7 +25,21 @@ PKI_DIR="${DATA_DIR}/pki"
 CA_KEY="${DATA_DIR}/homelab-root.key"
 SNIPPET="${PKI_DIR}/homelab-ca.caddyfile"
 
+# The workload user owns its data/ tree and can plant links in it, and this
+# runs as root: every path written below is refused if it is a symlink, so a
+# planted link cannot steer a write, a chmod or a mkdir onto a host path.
+refuse_symlink() {
+    local p
+    for p in "$@"; do
+        if [ -L "$p" ]; then
+            echo "  [host] ERROR: $p is a symlink; refusing to write through it." >&2
+            exit 1
+        fi
+    done
+}
+
 enable() {
+    refuse_symlink "$PKI_DIR" "$SNIPPET"
     mkdir -p "$PKI_DIR"
 
     # Regular file AND non-empty: an empty placeholder (written below on a prior
@@ -60,6 +74,7 @@ SNIP
         # which later blocks `install`-ing the real key and confuses the mount.
         # An empty placeholder is harmless: the comment-only snippet below does
         # not reference it. Clear a stale directory left by an older enable.
+        refuse_symlink "$CA_KEY"
         if [ -e "$CA_KEY" ] && [ ! -f "$CA_KEY" ]; then
             rm -rf "$CA_KEY"
         fi
