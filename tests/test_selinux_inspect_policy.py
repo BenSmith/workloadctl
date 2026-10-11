@@ -386,6 +386,26 @@ class TestBoundary(unittest.TestCase):
             self._perms("wlinspect_leaf_t", "dir", subject="container_domain"),
             set())
 
+    def test_the_ca_key_is_the_inspector_s_alone(self):
+        """The 2026-10-11 security audit (F12): the key shared the
+        certificate's type, which every container domain may read, and a
+        process under another workload's container label opened it. Its own
+        type is read by wlinspect_t and nothing else in this module."""
+        self.assertTrue(
+            {"read", "open"} <= self._perms("wlinspect_ca_key_t", "file"))
+        self.assertEqual(
+            self._perms("wlinspect_ca_key_t", "file") & {"write", "create",
+                                                         "unlink", "rename"},
+            set())
+        for subject in ("container_domain", "container_t", "svirt_t",
+                        "wlresolve_t"):
+            self.assertEqual(
+                self._perms("wlinspect_ca_key_t", "file", subject=subject),
+                set(), subject)
+        self.assertEqual(
+            re.findall(r"\(allow\s+(\S+)\s+wlinspect_ca_key_t\b", _body()),
+            ["wlinspect_t"])
+
     def test_the_ca_grant_names_the_attribute_and_not_container_t(self):
         """The grant has to reach a workload with its own SELinux policy.
 
@@ -455,7 +475,7 @@ class TestBoundary(unittest.TestCase):
         """A type without the file_type attribute cannot be relabelled onto a
         file by setfiles, so `restorecon` silently leaves the subtree
         svirt_image_t and the inspector cannot read its own CA."""
-        for t in ("wlinspect_ca_t", "wlinspect_leaf_t"):
+        for t in ("wlinspect_ca_t", "wlinspect_ca_key_t", "wlinspect_leaf_t"):
             self.assertIn(f"(type {t})", _body())
             self.assertIn(f"(typeattributeset file_type ({t}))", _body())
 
@@ -472,7 +492,7 @@ class TestBoundary(unittest.TestCase):
         # declaration and searched everything after it, so it failed on the
         # first unrelated filecon added below -- reporting the PKI rule as
         # wrongly declared when the PKI rule had not changed.
-        for t in ("wlinspect_ca_t", "wlinspect_leaf_t"):
+        for t in ("wlinspect_ca_t", "wlinspect_ca_key_t", "wlinspect_leaf_t"):
             self.assertNotRegex(_body(), rf'\(filecon\s+"[^"]+"[^\n]*\b{t}\b')
 
 
@@ -512,3 +532,18 @@ class TestCallerIdentification(unittest.TestCase):
             if "proc_net_t" in line and "wlinspect_t" in line:
                 self.assertNotIn("write", line, line)
                 self.assertNotIn("append", line, line)
+
+
+class TestTheKeyRuleNamesTheKey(unittest.TestCase):
+    """The key's fcontext rule is built from moatery's own path for it, so
+    the rule and the file the minter writes cannot drift apart."""
+
+    def test_it_matches_the_key_and_not_the_certificate(self):
+        from moatery.egress_ca import ca_cert_path, ca_key_path
+        import workload_selinux
+        patterns = {t: p for p, t in
+                    workload_selinux.pki_fcontext_patterns("web")}
+        key_rule = re.compile(patterns["wlinspect_ca_key_t"])
+        state = "/var/lib/workloads/web/state"
+        self.assertTrue(key_rule.fullmatch(str(ca_key_path(state))))
+        self.assertFalse(key_rule.fullmatch(str(ca_cert_path(state))))

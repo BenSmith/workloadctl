@@ -22,7 +22,8 @@ from pathlib import Path
 from cli_log import error, info, warn
 from config_parser import workload_root_dir
 from container_network_config import container_uses_inspect
-from moatery.egress_ca import CA_DIR_NAME, DENIAL_DIR_NAME, LEAF_DIR_NAME
+from moatery.egress_ca import (
+    CA_DIR_NAME, DENIAL_DIR_NAME, LEAF_DIR_NAME, ca_key_path)
 from workload_lib import (
     NAME_PATTERN,
     WORKLOAD_BUNDLES_DIR,
@@ -47,12 +48,20 @@ from workloadctl_core import WorkloadConfig
 # READ-ONLY to the inspector: an inspector that could rewrite it could replace
 # the anchor the guest was seeded with, which is unrecoverable without a
 # re-provision. The leaves are read-write because minting them is the job.
+#
+# The CA's private key has a third, read by the inspector alone. The
+# certificate's type is readable by every container domain, since
+# ca_delivery mounts the certificate into a container; the key sharing it
+# would let any escaped container open any filtered workload's key where
+# DAC allowed.
 CA_SELINUX_TYPE = "wlinspect_ca_t"
+CA_KEY_SELINUX_TYPE = "wlinspect_ca_key_t"
 LEAF_SELINUX_TYPE = "wlinspect_leaf_t"
 
 
 def pki_fcontext_patterns(name: str) -> list[tuple[str, str]]:
-    """(pattern, type) for every directory in one workload's PKI subtree.
+    """(pattern, type) for every directory in one workload's PKI subtree, and
+    for the CA key inside it.
 
     Registered in `file_contexts.local` beside the per-workload svirt_image_t
     rule, and more specific than it, which is the only reason these win: within
@@ -70,6 +79,9 @@ def pki_fcontext_patterns(name: str) -> list[tuple[str, str]]:
     root = workload_root_dir(name)
     return [
         (f"{root}/state/{CA_DIR_NAME}(/.*)?", CA_SELINUX_TYPE),
+        # A literal path, so more specific than the directory rule above.
+        (str(ca_key_path(f"{root}/state")).replace(".", r"\."),
+         CA_KEY_SELINUX_TYPE),
         (f"{root}/state/{LEAF_DIR_NAME}(/.*)?", LEAF_SELINUX_TYPE),
         (f"{root}/state/{DENIAL_DIR_NAME}(/.*)?", LEAF_SELINUX_TYPE),
     ]

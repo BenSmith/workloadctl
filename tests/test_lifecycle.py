@@ -1572,6 +1572,10 @@ class TestApplyVmFcontext(unittest.TestCase):
         self.assertEqual(
             by_pattern.get("/var/lib/workloads/test-wl/state/ca(/.*)?"),
             "wlinspect_ca_t")
+        self.assertEqual(
+            by_pattern.get(
+                r"/var/lib/workloads/test-wl/state/ca/egress-ca\.key"),
+            "wlinspect_ca_key_t")
         for cache in ("leaves", "leaves-denied"):
             self.assertEqual(
                 by_pattern.get(
@@ -1584,11 +1588,12 @@ class TestApplyVmFcontext(unittest.TestCase):
     def test_inspected_container_disable_unregisters_pki_only(self):
         calls = self._run_calls(
             _CONTAINER_INSPECT_TOML, 'test-wl', "disable")
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 4)
         self.assertTrue(all("-d" in c for c in calls), calls)
         self.assertEqual(
             {c[-1] for c in calls},
             {"/var/lib/workloads/test-wl/state/ca(/.*)?",
+             r"/var/lib/workloads/test-wl/state/ca/egress-ca\.key",
              "/var/lib/workloads/test-wl/state/leaves(/.*)?",
              "/var/lib/workloads/test-wl/state/leaves-denied(/.*)?"})
 
@@ -1628,7 +1633,7 @@ class TestApplyVmFcontext(unittest.TestCase):
         """The upgrade case, and the reason each rule is checked on its own.
 
         A host provisioned before rung 3 has the tree rule registered and the
-        three PKI rules not at all. A registration that returns early on the
+        four PKI rules not at all. A registration that returns early on the
         first pattern already present never registers them — on exactly the
         hosts that need it.
         """
@@ -1636,7 +1641,7 @@ class TestApplyVmFcontext(unittest.TestCase):
                    "system_u:object_r:svirt_image_t:s0\n")
         calls = self._run_calls(_VM_TOML, 'test-vm', "enable", listing=listing)
         adds = [c for c in calls if "-a" in c]
-        self.assertEqual(len(adds), 3)
+        self.assertEqual(len(adds), 4)
         self.assertTrue(all("state/" in c[-1] for c in adds), adds)
 
     def test_enable_relabels_with_dash_f(self):
@@ -1654,6 +1659,8 @@ class TestApplyVmFcontext(unittest.TestCase):
                 ("/var/lib/workloads/test-vm(/.*)?", "svirt_image_t"),
                 ("/var/lib/workloads/test-vm/state/ca(/.*)?",
                  "wlinspect_ca_t"),
+                (r"/var/lib/workloads/test-vm/state/ca/egress-ca\.key",
+                 "wlinspect_ca_key_t"),
                 ("/var/lib/workloads/test-vm/state/leaves(/.*)?",
                  "wlinspect_leaf_t"),
                 ("/var/lib/workloads/test-vm/state/leaves-denied(/.*)?",
@@ -1668,17 +1675,18 @@ class TestApplyVmFcontext(unittest.TestCase):
     def test_disable_unregisters_every_pattern_enable_registered(self):
         """Including the PKI rules, and the specific ones first.
 
-        A disable that removed only the tree rule would leave three orphans
+        A disable that removed only the tree rule would leave four orphans
         registered against a workload that no longer exists, and the next
         workload to reuse the name would inherit them.
         """
         calls = self._run_calls(_VM_TOML, 'test-vm', "disable")
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 5)
         self.assertTrue(all("-d" in c for c in calls), calls)
         self.assertEqual(calls[-1][-1], "/var/lib/workloads/test-vm(/.*)?")
         self.assertEqual(
-            [c[-1] for c in calls[:3]],
+            [c[-1] for c in calls[:4]],
             ["/var/lib/workloads/test-vm/state/ca(/.*)?",
+             r"/var/lib/workloads/test-vm/state/ca/egress-ca\.key",
              "/var/lib/workloads/test-vm/state/leaves(/.*)?",
              "/var/lib/workloads/test-vm/state/leaves-denied(/.*)?"])
 
