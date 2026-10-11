@@ -872,6 +872,26 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
     svc.add("StandardOutput", "journal")
     svc.add("StandardError", "journal")
     svc.blank()
+    # Filesystem and socket-family hardening, as a container workload's unit
+    # has: a guest that escapes into QEMU otherwise keeps the host's whole
+    # filesystem writable wherever the uid and label allow. QEMU writes its
+    # disks and nvram under the state and data dirs and its sockets in the
+    # RuntimeDirectory; the passt it launches writes a pid file in /tmp.
+    # The `+` prestarts run outside all of this.
+    #
+    # NOT NoNewPrivileges: QEMU reaches svirt_t by a type transition when the
+    # notify wrapper executes it, and no_new_privs refuses the transition --
+    # the same constraint the virtiofs sidecar's unit is under. And not
+    # QEMU's own -sandbox: its seccomp filter is inherited by the passt that
+    # `-netdev passt` launches, and passt fails under it (even `-sandbox on`
+    # alone; measured with QEMU 10.2.2).
+    svc.add("ProtectSystem", "strict")
+    # The data dir may not exist (no data disk), hence `-`, inside the quotes:
+    # systemd unquotes a word before it reads the prefix.
+    svc.add("ReadWritePaths", f'"{home_dir}" "-{data_dir}"')
+    svc.add("PrivateTmp", "yes")
+    svc.add("RestrictAddressFamilies", "~AF_ALG AF_PACKET")
+    svc.blank()
     svc.add("Restart", restart_directive)
     svc.add("RestartSec", "10s")
     # Generous start timeout: guest may be slow on first boot. Both defaults
