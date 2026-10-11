@@ -158,12 +158,16 @@ EXPECTED = {
         {"cgroup"},
         "The v6 twin."),
 
-    "oif lo accept": (
+    "oif lo ip daddr 127.0.0.0/8 accept": (
         {"skuid-set"},
-        "Loopback is the workload's own control plane, not egress -- passt's "
-        "replies on the management socket and the DNS forward are both "
-        "output traffic owned by the workload uid. Bare membership, because "
-        "it is true of the guest and the inspector alike."),
+        "Loopback is the workload's own control plane, not egress -- the "
+        "management socket, the responder and a stub resolver, all owned by "
+        "the workload uid. Bare membership, because it is true of the guest "
+        "and the inspector alike. Keyed on the DESTINATION as well as the "
+        "interface: a re-originated dial to any host address leaves on lo."),
+    "oif lo ip6 daddr ::1 accept": (
+        {"skuid-set"},
+        "The v6 twin."),
 
     "accept": (
         {"cgroup"},
@@ -300,8 +304,9 @@ class TestOutputChainSelectors(unittest.TestCase):
         for everything would pass every row above."""
         self.assertEqual(_selectors("meta skuid != 0 ip daddr @s drop"),
                          {"skuid-nonroot"})
-        self.assertEqual(_selectors("meta skuid @wl_filtered oif lo accept"),
-                         {"skuid-set"})
+        self.assertEqual(
+            _selectors("meta skuid @wl_filtered oif lo ip daddr 127.0.0.0/8 accept"),
+            {"skuid-set"})
         self.assertEqual(_selectors("meta skuid . ip daddr @s drop"),
                          {"skuid-tuple"})
         self.assertEqual(

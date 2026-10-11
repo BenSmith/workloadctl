@@ -220,17 +220,33 @@ class TestSkeleton(unittest.TestCase):
         """
         loopback = [d for d in self.directives
                     if "oif lo" in d and d.startswith("add rule")]
-        self.assertEqual(len(loopback), 1,
-                         f"expected one loopback accept rule: {loopback}")
-        self.assertIn(f"@{NFT_SET_FILTERED}", loopback[0],
-                      "the loopback accept must be guarded on membership")
-        self.assertIn("accept", loopback[0])
-
+        self.assertEqual(len(loopback), 2,
+                         f"expected one loopback accept per family: {loopback}")
         rules = [d for d in self.directives if d.startswith("add rule")]
-        self.assertLess(
-            rules.index(loopback[0]),
-            max(i for i, r in enumerate(rules) if r.endswith("drop")),
-            "the loopback accept must precede the drop")
+        for rule in loopback:
+            self.assertIn(f"@{NFT_SET_FILTERED}", rule,
+                          "the loopback accept must be guarded on membership")
+            self.assertIn("accept", rule)
+            self.assertLess(
+                rules.index(rule),
+                max(i for i, r in enumerate(rules) if r.endswith("drop")),
+                "the loopback accept must precede the drop")
+
+    def test_loopback_means_loopback_destinations(self):
+        """Audit F11 (2026-10-11): `oif lo` alone accepted a filtered
+        workload's dial to ANY address of the host's own -- every one leaves
+        on lo -- so a container reached the host's wildcard listeners
+        through podman's --map-guest-addr 169.254.1.2, and a container and a
+        VM through a second host address. Measured live on the proving
+        host. The accept has to name the loopback destinations too."""
+        loopback = [d for d in self.directives
+                    if "oif lo" in d and d.startswith("add rule")]
+        v4 = [d for d in loopback if " ip " in f" {d} " or "ip  daddr" in d]
+        v6 = [d for d in loopback if "ip6 daddr" in d]
+        self.assertEqual(len(v4), 1, loopback)
+        self.assertEqual(len(v6), 1, loopback)
+        self.assertRegex(v4[0], r"ip\s+daddr 127\.0\.0\.0/8\b")
+        self.assertRegex(v6[0], r"ip6 daddr ::1\b")
 
     def test_each_family_has_its_own_allow_set(self):
         """`ip daddr` matches v4 only and `ip6 daddr` v6 only, so one set
@@ -553,7 +569,8 @@ class TestRuleOrderIsPinned(unittest.TestCase):
                                     "@wl_internal4", "drop")),
         ("re-originator internal drop v6", ("@wl_egress_cg", "ct direction original",
                                     "@wl_internal6", "drop")),
-        ("loopback accept",         ("@wl_filtered", "oif lo", "accept")),
+        ("loopback accept v4",      ("@wl_filtered", "oif lo", "ip  daddr 127.0.0.0/8", "accept")),
+        ("loopback accept v6",      ("@wl_filtered", "oif lo", "ip6 daddr ::1", "accept")),
         ("re-originator egress",    ("@wl_egress_cg", "accept")),
         ("HTTP/3 counted drop",     ("@wl_filtered", "udp dport 443", "counter drop")),
         ("default drop",            ("@wl_filtered", "counter drop")),

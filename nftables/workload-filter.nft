@@ -373,12 +373,20 @@ add rule inet workload_filter output socket cgroupv2 level 2 @wl_egress_cg ct di
 #     the forwarded query to `dns-host` — 127.0.0.53 on a systemd-resolved
 #     host — again as the workload uid.
 #
-# Accepting it does not widen what the guest can reach. passt is run with
-# `--map-host-loopback none`, so no guest-chosen destination translates to
-# host loopback; the only loopback traffic passt originates is replies on
-# sockets it already bound and the DNS forward. A guest packet aimed at
-# 127.0.0.1 never leaves the guest's own stack.
-add rule inet workload_filter output meta skuid @wl_filtered oif lo counter accept
+# Loopback DESTINATIONS, not the loopback interface. Every packet bound for
+# an address of the host's own leaves on `lo`, whatever that address is, and
+# pasta and passt re-originate a guest's connection as the workload uid. So
+# `oif lo` alone would accept a guest's dial to any address the host holds:
+# podman's `--map-guest-addr` (169.254.1.2, translated to the host's global
+# address), a second address on any interface, the LAN address itself --
+# and with it every service listening on the host's wildcard. passt's
+# `--map-host-loopback none` keeps guest-chosen destinations off 127/8, so
+# what is left here is the traffic this rule exists for: the management
+# address (127.128.x.y), the responder (127.130.x.y) and a stub resolver
+# (127.0.0.53). A host service a filtered workload should reach is an
+# `allow` entry, which is accepted above.
+add rule inet workload_filter output meta skuid @wl_filtered oif lo ip  daddr 127.0.0.0/8 counter accept
+add rule inet workload_filter output meta skuid @wl_filtered oif lo ip6 daddr ::1 counter accept
 
 # The re-originator's own egress — the inspector's, and only its: see the set's
 # own comment for why the synthesising responder is not a second member.
