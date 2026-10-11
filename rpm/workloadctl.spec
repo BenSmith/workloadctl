@@ -204,6 +204,14 @@ install -Dpm 0644 %{_sourcedir}/security/workload-inspect.cil \
 install -Dpm 0644 %{_sourcedir}/logrotate/workloadctl-inspect \
     %{buildroot}%{_sysconfdir}/logrotate.d/workloadctl-inspect
 
+# Host drop-ins against what a workload can reach outside its tree: no
+# wall broadcast of its log entries, and no sshd login as its user. See the
+# header of each file. Read at journald's and sshd's next start.
+install -Dpm 0644 %{_sourcedir}/systemd/60-workloadctl-journald.conf \
+    %{buildroot}%{_prefix}/lib/systemd/journald.conf.d/60-workloadctl.conf
+install -Dpm 0644 %{_sourcedir}/security/40-workloadctl-sshd.conf \
+    %{buildroot}%{_sysconfdir}/ssh/sshd_config.d/40-workloadctl.conf
+
 install -Dpm 0644 %{_sourcedir}/security/workload-resolve.cil \
     %{buildroot}%{_datadir}/workloadctl/workload-resolve.cil
 
@@ -537,5 +545,7 @@ fi
 # operator who has already revisited them on a host must not lose that to an
 # upgrade.
 %config(noreplace) %{_sysconfdir}/logrotate.d/workloadctl-inspect
+%{_prefix}/lib/systemd/journald.conf.d/60-workloadctl.conf
+%config(noreplace) %{_sysconfdir}/ssh/sshd_config.d/40-workloadctl.conf
 
 %changelog
