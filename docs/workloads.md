@@ -883,7 +883,9 @@ files = [
 
 - **Encrypted at rest** with AES256-GCM
 - **TPM2-backed encryption** (hardware security)
-- **Decrypted into RAM only** (tmpfs, never touches disk unencrypted)
+- Decrypted into RAM-only tmpfs; a ${SECRET:} environment variable
+  is also recorded by podman in the workload's state/ on disk
+  (docs/secrets.md)
 - **Per-workload isolation** (workloads can't see each other's secrets)
 - **Automatic cleanup** when service stops
 - **Safe to commit to git** (encrypted credential files)
@@ -3305,7 +3307,9 @@ Some operations are gated by **both** seccomp and the per-workload SELinux type 
 The systemd credentials system provides strong security:
 - Encrypted at rest with AES256-GCM
 - TPM2-backed encryption (hardware security)
-- Decrypted into RAM only (tmpfs)
+- Decrypted into RAM only (tmpfs); a `${SECRET:}` environment variable is
+  also recorded by podman in the workload's state/ on disk
+  (docs/secrets.md)
 - Per-workload isolation
 - Automatic cleanup
 

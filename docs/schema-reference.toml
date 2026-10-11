@@ -3303,7 +3303,9 @@ ports = ["8080:80", "8443:443"]
 # Security Features:
 # - Encrypted at rest with AES256-GCM
 # - TPM2-backed encryption (hardware security)
-# - Decrypted into RAM-only tmpfs (never touches disk unencrypted)
+# - Decrypted into RAM-only tmpfs; a ${SECRET:} environment variable
+#   is also recorded by podman in the workload's state/ on disk
+#   (docs/secrets.md)
 # - Per-workload isolation (workloads can't see each other's secrets)
 # - Automatic cleanup on service stop
 #

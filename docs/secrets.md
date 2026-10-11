@@ -20,7 +20,9 @@ This document describes the recommended approach for managing secrets (API keys,
 The workload system uses **systemd credentials** (`systemd-creds`) for secure secrets management. This provides:
 
 - **Encryption at rest** using AES256-GCM with TPM2 or host keys
-- **Runtime decryption** into RAM-only tmpfs (never touches disk unencrypted)
+- **Runtime decryption** into RAM-only tmpfs; a `${SECRET:}` environment
+  variable is also recorded by podman on disk (see "File Permissions and
+  Isolation")
 - **Per-workload isolation** preventing credential leakage between workloads
 - **Automatic cleanup** when services stop
 - **Bootc compatibility** - encrypted credentials can be safely committed to git
@@ -175,8 +177,14 @@ sudo systemd-creds encrypt --with-key=host+tpm2 --name=my-secret - /etc/credstor
 | `/etc/credstore.encrypted/*` | Encrypted binary | root only (0600) | YES (survives reboot) |
 | `/run/credentials/{service}/` | Plain text | Service user only | NO (tmpfs, RAM only) |
 | Inside container | Plain text (env/file) | Container processes | NO (dies with container) |
+| `state/.local/share/containers/storage/` (`db.sql`, the container's `userdata/config.json`) | Plain text, `${SECRET:}` environment variables only | The workload user, root | YES (persistent disk) |
 
-**Key security property:** The plaintext secret **never touches disk** - only exists in RAM (`/run` is tmpfs).
+**Where the plaintext is:** a decrypted credential lives in RAM (`/run` is
+tmpfs). A `${SECRET:}` environment variable does not stay there: podman
+records every container's environment in its own storage, so the value is
+in the workload's `state/` tree on disk, readable by the workload user and
+root, and in any copy of that tree. Encrypt `/var` if that matters, or keep
+such a secret out of the environment.
 
 ### Per-Workload Isolation
 
