@@ -179,6 +179,29 @@ def _assert_no_escaping_symlinks(root: Path) -> None:
                 )
 
 
+def _assert_merge_follows_no_symlink(staging: Path, dest: Path) -> None:
+    """Reject a merge whose destination has a symlink where the archive writes.
+
+    The merge copies into a data/ tree the workload user owns and may have
+    planted links in. copytree(dirs_exist_ok=True) takes a symlink to a
+    directory for an existing directory and copy2 writes through a symlinked
+    file, so restore, running as root, would write the archive's content at
+    wherever the link points. Every path the archive writes is checked,
+    data/ itself included; --force replaces the tree instead, unlinking any
+    link rather than following it.
+    """
+    for dirpath, dirnames, filenames in os.walk(staging, followlinks=False):
+        rel = Path(dirpath).relative_to(staging)
+        for entry in [rel, *(rel / n for n in dirnames + filenames)]:
+            if (dest / entry).is_symlink():
+                raise ValueError(
+                    f"the data directory has a symlink where the archive "
+                    f"writes: {dest / entry}. A merge would write through "
+                    f"it. Remove it, or restore with --force to replace "
+                    f"data/."
+                )
+
+
 def _assert_no_mounts_under(root: Path) -> None:
     """Reject a restore into `root` if another filesystem is mounted inside it.
 
@@ -437,6 +460,9 @@ def cmd_restore(args, manager: WorkloadManager):
                         # is its own mount is what an operator with a disk
                         # there is asking for; rmtree of it is not.
                         _assert_data_dir_is_not_a_mount(dest_data)
+                    else:
+                        _assert_merge_follows_no_symlink(data_staging,
+                                                         dest_data)
                 except ValueError as e:
                     print(f"Error: {e}", file=sys.stderr)
                     sys.exit(1)

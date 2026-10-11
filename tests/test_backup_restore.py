@@ -969,6 +969,76 @@ class TestRestoreCredentialsAndDataFlow(unittest.TestCase):
         self.assertTrue((dest_data / "newfile.txt").exists())
         self.assertIn("data/ exists, merging", out.getvalue())
 
+    def _merge_over_a_planted_link(self, link_rel, target_is_dir):
+        """The archive writes `home/probe`; the workload planted `link_rel`
+        in its own data/, pointing at a directory outside the tree."""
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / "probe").write_text("root's own file")
+        dest_data = self.var / "goodapp" / "data"
+        dest_data.mkdir(parents=True)
+        link = dest_data / link_rel
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(outside if target_is_dir else outside / "probe")
+        archive = self._make_full_archive(
+            Path(tempfile.mkdtemp(dir=self.tmp)),
+            data_files={"home/probe": "from the archive"})
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err), \
+                self.assertRaises(SystemExit) as cm:
+            cmd_backup.cmd_restore(self._args(archive), manager=None)
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("symlink where the archive writes", err.getvalue())
+        return outside
+
+    def test_a_merge_refuses_a_planted_directory_link(self):
+        """copytree(dirs_exist_ok=True) takes a link to a directory for the
+        directory and writes into wherever it points."""
+        outside = self._merge_over_a_planted_link("home", target_is_dir=True)
+        self.assertEqual((outside / "probe").read_text(), "root's own file")
+
+    def test_a_merge_refuses_a_planted_file_link(self):
+        """copy2 writes through a symlinked destination file."""
+        outside = self._merge_over_a_planted_link("home/probe",
+                                                  target_is_dir=False)
+        self.assertEqual((outside / "probe").read_text(), "root's own file")
+
+    def test_a_link_the_archive_does_not_write_through_is_merged_around(self):
+        dest_data = self.var / "goodapp" / "data"
+        dest_data.mkdir(parents=True)
+        (dest_data / "elsewhere").symlink_to("/etc")
+        archive = self._make_full_archive(
+            Path(tempfile.mkdtemp(dir=self.tmp)),
+            data_files={"newfile.txt": "brand-new"})
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            cmd_backup.cmd_restore(self._args(archive), manager=None)
+        self.assertTrue((dest_data / "newfile.txt").exists())
+        self.assertTrue((dest_data / "elsewhere").is_symlink())
+
+    def test_force_replaces_a_tree_with_a_planted_link_without_following(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / "probe").write_text("root's own file")
+        dest_data = self.var / "goodapp" / "data"
+        dest_data.mkdir(parents=True)
+        (dest_data / "home").symlink_to(outside)
+        archive = self._make_full_archive(
+            Path(tempfile.mkdtemp(dir=self.tmp)),
+            data_files={"home/probe": "from the archive"})
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            cmd_backup.cmd_restore(self._args(archive, force=True),
+                                   manager=None)
+        self.assertEqual((outside / "probe").read_text(), "root's own file")
+        self.assertFalse((dest_data / "home").is_symlink())
+        self.assertEqual((dest_data / "home" / "probe").read_text(),
+                         "from the archive")
+
     def test_data_tree_replaced_with_force_when_exists(self):
         dest_data = self.var / "goodapp" / "data"
         dest_data.mkdir(parents=True)
