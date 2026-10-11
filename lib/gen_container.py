@@ -295,7 +295,8 @@ def _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, pull_p
 
 
 def _logging(svc, container_name, resources):
-    """StandardOutput/Error/SyslogIdentifier + LogRateLimit* defaults."""
+    """StandardOutput/Error/SyslogIdentifier/SyslogLevelPrefix + LogRateLimit*
+    defaults."""
     custom_d = resources.get("custom_directives", {})
     svc.add("StandardOutput", "journal")
     svc.add("StandardError", "journal")
@@ -303,6 +304,10 @@ def _logging(svc, container_name, resources):
     # read `workload-<name>[pid]: ...` (members: workload-<wl>-<ctr>).
     # Podman's own messages (pull errors etc.) share the identifier.
     svc.add("SyslogIdentifier", container_name)
+    # Every line takes the unit's level: a container cannot mark its own
+    # output emerg with a leading `<0>`, which journald would also wall to
+    # every logged-in terminal.
+    svc.add("SyslogLevelPrefix", "no")
     if "LogRateLimitIntervalSec" not in custom_d:
         svc.add("LogRateLimitIntervalSec", 30)
     if "LogRateLimitBurst" not in custom_d:

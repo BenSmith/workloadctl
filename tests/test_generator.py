@@ -269,6 +269,39 @@ class TestGeneratorBasic(unittest.TestCase):
         self.assertIn("LogRateLimitIntervalSec=30", service)
         self.assertIn("LogRateLimitBurst=250", service)
 
+    def test_container_output_cannot_set_its_own_priority(self):
+        """A `<0>` at the start of a line would make it emerg, and journald
+        walls emerg to every terminal: every container unit, single and
+        member, turns the prefix off."""
+        write_config(self.config_dir, "svc4", """\
+            [workload]
+            name = "svc4"
+            [container]
+            image = "alpine"
+        """)
+        write_config(self.config_dir, "stack4", """\
+            [workload]
+            name = "stack4"
+            mode = "bridge"
+
+            [[containers]]
+            name = "web"
+            [containers.container]
+            image = "alpine"
+
+            [[containers]]
+            name = "db"
+            [containers.container]
+            image = "alpine"
+        """)
+        result = self.run_gen()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = Path(self.services_dir)
+        for unit in (self.read_service("svc4"),
+                     (services / "workload-stack4-web.service").read_text(),
+                     (services / "workload-stack4-db.service").read_text()):
+            self.assertIn("SyslogLevelPrefix=no", unit)
+
     def test_log_rate_limit_overridable_via_custom_directives(self):
         """Custom LogRateLimitIntervalSec suppresses the generator default."""
         write_config(self.config_dir, "svc3", """\
