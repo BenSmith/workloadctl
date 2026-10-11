@@ -6,7 +6,8 @@
 # local workloadctl operations.
 #
 # Ports exposed to LAN:
-#   3000  — Grafana UI (authenticated)
+#   3000  — Grafana UI (login required: the image allows anonymous access
+#           by default, and GF_AUTH_ANONYMOUS_ENABLED below turns it off)
 #   4317  — OTLP gRPC ingestion (unauthenticated — trust the LAN, or front
 #           with a TLS-terminating proxy)
 #   4318  — OTLP HTTP ingestion (unauthenticated; same caveat)
@@ -62,6 +63,9 @@ on_failure = "kill"
 GF_SECURITY_ADMIN_USER = "admin"
 GF_SECURITY_ADMIN_PASSWORD = "${SECRET:grafana-admin-password}"
 GF_USERS_ALLOW_SIGN_UP = "false"
+# The grafana/otel-lgtm image turns anonymous access on; without this line
+# anyone who reaches 3000 reads every host's logs with no login.
+GF_AUTH_ANONYMOUS_ENABLED = "false"
 GF_ANALYTICS_REPORTING_ENABLED = "false"
 GF_ANALYTICS_CHECK_FOR_UPDATES = "false"
 

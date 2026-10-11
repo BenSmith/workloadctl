@@ -164,6 +164,26 @@ class TestShippedBundlesGenerate(unittest.TestCase):
                         )
 
 
+class TestShippedServicesAskForALogin(unittest.TestCase):
+    """A shipped service that serves anything to whoever reaches it is a
+    finding, not a default.
+
+    The 2026-10-11 security audit (F32): otel-lgtm's Grafana, on a port the
+    bundle tells the operator to open to the LAN, served every host's logs
+    with no login, because the grafana/otel-lgtm image enables anonymous
+    access and the bundle did not turn it off. Checked in the rendered unit,
+    where the setting has to arrive to mean anything.
+    """
+
+    def test_otel_lgtm_grafana_is_not_anonymous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            unit = (svc / "workload-otel-lgtm.service").read_text()
+        self.assertRegex(unit, r'GF_AUTH_ANONYMOUS_ENABLED="?false"?(\s|$)')
+
+
 class TestBaselineIsComparable(unittest.TestCase):
     """`just snapshot-baseline` is only useful if two renders differ *only* where
     behavior differs — otherwise a refactor diff drowns in noise and stops being
