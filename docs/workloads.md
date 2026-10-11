@@ -3257,6 +3257,13 @@ All workloads run with a hardened seccomp profile that restricts which kernel sy
 | `perf_event_open` | Performance counters; side-channel leakage between containers | `Operation not permitted` (EPERM) |
 | `process_vm_readv/writev` | Read/write another process's memory directly | `Function not implemented` (ENOSYS) |
 | `keyctl` | Kernel keyring manipulation | `Function not implemented` (ENOSYS) |
+| `pidfd_getfd` | Take a file descriptor out of another process | `Function not implemented` (ENOSYS) |
+| `clone`/`unshare` with a namespace flag | In a new user namespace the workload's user is root, and reaches the mount calls and the rest of the kernel root does there | `Operation not permitted` (EPERM) |
+| `clone3` | Its flags are behind a pointer the filter cannot read; glibc falls back to `clone` | `Function not implemented` (ENOSYS) |
+| `mount`, `umount2`, `pivot_root`, `fsopen`, `move_mount`, ... | The mount calls | `Operation not permitted` (EPERM) |
+| `syslog` | Read the kernel's log, whatever the host's `kernel.dmesg_restrict` | `Operation not permitted` (EPERM) |
+| `socket` with `AF_VSOCK` | A vsock reaches the host, or a VM on it, around the network namespace and whatever filters it | `Function not implemented` (ENOSYS) |
+| `socketcall` | 32-bit x86's socket multiplexer, whose address family the filter cannot read | `Function not implemented` (ENOSYS) |
 
 A syscall the profile never mentions falls to its default, ENOSYS, as if the kernel lacked it: gdb prints `ptrace: Function not implemented`. One it names in a deny entry, or behind a capability the container lacks, gets EPERM. Most service containers (web servers, databases, media servers) never call these syscalls. If yours does, see the [troubleshooting guide](../../docs/TROUBLESHOOTING.md) for diagnosis steps.
 
@@ -3266,6 +3273,13 @@ A syscall the profile never mentions falls to its default, ENOSYS, as if the ker
 # A debugger in a dev container:
 seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]
 ```
+
+A program that sandboxes itself in namespaces of its own — bwrap, and so Steam's runtime and Flatpak — fails with `bwrap: No permissions to create a new namespace`. Its workload allows the calls it makes:
+```toml
+[security]
+seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
+```
+Others go on without that layer of their sandbox: GTK's image loaders (glycin) say `Glycin running without sandbox`, and Firefox's sandbox keeps its seccomp filter.
 
 The generator writes `/run/systemd/system/workload-<name>.seccomp.json` beside the units — the baseline installed at that moment, with those names allowed — and rebuilds it with them, so a baseline an RPM update ships reaches the workload at the next boot or `enable`, and `drift`/`doctor` report the profile until then. One profile serves every container of the workload.
 

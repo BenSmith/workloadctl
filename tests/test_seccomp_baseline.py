@@ -27,6 +27,69 @@ EPERM_TEXT = "Operation not permitted"
 # stops falling back would turn it into an EPERM with no recovery.
 FUTEX2 = {"futex_requeue", "futex_wait", "futex_waitv", "futex_wake"}
 
+ALLOW = "allow"
+EPERM, EINVAL, ENOSYS = 1, 22, 38
+MASK64 = (1 << 64) - 1
+# What a container holds when its workload adds none: podman's default.
+PODMAN_CAPS = {f"CAP_{c}" for c in (
+    "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "NET_BIND_SERVICE",
+    "SETFCAP", "SETGID", "SETPCAP", "SETUID", "SYS_CHROOT")}
+CLONE_NEW = (0x00020000, 0x02000000, 0x04000000, 0x08000000, 0x10000000,
+             0x20000000, 0x40000000)
+CLONE_NEWTIME = 0x80
+CLONE_THREAD = 0x10000
+SIGCHLD = 17
+AF_NETLINK, NETLINK_AUDIT, AF_VSOCK = 16, 9, 40
+MOUNTS = ("fsconfig", "fsmount", "fsopen", "fspick", "mount",
+          "mount_setattr", "move_mount", "open_tree", "open_tree_attr",
+          "pivot_root", "umount", "umount2")
+
+
+def _holds(cmp, args):
+    value = args[cmp["index"]] & MASK64
+    op = cmp["op"].removeprefix("SCMP_CMP_")
+    if op == "MASKED_EQ":
+        return value & cmp["value"] == cmp["valueTwo"]
+    return {"EQ": value == cmp["value"], "NE": value != cmp["value"],
+            "LT": value < cmp["value"], "LE": value <= cmp["value"],
+            "GT": value > cmp["value"], "GE": value >= cmp["value"]}[op]
+
+
+def _applies(entry, arch, caps):
+    """Whether podman hands `entry` to the runtime: every capability it
+    includes held, none it excludes, and the architecture's."""
+    inc, exc = entry.get("includes") or {}, entry.get("excludes") or {}
+    return (set(inc.get("caps", ())) <= caps
+            and not set(exc.get("caps", ())) & caps
+            and ("arches" not in inc or arch in inc["arches"])
+            and arch not in exc.get("arches", ()))
+
+
+def decide(profile, name, *args, arch="amd64", caps=PODMAN_CAPS):
+    """What the filter does with the call: allowed, or the errno. Every
+    entry that matches must agree: libseccomp does not choose between
+    them by their order, and of two that overlap the one with fewer
+    conditions wins."""
+    args = (*args, *(0,) * (6 - len(args)))
+    found = {ALLOW if e["action"] == "SCMP_ACT_ALLOW"
+             else e.get("errnoRet", profile["defaultErrnoRet"])
+             for e in profile["syscalls"]
+             if name in e["names"] and _applies(e, arch, caps)
+             and all(_holds(c, args) for c in e.get("args") or ())}
+    if len(found) > 1:
+        raise AssertionError(f"{name}{args[:3]}: entries disagree, {found}")
+    return found.pop() if found else profile["defaultErrnoRet"]
+
+
+# Arguments the filtered entries are tried with: namespace flags and not,
+# upper bits, families and protocols around each block's edges.
+CLONE_FLAGS = [0, SIGCHLD, CLONE_THREAD, *CLONE_NEW, CLONE_NEWTIME,
+               sum(CLONE_NEW) | CLONE_NEWTIME, CLONE_THREAD | CLONE_NEW[4],
+               (1 << 32) | CLONE_NEW[6], (1 << 32) | SIGCHLD]
+FAMILIES = [*range(70), (1 << 32) | AF_VSOCK, (1 << 32) | 2,
+            (1 << 63) | 1, MASK64]
+PROTOCOLS = [*range(34), (1 << 32) | NETLINK_AUDIT, MASK64]
+
 
 class ProfileChecks:
     """What every profile a workload runs under must hold: the baseline, and
@@ -36,15 +99,17 @@ class ProfileChecks:
         return [s for s in self.profile["syscalls"] if s["action"] == action]
 
     def _ungated_allow_names(self):
-        """Names allowed unconditionally — no includes/excludes gating.
+        """Names allowed unconditionally — no includes/excludes gating, no
+        argument filter.
 
         A name allowed only under `includes` (a capability, an arch) is not
         allowed for an ordinary workload, so gated entries cannot be treated as
-        equivalent to a plain allow.
+        equivalent to a plain allow; nor can one allowed for some arguments.
         """
         names = set()
         for s in self._entries("SCMP_ACT_ALLOW"):
-            if not s.get("includes") and not s.get("excludes"):
+            if not s.get("includes") and not s.get("excludes") \
+                    and not s.get("args"):
                 names.update(s["names"])
         return names
 
@@ -81,10 +146,44 @@ class ProfileChecks:
         for s in self.profile["syscalls"]:
             if s["action"] == "SCMP_ACT_ALLOW":
                 continue
-            if not (s.get("includes") or s.get("excludes")):
+            if not (s.get("includes") or s.get("excludes") or s.get("args")):
                 continue
             undone |= allowed & set(s["names"])
         self.assertEqual(undone, set())
+
+    def test_no_entry_names_an_argument_twice(self):
+        """libseccomp reads such a rule as matching every call: measured on
+        a Fedora 44 host (2026-10-04, podman 5.8.7, crun 1.28, libseccomp
+        2.6.1), a rule of family > 16 and != 40 let a vsock through."""
+        for s in self.profile["syscalls"]:
+            indexes = [c["index"] for c in s.get("args") or ()]
+            with self.subTest(names=s["names"][:3]):
+                self.assertEqual(len(indexes), len(set(indexes)))
+
+    def test_matching_entries_agree_for_every_argument_tried(self):
+        """decide() raises where they do not. Measured as above, the rule
+        with fewer conditions won whatever the order: an allow of family
+        != 40 overruled a refusal of the audit socket."""
+        for arch in ("amd64", "arm64", "s390x"):
+            for caps in (PODMAN_CAPS, PODMAN_CAPS | {"CAP_AUDIT_WRITE"}):
+                for flags in CLONE_FLAGS:
+                    decide(self.profile, "clone", flags, arch=arch, caps=caps)
+                    decide(self.profile, "clone", 0, flags, arch=arch,
+                           caps=caps)
+                    decide(self.profile, "unshare", flags, arch=arch,
+                           caps=caps)
+                for family in FAMILIES:
+                    for protocol in PROTOCOLS:
+                        decide(self.profile, "socket", family, 1, protocol,
+                               arch=arch, caps=caps)
+
+    def test_socket_has_no_refusal_of_its_family_beside_its_allows(self):
+        """Measured as above, such a refusal failed to load: crun's
+        "seccomp_rule_add_array: File exists". The audit refusal names the
+        protocol as well, and loads."""
+        for s in self._entries("SCMP_ACT_ERRNO"):
+            if "socket" in s["names"]:
+                self.assertEqual({c["index"] for c in s["args"]}, {0, 2})
 
     def test_futex2_family_is_allowed(self):
         """Denying futex2 while allowing `futex` gains nothing — the same
@@ -122,6 +221,78 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
         self.assertEqual(len(gated), 2, "expected only the includes/excludes pair")
         for s in gated:
             self.assertTrue(s.get("includes") or s.get("excludes"))
+
+    def test_no_namespace_is_made(self):
+        """In one the workload's user is root, and reaches the mount calls
+        and the rest of the kernel that root in a namespace does."""
+        for flag in (*CLONE_NEW, CLONE_NEWTIME):
+            self.assertEqual(decide(self.profile, "unshare", flag), EPERM)
+        for flag in CLONE_NEW:
+            self.assertEqual(decide(self.profile, "clone", flag | SIGCHLD),
+                             EPERM)
+            self.assertEqual(decide(self.profile, "clone", 0, flag | SIGCHLD,
+                                    arch="s390x"), EPERM)
+        # Its flags are behind a pointer the filter cannot read: glibc
+        # falls back to clone on ENOSYS.
+        self.assertEqual(decide(self.profile, "clone3"), ENOSYS)
+
+    def test_a_thread_and_a_child_are_made(self):
+        threads = 0x3d0f00
+        self.assertEqual(decide(self.profile, "clone", threads), ALLOW)
+        self.assertEqual(decide(self.profile, "clone", SIGCHLD), ALLOW)
+        self.assertEqual(decide(self.profile, "clone", 0, SIGCHLD,
+                                arch="s390x"), ALLOW)
+        self.assertEqual(decide(self.profile, "unshare", 0x200), ALLOW)
+
+    def test_nothing_is_mounted(self):
+        for call in MOUNTS:
+            self.assertEqual(decide(self.profile, call), EPERM, call)
+
+    def test_the_kernels_log_is_not_read_whatever_the_host_allows(self):
+        self.assertEqual(decide(self.profile, "syslog", 3, 0, 0), EPERM)
+
+    def test_reaching_into_another_process_is_not_implemented(self):
+        for call in ("pidfd_getfd", "process_vm_readv", "process_vm_writev",
+                     "ptrace"):
+            self.assertEqual(decide(self.profile, call), ENOSYS, call)
+
+    def test_a_vsock_is_refused_however_its_family_is_written(self):
+        """A vsock reaches the host, or a VM's hypervisor, around the
+        network namespace and whatever filters it. The kernel reads the
+        family as an int: podman's default refuses family 40 alone, and
+        socket((1 << 32) | 40, ...) returned a vsock under it (measured as
+        above)."""
+        for caps in (PODMAN_CAPS, PODMAN_CAPS | {"CAP_AUDIT_WRITE"}):
+            for family in (AF_VSOCK, (1 << 32) | AF_VSOCK,
+                           (1 << 63) | AF_VSOCK):
+                self.assertEqual(
+                    decide(self.profile, "socket", family, 1, 0, caps=caps),
+                    ENOSYS)
+        # Nor through 32-bit x86's multiplexer, whose family is behind a
+        # pointer.
+        self.assertEqual(decide(self.profile, "socketcall", 1), ENOSYS)
+
+    def test_the_other_families_are_allowed_and_upper_bits_are_not(self):
+        for family in range(64):
+            if family != AF_VSOCK:
+                self.assertEqual(
+                    decide(self.profile, "socket", family, 1, 0), ALLOW,
+                    family)
+                self.assertEqual(
+                    decide(self.profile, "socket", (1 << 32) | family, 1, 0),
+                    ENOSYS, family)
+
+    def test_the_audit_socket_fails_as_on_a_kernel_without_audit(self):
+        """EINVAL, which sudo takes as no audit, unless the workload holds
+        CAP_AUDIT_WRITE to use it."""
+        self.assertEqual(
+            decide(self.profile, "socket", AF_NETLINK, 3, NETLINK_AUDIT),
+            EINVAL)
+        self.assertEqual(decide(self.profile, "socket", AF_NETLINK, 3, 0),
+                         ALLOW)
+        self.assertEqual(
+            decide(self.profile, "socket", AF_NETLINK, 3, NETLINK_AUDIT,
+                   caps=PODMAN_CAPS | {"CAP_AUDIT_WRITE"}), ALLOW)
 
     def test_cap_sys_admin_gate_covers_the_same_names_both_ways(self):
         """The CAP_SYS_ADMIN gate is a *pair* of entries — allow-when-included,

@@ -256,15 +256,17 @@ sudo workloadctl enable <workload>
 **Symptoms:**
 - `Function not implemented` or `Operation not permitted` in logs, at startup or when a tool runs
 - Container exits immediately with code 1 (not 125/126 — this is the application, not podman)
-- Error message references a specific operation: `ptrace: Function not implemented`, `bpf: Operation not permitted`, etc.
+- Error message references a specific operation: `ptrace: Function not implemented`, `bpf: Operation not permitted`, `bwrap: No permissions to create a new namespace`, etc.
 - Workload starts fine with `seccomp=unconfined` but fails normally
 
 **Cause:**
-All workloads run with a hardened seccomp profile (`/usr/share/containers/seccomp-workload-baseline.json`) that blocks syscalls commonly used in container escapes and side-channel attacks. Most services never call these syscalls, but some applications (debuggers, eBPF tools, performance profilers) do.
+All workloads run with a hardened seccomp profile (`/usr/share/containers/seccomp-workload-baseline.json`) that blocks syscalls commonly used in container escapes and side-channel attacks. Most services never call these syscalls, but some applications (debuggers, eBPF tools, performance profilers, programs that sandbox themselves in namespaces) do.
 
-The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`.
+The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `mount`, `syslog`, `socketcall`.
 
-Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev` and `keyctl`. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`. An EPERM from a call the profile allows is SELinux's, not seccomp's.
+`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`).
+
+Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `socketcall`, and a vsock. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`, the mount calls, `syslog`, and a new namespace. An EPERM from a call the profile allows is SELinux's, not seccomp's.
 
 **Confirm seccomp is the cause:**
 ```bash
@@ -277,6 +279,8 @@ sudo workloadctl incant <name> -- \
 ```toml
 [security]
 seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]
+# Or, for bwrap (Steam's runtime, Flatpak):
+seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 ```
 The rest of the baseline still applies; see `seccomp_allow` in the schema reference.
 

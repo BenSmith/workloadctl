@@ -119,8 +119,6 @@
         "clock_gettime64",
         "clock_nanosleep",
         "clock_nanosleep_time64",
-        "clone",
-        "clone3",
         "close",
         "close_range",
         "connect",
@@ -165,11 +163,7 @@
         "flock",
         "fork",
         "fremovexattr",
-        "fsconfig",
         "fsetxattr",
-        "fsmount",
-        "fsopen",
-        "fspick",
         "fstat",
         "fstat64",
         "fstatat64",
@@ -267,9 +261,6 @@
         "mlockall",
         "mmap",
         "mmap2",
-        "mount",
-        "mount_setattr",
-        "move_mount",
         "mprotect",
         "mq_getsetattr",
         "mq_notify",
@@ -292,16 +283,13 @@
         "nanosleep",
         "newfstatat",
         "open",
-        "open_tree",
         "openat",
         "openat2",
         "pause",
-        "pidfd_getfd",
         "pidfd_open",
         "pidfd_send_signal",
         "pipe",
         "pipe2",
-        "pivot_root",
         "pkey_alloc",
         "pkey_free",
         "pkey_mprotect",
@@ -413,7 +401,6 @@
         "signalfd4",
         "sigprocmask",
         "sigreturn",
-        "socketcall",
         "socketpair",
         "splice",
         "stat",
@@ -427,7 +414,6 @@
         "sync_file_range",
         "syncfs",
         "sysinfo",
-        "syslog",
         "tee",
         "tgkill",
         "time",
@@ -449,12 +435,9 @@
         "truncate64",
         "ugetrlimit",
         "umask",
-        "umount",
-        "umount2",
         "uname",
         "unlink",
         "unlinkat",
-        "unshare",
         "utime",
         "utimensat",
         "utimensat_time64",
@@ -656,6 +639,555 @@
     },
     {
       "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2114060288,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      }
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 131072,
+          "valueTwo": 131072,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 33554432,
+          "valueTwo": 33554432,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 67108864,
+          "valueTwo": 67108864,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 134217728,
+          "valueTwo": 134217728,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 268435456,
+          "valueTwo": 268435456,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 536870912,
+          "valueTwo": 536870912,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 1073741824,
+          "valueTwo": 1073741824,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "value": 2114060288,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {}
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 131072,
+          "valueTwo": 131072,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 33554432,
+          "valueTwo": 33554432,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 67108864,
+          "valueTwo": 67108864,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 134217728,
+          "valueTwo": 134217728,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 268435456,
+          "valueTwo": 268435456,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 536870912,
+          "valueTwo": 536870912,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 1,
+          "value": 1073741824,
+          "valueTwo": 1073741824,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      },
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2114060416,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 131072,
+          "valueTwo": 131072,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 33554432,
+          "valueTwo": 33554432,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 67108864,
+          "valueTwo": 67108864,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 134217728,
+          "valueTwo": 134217728,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 268435456,
+          "valueTwo": 268435456,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 536870912,
+          "valueTwo": 536870912,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 1073741824,
+          "valueTwo": 1073741824,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 128,
+          "valueTwo": 128,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "no namespace: one would make the workload's user root in it",
+      "includes": {},
+      "excludes": {},
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
         "open_by_handle_at"
       ],
       "action": "SCMP_ACT_ALLOW",
@@ -951,6 +1483,197 @@
       },
       "errnoRet": 1,
       "errno": "EPERM"
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551600,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 17,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551614,
+          "valueTwo": 18,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551612,
+          "valueTwo": 20,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551608,
+          "valueTwo": 24,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551608,
+          "valueTwo": 32,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 41,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551614,
+          "valueTwo": 42,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551612,
+          "valueTwo": 44,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551600,
+          "valueTwo": 48,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ],
+      "comment": "",
+      "includes": {
+        "caps": [
+          "CAP_AUDIT_WRITE"
+        ]
+      },
+      "excludes": {}
     },
     {
       "names": [
@@ -971,7 +1694,7 @@
           "op": "SCMP_CMP_EQ"
         }
       ],
-      "comment": "",
+      "comment": "the audit socket, as on a kernel without audit",
       "includes": {},
       "excludes": {
         "caps": [
@@ -988,10 +1711,16 @@
       "action": "SCMP_ACT_ALLOW",
       "args": [
         {
-          "index": 2,
-          "value": 9,
+          "index": 0,
+          "value": 16,
           "valueTwo": 0,
-          "op": "SCMP_CMP_NE"
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
       "comment": "",
@@ -1012,7 +1741,13 @@
           "index": 0,
           "value": 16,
           "valueTwo": 0,
-          "op": "SCMP_CMP_NE"
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 8,
+          "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
       "comment": "",
@@ -1030,10 +1765,16 @@
       "action": "SCMP_ACT_ALLOW",
       "args": [
         {
-          "index": 2,
-          "value": 9,
+          "index": 0,
+          "value": 16,
           "valueTwo": 0,
-          "op": "SCMP_CMP_NE"
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 10,
+          "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
       "comment": "",
@@ -1049,14 +1790,54 @@
         "socket"
       ],
       "action": "SCMP_ACT_ALLOW",
-      "args": null,
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551612,
+          "valueTwo": 12,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
       "comment": "",
-      "includes": {
+      "includes": {},
+      "excludes": {
         "caps": [
           "CAP_AUDIT_WRITE"
         ]
-      },
-      "excludes": {}
+      }
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551600,
+          "valueTwo": 16,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "",
+      "includes": {},
+      "excludes": {
+        "caps": [
+          "CAP_AUDIT_WRITE"
+        ]
+      }
     },
     {
       "names": [
@@ -1089,6 +1870,30 @@
           "CAP_BPF"
         ]
       },
+      "errnoRet": 1,
+      "errno": "EPERM"
+    },
+    {
+      "names": [
+        "fsconfig",
+        "fsmount",
+        "fsopen",
+        "fspick",
+        "mount",
+        "mount_setattr",
+        "move_mount",
+        "open_tree",
+        "open_tree_attr",
+        "pivot_root",
+        "syslog",
+        "umount",
+        "umount2"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [],
+      "comment": "the mount calls, and the kernel's log whatever the host's dmesg_restrict",
+      "includes": {},
+      "excludes": {},
       "errnoRet": 1,
       "errno": "EPERM"
     }

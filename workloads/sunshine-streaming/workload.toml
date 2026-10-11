@@ -54,6 +54,8 @@ extra_groups = ["video", "render", "input", "audio"]
 extra_uidmaps = ["+0:@{UID}:1"]
 extra_gidmaps = ["+0:@{GID}:1"]
 selinux_policy = true
+# Steam's runtime sandboxes a game in namespaces of its own (bwrap).
+seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 
 [storage]
 volumes = [
