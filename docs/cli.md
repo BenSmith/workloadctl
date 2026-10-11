@@ -1045,7 +1045,7 @@ sudo workloadctl rules [--json] <workload> [HOST]
 
 Pattern subsumption — which patterns overlap which — is deliberately not computed. Query a name directly to see which wildcards cover it.
 
-The report names which document it read: `/run/workload-vm/<name>/inspect.json` for a running workload (what the listener was *given*), or a render from `[vm.network]` for one that has not started this boot. Neither is "what the listener is enforcing right now" — a listener started before an edit holds the previous document in memory with both files agreeing. `diagnose` is where that is checked.
+The report names which document it read: `/run/workload-vm/_policy/<name>/inspect.json` for a running workload (what the listener was *given*), or a render from `[vm.network]` for one that has not started this boot. Neither is "what the listener is enforcing right now" — a listener started before an edit holds the previous document in memory with both files agreeing. `diagnose` is where that is checked.
 
 [↑ top](#workloadctl-command-reference)
 

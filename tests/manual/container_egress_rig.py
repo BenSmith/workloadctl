@@ -1824,7 +1824,7 @@ def check_reporting():
            p.returncode == 0 and "No drift" in out,
            f"rc={p.returncode} " + " ".join(out.split())[:70])
 
-    doc_path = Path(f"/run/workload-vm/{FILTERED}/inspect.json")
+    doc_path = Path(f"/run/workload-vm/_policy/{FILTERED}/inspect.json")
     original = None
     try:
         original = doc_path.read_text()

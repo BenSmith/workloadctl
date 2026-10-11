@@ -145,7 +145,7 @@ def load_document(name: str, config) -> tuple:
     different questions and an operator who cannot tell them apart is exactly
     the reader this whole rung exists for:
 
-      * "disk" -- /run/workload-vm/<name>/inspect.json, written by
+      * "disk" -- /run/workload-vm/_policy/<name>/inspect.json, written by
         `workload-vm-inspect up` at the last listener start. This is what the
         listener was GIVEN. It is the truthful answer for a running workload,
         and it is the one that can differ from the TOML.

@@ -31,6 +31,7 @@ Installed to /usr/libexec/workloadctl/egress_policy.py.
 """
 
 import json
+import os
 from pathlib import Path
 
 from config_parser import infer_workload_mode, parse_policy_entries, SOCKET_DIR
@@ -186,14 +187,50 @@ def vm_policy_entries(net: dict) -> list[VmPolicyEntry]:
 INSPECT_POLICY_FILE = "inspect.json"
 
 
+# The inspector's and the responder's INPUTS live apart from the runtime
+# dir, which belongs to the workload's uid -- it holds QEMU's sockets and the
+# services' status files, and the uid can create and rename anything in it.
+# A guest that escaped into QEMU could otherwise replace the policy its own
+# egress is held to. Root owns this tree; `_policy` cannot be a workload name
+# (NAME_PATTERN), and it inherits the runtime tree's label, which the
+# inspector and responder already read.
+POLICY_DIRNAME = "_policy"
+POLICY_DIR = f"{SOCKET_DIR}/{POLICY_DIRNAME}"
+
+
+def policy_dir(name: str) -> str:
+    return f"{POLICY_DIR}/{name}"
+
+
+def ensure_policy_parent(path: str, gid: int) -> None:
+    """Create the directory a policy file is about to be written into, if
+    it is missing: root's, 0750, the workload's group.
+
+    workload-ensure-user makes it with the runtime dir, but that runs in the
+    setup service, at enable or boot; a workload restarted on a host whose
+    workloadctl was upgraded without either reaches its writers first.
+    Created under /run/workload-vm, it inherits the label the services read.
+    """
+    parent = os.path.dirname(path)
+    if os.path.isdir(parent):
+        return
+    os.makedirs(os.path.dirname(parent), mode=0o755, exist_ok=True)
+    try:
+        os.mkdir(parent, 0o750)
+    except FileExistsError:
+        return
+    os.chown(parent, 0, gid)
+    os.chmod(parent, 0o750)
+
+
 def inspect_policy_path(name: str) -> str:
     """Where one workload's inspector reads its lists from."""
-    return f"{SOCKET_DIR}/{name}/{INSPECT_POLICY_FILE}"
+    return f"{policy_dir(name)}/{INSPECT_POLICY_FILE}"
 
 
 def resolve_static_path(name: str) -> str:
     """Where one workload's responder reads its static map from."""
-    return f"{SOCKET_DIR}/{name}/{RESOLVE_STATIC_FILE}"
+    return f"{policy_dir(name)}/{RESOLVE_STATIC_FILE}"
 
 
 def resolve_static(resolved) -> dict[str, list[str]]:

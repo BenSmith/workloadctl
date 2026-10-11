@@ -53,8 +53,8 @@ from container_network_config import (
     container_uses_inspect,
 )
 from egress_policy import (
-    container_uses_resolve, resolve_static, resolve_static_path,
-    vm_uses_resolve,
+    container_uses_resolve, ensure_policy_parent, resolve_static,
+    resolve_static_path, vm_uses_resolve,
 )
 from moatery.egress_status import clear_status
 from helper_main import log, run
@@ -111,6 +111,7 @@ def write_resolve_static(name: str, resolved) -> str:
     query, which cannot happen before the workload is running.
     """
     path = resolve_static_path(name)
+    ensure_policy_parent(path, pwd.getpwnam(f"_wl-{name}").pw_gid)
     tmp = f"{path}.tmp"
     with open(tmp, "w") as f:
         json.dump(resolve_static(resolved), f, indent=2,

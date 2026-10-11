@@ -2426,6 +2426,25 @@ class TestSetupVmSocketDir(unittest.TestCase):
                  mock.patch("os.chown"):
                 self.mod.setup_workload_runtime_dir(pw, "myvm")  # must not raise
 
+    def test_the_policy_dir_is_roots_beside_the_runtime_dir(self):
+        """Audit F20: inspect.json lived in the runtime dir, which is the
+        workload uid's, and a process with the uid and QEMU's label could
+        create files there and move inspect.json aside and back. Its
+        directory is now root's (group: the workload's, to read it), so
+        nothing running as the uid can replace what is in it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_base = Path(tmp) / "run" / "workload-vm"
+            pw = _fake_pw(Path(tmp), uid=10001, gid=10001)
+            with mock.patch.object(self.mod, "SOCKET_DIR", socket_base), \
+                 mock.patch("os.chown") as chown:
+                self.mod.setup_workload_runtime_dir(pw, "myvm")
+            policy = socket_base / "_policy" / "myvm"
+            self.assertTrue(policy.is_dir())
+            self.assertEqual(oct(policy.stat().st_mode & 0o777), "0o750")
+            self.assertIn(mock.call(policy, 0, 10001), chown.call_args_list)
+            self.assertNotIn(mock.call(policy, 10001, 10001),
+                             chown.call_args_list)
+
 
 class TestGenerateSshKeypair(unittest.TestCase):
     def setUp(self):

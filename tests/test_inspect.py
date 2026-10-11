@@ -470,12 +470,15 @@ class TestPolicyDocument(unittest.TestCase):
         self.assertEqual(vm_inspect_policy({"hosts": ["a.example"]})["http2"],
                          [])
 
-    def test_the_policy_path_is_in_the_workloads_runtime_dir(self):
-        """The same directory the retired proxy's config was written into, and for the same
-        reason: /run does not exist when the boot generator runs, so writing at
-        start is what makes an edited list apply on a plain restart."""
-        self.assertEqual(inspect_policy_path("web"),
-                         f"{runtime_dir('web')}/inspect.json")
+    def test_the_policy_path_is_under_run_and_not_in_the_runtime_dir(self):
+        """Under /run, because /run does not exist when the boot generator
+        runs, so writing at start is what makes an edited list apply on a
+        plain restart. Not in the runtime dir: that is the workload uid's,
+        and the audit (F20) moved inspect.json aside and back in it as the
+        VM's uid under QEMU's label."""
+        path = inspect_policy_path("web")
+        self.assertEqual(path, "/run/workload-vm/_policy/web/inspect.json")
+        self.assertFalse(path.startswith(f"{runtime_dir('web')}/"))
 
 
 

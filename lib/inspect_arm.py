@@ -109,7 +109,8 @@ from container_network_config import (
 )
 from egress_policy import (
     container_inspect_policy_text, inspect_policy_path, inspect_status_path,
-    internal_hosts, vm_inspect_policy_text, vm_uses_inspect,
+    ensure_policy_parent, internal_hosts, vm_inspect_policy_text,
+    vm_uses_inspect,
 )
 from moatery.egress_status import clear_status
 from helper_main import log, run
@@ -193,6 +194,7 @@ def write_policy(sub: Substrate, name: str, net: dict) -> str:
     to be complete.
     """
     path = inspect_policy_path(name)
+    ensure_policy_parent(path, pwd.getpwnam(f"_wl-{name}").pw_gid)
     tmp = f"{path}.tmp"
     with open(tmp, "w") as f:
         # The substrate's one renderer, not a json.dump with its own

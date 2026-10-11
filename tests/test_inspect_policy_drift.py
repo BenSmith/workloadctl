@@ -3,7 +3,7 @@
 
 `workloadctl drift` answers "do the running units match what this TOML would
 produce". The inspector's policy document is not a unit and is not in the unit
-tree: it lives at /run/workload-vm/<name>/inspect.json, is written by
+tree: it lives at /run/workload-vm/_policy/<name>/inspect.json, is written by
 `workload-vm-inspect up` at socket start rather than by the boot generator, and
 is read once by the listener at ITS start. So a workload can be exactly in sync
 in the unit tree and still have an inspector enforcing the previous start's

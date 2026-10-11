@@ -37,6 +37,7 @@ from moatery.egress_ca import (
     ca_cert_path, ca_dir, denial_dir, leaf_dir, ca_key_path,
 )
 from config_parser import SOCKET_DIR
+from egress_policy import POLICY_DIRNAME
 
 # moatery's CA mint: the one place the CA's openssl invocation and its
 # refusals live, so the inspector that signs with the CA and the step that
@@ -350,6 +351,16 @@ def setup_workload_runtime_dir(pw, name: str):
     """
     sock_dir = SOCKET_DIR / name
     sock_dir.mkdir(parents=True, exist_ok=True)
+    # The inspector's and responder's inputs, beside the runtime dir and not
+    # in it: the runtime dir is the workload uid's, and anything in it QEMU
+    # could replace (egress_policy.POLICY_DIR). Root's, 0750 with the
+    # workload's group so the services read it; made before the relabel so
+    # it carries the same label they already read.
+    policy = SOCKET_DIR / POLICY_DIRNAME / name
+    policy.parent.mkdir(mode=0o755, exist_ok=True)
+    policy.mkdir(mode=0o750, exist_ok=True)
+    os.chown(policy, 0, pw.pw_gid)
+    os.chmod(policy, 0o750)
     if shutil.which("restorecon"):
         # Recursive and rooted at the parent: the parent is what the rule names,
         # and a wrong label there is inherited by every workload's subdirectory.

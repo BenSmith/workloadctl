@@ -771,7 +771,7 @@ def staleness():
     say("== staleness (T4/T5/T7) ==")
     name = "wlri-hosts"
     uid = uid_of(name)
-    policy = str(Path(VM_RUN_DIR) / name / INSPECT_POLICY)
+    policy = str(Path(VM_RUN_DIR) / "_policy" / name / INSPECT_POLICY)
 
     # --- T4: the digest reaches the status file, and it is the RIGHT one ---
     doc, detail = read_status(name, INSPECT_STATUS)
