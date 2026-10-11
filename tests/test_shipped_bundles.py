@@ -183,6 +183,19 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
             unit = (svc / "workload-otel-lgtm.service").read_text()
         self.assertRegex(unit, r'GF_AUTH_ANONYMOUS_ENABLED="?false"?(\s|$)')
 
+    def test_caddy_admin_api_is_off_the_host_loopback(self):
+        """Audit F10: caddy runs on the host network, so its default admin
+        listener, localhost:2019, is the host's loopback, where every
+        host-network workload could load a new config. Checked 2026-10-11
+        with the bundle's own image: with CADDY_ADMIN on a unix socket,
+        TCP 2019 is refused and `caddy reload` still works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            unit = (svc / "workload-caddy.service").read_text()
+        self.assertRegex(unit, r'CADDY_ADMIN="?unix//')
+
 
 class TestBaselineIsComparable(unittest.TestCase):
     """`just snapshot-baseline` is only useful if two renders differ *only* where

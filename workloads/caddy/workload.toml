@@ -53,6 +53,15 @@ required_files = [
 image = "registry.local/workloads/caddy:latest"
 pull = "missing"
 
+[container.environment]
+# The admin API on a unix socket inside the container, not Caddy's default
+# localhost:2019. This workload runs on the host network, where that port
+# is the host's loopback: every other host-network workload, and anything
+# reaching the host's loopback, could load a config with no credential,
+# and this Caddy fronts the sites and holds the homelab CA. `caddy reload`
+# through `workloadctl exec` inherits this and still works.
+CADDY_ADMIN = "unix//tmp/caddy-admin.sock"
+
 [container.health]
 # Liveness only — we don't care WHAT Caddy answered, just that it answered.
 # Using -f would fail on 4xx (e.g. unmatched Host on the sample Caddyfile),
