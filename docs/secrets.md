@@ -176,6 +176,7 @@ sudo systemd-creds encrypt --with-key=host+tpm2 --name=my-secret - /etc/credstor
 |----------|--------|--------------|-------------|
 | `/etc/credstore.encrypted/*` | Encrypted binary | root only (0600) | YES (survives reboot) |
 | `/run/credentials/{service}/` | Plain text | Service user only | NO (tmpfs, RAM only) |
+| `/run/user/<uid>/workload-secrets/<container>/` | Plain text, `[[secrets.files]]` only | The workload user; inside, its own container | NO (tmpfs, RAM only; rewritten at each start) |
 | Inside container | Plain text (env/file) | Container processes | NO (dies with container) |
 | `state/.local/share/containers/storage/` (`db.sql`, the container's `userdata/config.json`) | Plain text, `${SECRET:}` environment variables only | The workload user, root | YES (persistent disk) |
 
@@ -260,9 +261,14 @@ The `workload-generate` script (run as an early-boot oneshot service; see `docs/
    - TOML: `JELLYFIN_API_KEY = "${SECRET:jellyfin-api-key}"`
    - Becomes: `--env JELLYFIN_API_KEY=$(<${CREDENTIALS_DIRECTORY}/jellyfin-api-key)`
    - `${CREDENTIALS_DIRECTORY}` is set by systemd to `/run/credentials/workload-{name}.service`
-4. **Mounts** credential files into container:
+4. **Mounts** credential files into container, from a copy:
    - TOML: `{ credential = "tls-cert", path = "/config/cert.pem" }`
-   - Becomes: `--volume /run/credentials/workload-jellyfin.service/tls-cert:/config/cert.pem:ro`
+   - Becomes: `--volume /run/user/<uid>/workload-secrets/workload-jellyfin/tls-cert:/config/cert.pem:ro,Z`
+   - systemd's decrypted file is labelled `init_var_run_t`, which no container
+     may read, so `workload-write-env` copies each file credential at every
+     start into the workload's runtime dir (tmpfs, `0700`), and `:Z` relabels
+     the copy to that container's own SELinux category pair. `mode = "rw"`
+     mounts a writable copy, which the next start replaces.
 5. **Generates** ExecStart command with environment variables and volume mounts for `podman run`
 
 At service start time, the shell expands `$(<file)` to read the decrypted credentials.
