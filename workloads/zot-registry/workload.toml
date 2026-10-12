@@ -1,47 +1,37 @@
 # Zot Registry - OCI-native registry with pull-through cache and web UI
 # Caches images from docker.io, ghcr.io, quay.io, registry.fedoraproject.org, codeberg.org
-# Web UI: http://<host>:5050/
-# Registry API: http://<host>:5050/v2/
+# Zot listens on 127.0.0.1:5050 only; clients reach it through caddy at
+# https://registry.local/ (web UI and /v2/).
 #
 # Setup:
 #   1. Build the container:
 #        sudo workloadctl build zot-registry
 #
-#   2. Enable the workload (copies config.json template and starts Zot):
+#   2. Seed the config and the push password, then enable:
 #        sudo cp /usr/share/workloadctl/workloads/zot-registry/config.json /var/lib/workloads/zot-registry/data/config.json
+#        PW=$(openssl rand -base64 32); echo "$PW"   # keep it for CI
+#        printf %s "$PW" | podman run --rm -i registry.fedoraproject.org/fedora:44 \
+#          sh -c 'dnf -qy install httpd-tools >/dev/null && htpasswd -niB ci' \
+#          | sudo tee /var/lib/workloads/zot-registry/data/htpasswd
 #        sudo workloadctl enable zot-registry
+#
+#      Anyone may read; only `ci` may push, and only to the repositories
+#      config.json lists for it (CI's). Nobody can push to a mirrored name.
+#      CI holds the password as a sealed credential (seal-registry-auth).
 #
 #   3. (Optional) Edit the config before or after enabling:
 #        sudo nano /var/lib/workloads/zot-registry/data/config.json
 #        sudo workloadctl recreate zot-registry
 #
-#   4. Configure firewall to allow registry access:
-#        sudo firewall-cmd --add-port=5050/tcp --permanent
-#        sudo firewall-cmd --reload
-#
-#      Or restrict to local network only:
-#        sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="203.0.113.0/24" port port="5050" protocol="tcp" accept'
-#        sudo firewall-cmd --reload
-#
-# Web UI:
-#   Open http://<host>:5050/ to browse repos, tags, and image metadata.
-#
-# Configure clients to use as pull-through cache:
-#   Add to /etc/containers/registries.conf (or ~/.config/containers/registries.conf):
+# Configure clients to use it as a pull-through cache, in
+# /etc/containers/registries.conf.d/:
 #
 #     [[registry]]
 #     prefix = "docker.io"
 #     [[registry.mirror]]
-#     location = "<host>:5050"
-#     insecure = true
+#     location = "registry.local"
 #
-#     [[registry]]
-#     prefix = "ghcr.io"
-#     [[registry.mirror]]
-#     location = "<host>:5050"
-#     insecure = true
-#
-#     # ... repeat for quay.io, registry.fedoraproject.org, codeberg.org
+#     # ... repeat for ghcr.io, quay.io, registry.fedoraproject.org, codeberg.org
 #
 #   On first pull, Zot fetches from upstream and caches; subsequent pulls are local.
 #
@@ -57,6 +47,7 @@ name = "zot-registry"
 [setup]
 required_files = [
     { path = "./config.json", hint = "/usr/share/workloadctl/workloads/zot-registry/config.json" },
+    { path = "./htpasswd" },
 ]
 
 [container]
@@ -64,7 +55,7 @@ image = "localhost/zot-registry:latest"
 pull = "never"
 
 [container.health]
-cmd = "curl -fsS http://localhost:5050/v2/ > /dev/null || exit 1"
+cmd = "curl -fsS http://127.0.0.1:5050/v2/ > /dev/null || exit 1"
 interval = "30s"
 start_period = "10s"
 on_failure = "kill"
@@ -72,6 +63,7 @@ on_failure = "kill"
 [storage]
 volumes = [
     "./config.json:/etc/zot/config.json:ro",
+    "./htpasswd:/etc/zot/htpasswd:ro",
     "./registry:/var/lib/registry",
 ]
 
@@ -79,7 +71,7 @@ volumes = [
 userns = "keep-id"
 
 [network]
-# Host networking: zot listens directly on :5050, no port forwarding.
+# Host networking: zot listens directly on 127.0.0.1:5050, no port forwarding.
 # (Historically set to dodge a pasta failure that was misdiagnosed as a
 # rootless-pasta incompatibility; the real cause was a stale libpod pause
 # pinning a deleted PrivateTmp /tmp, now fixed in the generator's head units.

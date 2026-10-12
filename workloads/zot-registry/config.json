@@ -8,8 +8,41 @@
     "gcInterval": "24h"
   },
   "http": {
-    "address": "0.0.0.0",
-    "port": "5050"
+    "address": "127.0.0.1",
+    "port": "5050",
+    "auth": {
+      "htpasswd": { "path": "/etc/zot/htpasswd" },
+      "failDelay": 5
+    },
+    "accessControl": {
+      "repositories": {
+        "**": { "anonymousPolicy": ["read"] },
+        "workloads/**": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
+        "hypervisor-bootc": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
+        "hypervisor-amd": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
+        "hypervisor-nvidia": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
+        "fedora-bootc-minimal": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
+        "negativo-rpms": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        }
+      }
+    }
   },
   "log": {
     "level": "info"
