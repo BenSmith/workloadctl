@@ -283,10 +283,11 @@ def backup_impl(config, output: Path, *, no_stop: bool, quiet: bool, vm: bool) -
                         warn(f"  Warning: Credential '{cred_name}' not found, skipping")
 
             # Capture only the precious data/ subtree — for every substrate.
-            # state/ (podman graphroot, VM system.qcow2 + gen snapshots,
-            # .image-cache) is reconstructible from registries/Containerfiles
-            # and is deliberately never in backup scope, so no exclude filtering
-            # is needed on that axis: the archive is a copy of data/.
+            # state/ (podman graphroot, VM system.qcow2 + gen snapshots)
+            # and the VM image cache are reconstructible from registries,
+            # Containerfiles and image URLs, and are deliberately never in
+            # backup scope, so no exclude filtering is needed on that axis:
+            # the archive is a copy of data/.
             #
             # It stops at mount points, though. data/ is a plain local
             # directory in the normal case, which is what made a straight copy

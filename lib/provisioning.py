@@ -372,17 +372,18 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
         else:
             info(f"  Transferring '{image}' from root store to workload user store...")
 
-        # Use a temp file rather than a pipe.  podman save via pipe creates a
+        # Through a file rather than a pipe: podman save via pipe creates a
         # pipeDir in /var/tmp as root (mode 700); the target user can't access
-        # it, causing the load to fail with ENOENT on large images.  Writing to
-        # a file owned by the target user in their home dir sidesteps this.
-        fd, tmp_path = tempfile.mkstemp(suffix=".tar", dir=config.home_dir)
-        os.close(fd)
-        try:
-            os.chown(tmp_path, config.uid, config.gid)
-
+        # it, causing the load to fail with ENOENT on large images. The file
+        # is root's, in a root-only directory in the workload root: the home
+        # is the workload user's, and a name there may be a link it planted.
+        # The load reads it on stdin and copies it into its own TMPDIR.
+        with tempfile.TemporaryDirectory(
+                prefix=".image-transfer-",
+                dir=workload_root_dir(config.name)) as transfer:
+            archive = os.path.join(transfer, "image.tar")
             save_result = subprocess.run(
-                ["podman", "save", "--format", "docker-archive", "-o", tmp_path, image],
+                ["podman", "save", "--format", "docker-archive", "-o", archive, image],
                 capture_output=True,
             )
             if save_result.returncode != 0:
@@ -394,25 +395,22 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
             # TMPDIR=config.home_dir: Podman.run()/_build_cmd() has no env
             # override hook, so this bypasses the wrapper (see the class
             # docstring note on Podman.run()).
-            load_result = subprocess.run(
-                ["sudo", "-n", "-u", config.username,
-                 "-E", f"XDG_RUNTIME_DIR=/run/user/{config.uid}",
-                 "-E", f"HOME={config.home_dir}",
-                 "-E", f"TMPDIR={config.home_dir}",
-                 "podman", "load", "-i", tmp_path],
-                capture_output=True,
-                cwd=config.home_dir,
-            )
+            with open(archive, "rb") as stdin:
+                load_result = subprocess.run(
+                    ["sudo", "-n", "-u", config.username,
+                     "-E", f"XDG_RUNTIME_DIR=/run/user/{config.uid}",
+                     "-E", f"HOME={config.home_dir}",
+                     "-E", f"TMPDIR={config.home_dir}",
+                     "podman", "load"],
+                    stdin=stdin,
+                    capture_output=True,
+                    cwd=config.home_dir,
+                )
             if load_result.returncode != 0:
                 raise ImageTransferError(
                     f"Error: Failed to transfer image '{image}': "
                     f"{load_result.stderr.decode(errors='replace')}",
                 )
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except FileNotFoundError:
-                pass
         info(f"  Image '{image}' transferred successfully")
         if user_image_id:
             active = subprocess.run(

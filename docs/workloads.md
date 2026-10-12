@@ -1102,7 +1102,7 @@ Each VM workload keeps its disks in `/var/lib/workloads/<name>/`:
     system.qcow2.gen-1  ← previous generation (created by `update`)
     nvram.fd            ← per-workload UEFI NVRAM (copy of OVMF_VARS.fd)
     .ssh/id_ed25519     ← workload SSH keypair (injected via cloud-init)
-    .image-cache/       ← downloaded image cache (cloud_image_url source)
+  .image-cache/         ← downloaded image cache (cloud_image_url source), root's
   data/                 ← precious; captured by `backup`
     data.qcow2          ← secondary data disk (created if data_disk_size is set)
 ```
@@ -1918,7 +1918,7 @@ sudo workloadctl update fedora-vm
 
 The old disk is rotated to `system.qcow2.gen-N` before the new disk is written. `vm.rollback_keep` (default 2) counts the *older* generations kept in addition to the one just rotated, so the total number of retained `system.qcow2.gen-*` files is `rollback_keep + 1` (default 3).
 
-For `cloud_image_url`, the download is cached at `.image-cache/<filename>` and the cache is keyed by `cloud_image_checksum`. `update` re-downloads only when the cached file fails the configured checksum (or is missing) — bumping the upstream image means changing both `cloud_image_url` and `cloud_image_checksum` in the TOML first. For `local_image`, `update` re-copies the file every run.
+For `cloud_image_url`, the download is cached at `/var/lib/workloads/<name>/.image-cache/<filename>` and the cache is keyed by `cloud_image_checksum`. `update` re-downloads only when the cached file fails the configured checksum (or is missing) — bumping the upstream image means changing both `cloud_image_url` and `cloud_image_checksum` in the TOML first. For `local_image`, `update` re-copies the file every run.
 
 > **No auto-rollback.** Container `update` watches health checks and auto-rolls back on failure. VM `update` does **not** verify the guest after restart: if the new disk fails to boot, you must run `sudo workloadctl rollback <name>` manually. Use the serial console (`workloadctl shell <name>`) to diagnose before deciding.
 

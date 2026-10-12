@@ -262,6 +262,46 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         self.assertEqual(cert.read_bytes(), before)
         self.assertFalse(ca_key_path(self.state).exists())
 
+    def test_a_linked_ca_dir_is_refused_not_minted_into(self):
+        # F34: the workload user owns state/, so state/ca may be a link; the
+        # CA is minted in the workload root and copied in by the no-follow
+        # walk, which refuses the link.
+        outside = Path(self.tmp) / "outside"
+        outside.mkdir()
+        (self.state / "ca").symlink_to(outside)
+        chowned = []
+        with mock.patch.object(self.mod.os, "chown",
+                               lambda path, *a, **k: chowned.append(path)):
+            with self.assertRaises(RuntimeError):
+                self.mod.generate_egress_ca(self.pw, "myvm")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse([p for p in chowned
+                          if Path(p).resolve().is_relative_to(outside)])
+
+    def test_a_dangling_link_at_the_key_is_half_a_ca_not_a_target(self):
+        target = Path(self.tmp) / "new-key"
+        (self.state / "ca").mkdir()
+        ca_key_path(self.state).symlink_to(target)
+        with self.assertRaises(RuntimeError):
+            self.mod.generate_egress_ca(self.pw, "myvm")
+        self.assertFalse(target.exists())
+
+    @unittest.skipUnless(HAVE_OPENSSL, "needs openssl")
+    def test_the_mint_runs_outside_the_workload_users_tree(self):
+        argv = []
+        real_run = subprocess.run
+
+        def spy(cmd, **kw):
+            argv.append(cmd)
+            return real_run(cmd, **kw)
+
+        with mock.patch.object(self.mod.subprocess, "run", spy):
+            self.mod.generate_egress_ca(self.pw, "myvm")
+        mint_state = Path(argv[0][argv[0].index("--state-dir") + 1])
+        self.assertEqual(mint_state.parent, Path(self.tmp))
+        self.assertNotEqual(mint_state, self.state)
+        self.assertTrue(ca_key_path(self.state).is_file())
+
     def test_a_mint_that_cannot_run_raises_naming_it(self):
         with mock.patch.object(self.mod.subprocess, "run",
                                side_effect=FileNotFoundError("no such file")):
@@ -311,6 +351,17 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
             d = self.state / name
             self.assertTrue(d.is_dir(), name)
             self.assertEqual(d.stat().st_mode & 0o777, 0o700, name)
+
+    def test_a_linked_leaf_cache_is_refused_not_chowned(self):
+        outside = Path(self.tmp) / "outside"
+        outside.mkdir()
+        (self.state / "leaves").symlink_to(outside)
+        with mock.patch.object(self.mod.shutil, "which", return_value=None), \
+             mock.patch.object(self.mod.os, "fchown") as fchown:
+            with self.assertRaises(RuntimeError):
+                self.mod.provision_egress_pki_dirs(self.pw, "myvm")
+        self.assertTrue((self.state / "leaves").is_symlink())
+        self.assertEqual(fchown.call_count, 1)  # ca/ alone, before leaves/
 
     def test_it_relabels_each_directory_with_dash_f(self):
         # -F for the same reason apply_vm_fcontext needs it: svirt_image_t is a

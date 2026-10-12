@@ -18,17 +18,20 @@ import os
 import re
 import stat
 import subprocess
+import tempfile
 from pathlib import Path, PurePosixPath
 
 import ensure_common
 from config_parser import parse_volume_spec, workload_root_dir
-from ensure_common import _descend_nofollow, _provision_dir_secure
-from vm_defs import VM_DEFAULT_GUEST_USER, VM_GUEST_HOME_BASE
-from workload_lib import (
-    expand_volume_path,
-    replace_file_atomically,
-    workload_state_dir,
+from ensure_common import (
+    _descend_nofollow,
+    _install_file_nofollow,
+    _provision_dir_secure,
+    _read_file_nofollow,
+    _write_file_nofollow,
 )
+from vm_defs import VM_DEFAULT_GUEST_USER, VM_GUEST_HOME_BASE
+from workload_lib import expand_volume_path, workload_state_dir
 
 
 def _ssh_keygen(key_path: Path, comment: str, what: str):
@@ -48,17 +51,56 @@ def _ssh_keygen(key_path: Path, comment: str, what: str):
     )
     if result.returncode == 0:
         return
-    if key_path.exists():
-        # The key appeared after the caller's exists() guard, so ssh-keygen
-        # refused to overwrite it (it wants an interactive "Overwrite?"). Only a
-        # concurrent provisioning run can have put it there, and it is as good a
-        # key as the one we were about to write — take it. ensure_user_lock()
-        # should make this unreachable; it stays because the alternative to
-        # losing this race gracefully is failing an `enable` for no reason.
-        return
     said = " / ".join(s.strip() for s in (result.stdout, result.stderr) if s.strip())
     raise RuntimeError(
         f"ssh-keygen ({what}) failed: {said or f'no output, exit {result.returncode}'}")
+
+
+def _anchor(pw) -> Path:
+    """The home's parent, root's: where the no-follow walks start."""
+    return Path(pw.pw_dir).parent
+
+
+def _read_ssh_file(pw, name: str) -> str:
+    """~/.ssh/NAME's text, or '' if it is missing or not a plain file: it
+    goes into the seed, which the workload user reads back, so a link at
+    the name is not followed."""
+    data = _read_file_nofollow(_anchor(pw), Path(pw.pw_dir) / ".ssh" / name)
+    return data.decode("utf-8", "replace") if data is not None else ""
+
+
+def _generate_keypair(pw, key_path: Path, comment: str, what: str) -> bool:
+    """Generate an Ed25519 keypair at `key_path` (in ~/.ssh) unless one is
+    there; True if this call made it.
+
+    ~/.ssh is the workload user's, so ssh-keygen writes into a root-only
+    directory in the workload root and the pair is linked into place by the
+    no-follow walk: a link at either name is never written through. A key
+    that appears meanwhile (ensure_user_lock() should make that unreachable)
+    is kept, being as good as ours.
+    """
+    anchor = _anchor(pw)
+    ssh_dir = key_path.parent
+    if not _provision_dir_secure(anchor, ssh_dir, pw.pw_uid, pw.pw_gid,
+                                 0o700):
+        raise RuntimeError(f"cannot provision {ssh_dir} safely")
+    if os.path.lexists(key_path):
+        return False
+    with tempfile.TemporaryDirectory(prefix=".keygen-", dir=anchor) as tmp:
+        made = Path(tmp) / key_path.name
+        _ssh_keygen(made, comment, what)
+        made_pub = made.with_suffix(".pub")
+        os.chown(made, pw.pw_uid, pw.pw_gid)
+        os.chmod(made, 0o600)
+        os.chown(made_pub, pw.pw_uid, pw.pw_gid)
+        os.chmod(made_pub, 0o644)
+        if not _install_file_nofollow(made, anchor, key_path, replace=False):
+            return False
+        if not _install_file_nofollow(made_pub, anchor,
+                                      key_path.with_suffix(".pub"),
+                                      replace=True):
+            raise RuntimeError(f"cannot install {key_path}.pub safely")
+    return True
 
 
 def generate_ssh_keypair(pw, name: str):
@@ -69,33 +111,15 @@ def generate_ssh_keypair(pw, name: str):
     a VM with a passwordless sudoer and no way for `workloadctl exec` to SSH
     in. Better to fail provisioning loudly.
     """
-    home_path = Path(pw.pw_dir)
-    ssh_dir = home_path / ".ssh"
-    ssh_dir.mkdir(mode=0o700, exist_ok=True)
-    os.chown(ssh_dir, pw.pw_uid, pw.pw_gid)
-
-    key_path = ssh_dir / "id_ed25519"
-    if key_path.exists():
-        return  # already generated
-
-    _ssh_keygen(key_path, f"workload-{name}@hypervisor", "client key")
-
-    os.chown(key_path, pw.pw_uid, pw.pw_gid)
-    os.chmod(key_path, 0o600)
-    pub_path = key_path.with_suffix(".pub")
-    if pub_path.exists():
-        os.chown(pub_path, pw.pw_uid, pw.pw_gid)
-        os.chmod(pub_path, 0o644)
-    ensure_common.log(f"  Generated SSH keypair: {key_path}")
+    key_path = Path(pw.pw_dir) / ".ssh" / "id_ed25519"
+    if _generate_keypair(pw, key_path, f"workload-{name}@hypervisor",
+                         "client key"):
+        ensure_common.log(f"  Generated SSH keypair: {key_path}")
 
 
 def _read_ssh_pubkey(pw) -> str:
     """Return the workload's public SSH key, or '' if not generated yet."""
-    pub_path = Path(pw.pw_dir) / ".ssh" / "id_ed25519.pub"
-    try:
-        return pub_path.read_text().strip()
-    except OSError:
-        return ""
+    return _read_ssh_file(pw, "id_ed25519.pub").strip()
 
 
 def _validated_guest_user(vm_cfg) -> str:
@@ -265,41 +289,21 @@ def generate_vm_host_keypair(pw, name: str):
     Idempotent: generated once and reused across reseeds so the pin stays stable
     — do NOT churn it, that would invalidate the pin.
     """
-    ssh_dir = Path(pw.pw_dir) / ".ssh"
-    ssh_dir.mkdir(mode=0o700, exist_ok=True)
-    os.chown(ssh_dir, pw.pw_uid, pw.pw_gid)
-
-    key_path = ssh_dir / "vm_host_ed25519_key"
-    if key_path.exists():
-        return  # already generated — keep the pin stable
-
-    _ssh_keygen(key_path, f"workload-{name}-host@hypervisor", "VM host key")
-
-    os.chown(key_path, pw.pw_uid, pw.pw_gid)
-    os.chmod(key_path, 0o600)
-    pub_path = key_path.with_suffix(".pub")
-    if pub_path.exists():
-        os.chown(pub_path, pw.pw_uid, pw.pw_gid)
-        os.chmod(pub_path, 0o644)
-    ensure_common.log(f"  Generated VM host keypair: {key_path}")
+    # Kept once there, so the pin stays stable.
+    key_path = Path(pw.pw_dir) / ".ssh" / "vm_host_ed25519_key"
+    if _generate_keypair(pw, key_path, f"workload-{name}-host@hypervisor",
+                         "VM host key"):
+        ensure_common.log(f"  Generated VM host keypair: {key_path}")
 
 
 def _read_vm_host_private_key(pw) -> str:
     """Return the PEM of the VM host private key, or '' if not generated yet."""
-    priv = Path(pw.pw_dir) / ".ssh" / "vm_host_ed25519_key"
-    try:
-        return priv.read_text()
-    except OSError:
-        return ""
+    return _read_ssh_file(pw, "vm_host_ed25519_key")
 
 
 def _read_vm_host_pubkey(pw) -> str:
     """Return the VM host public key line, or '' if not generated yet."""
-    pub = Path(pw.pw_dir) / ".ssh" / "vm_host_ed25519_key.pub"
-    try:
-        return pub.read_text().strip()
-    except OSError:
-        return ""
+    return _read_ssh_file(pw, "vm_host_ed25519_key.pub").strip()
 
 
 def write_vm_known_hosts(pw, name: str, host_pubkey: str):
@@ -311,14 +315,13 @@ def write_vm_known_hosts(pw, name: str, host_pubkey: str):
     """
     known_hosts = Path(pw.pw_dir) / ".ssh" / "vm_known_hosts"
     line = f"{name} {host_pubkey}\n"
-    try:
-        if known_hosts.exists() and known_hosts.read_text() == line:
-            return
-    except OSError:
-        pass
+    if _read_ssh_file(pw, "vm_known_hosts") == line:
+        return
     # Atomic: the CLI reads this file with StrictHostKeyChecking=yes and takes no
     # lock, so a `vm ssh` running concurrently with a restart could otherwise
-    # read the pin mid-rewrite and fail against a truncated line.
-    replace_file_atomically(known_hosts, line, default_mode=0o644,
-                            owner=(pw.pw_uid, pw.pw_gid))
+    # read the pin mid-rewrite and fail against a truncated line. Renamed over
+    # the name, so a link there is replaced, not written through.
+    if not _write_file_nofollow(_anchor(pw), known_hosts, line.encode(),
+                                pw.pw_uid, pw.pw_gid, 0o644):
+        raise RuntimeError(f"cannot write {known_hosts} safely")
     ensure_common.log(f"  Pinned VM host key in {known_hosts}")

@@ -26,6 +26,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -426,22 +427,30 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
     one."""
 
     def _argv(self):
+        """generate_egress_ca against a mint double that writes moatery's
+        two files where it is told: the argv it ran, and the state dir."""
         import ensure_common
-        state = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, state, ignore_errors=True)
+        from moatery.egress_ca import ca_cert_path, ca_key_path
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        state = root / "state"
+        state.mkdir()
         pw = type("pw", (), {"pw_uid": os.getuid(), "pw_gid": os.getgid()})
         ran = []
 
         def fake_run(argv, **kwargs):
             ran.append(argv)
-            raise OSError("stop here")
+            minted = argv[argv.index("--state-dir") + 1]
+            ca_key_path(minted).parent.mkdir(parents=True)
+            ca_key_path(minted).write_text("KEY")
+            ca_cert_path(minted).write_text("CERT")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with mock.patch.object(ensure_common, "workload_state_dir",
                                return_value=state), \
                 mock.patch.object(ensure_common.os, "chown"), \
                 mock.patch.object(ensure_common.subprocess, "run", fake_run):
-            with self.assertRaises(RuntimeError):
-                ensure_common.generate_egress_ca(pw, "web")
+            ensure_common.generate_egress_ca(pw, "web")
         self.assertEqual(len(ran), 1)
         return ran[0], state
 
@@ -453,17 +462,24 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
         self.assertEqual(Path(argv[0]).parent,
                          Path("/usr/libexec/moatery"))
         flags = {argv[i]: argv[i + 1] for i in range(1, len(argv), 2)}
-        self.assertEqual(flags, {"--name": "web", "--state-dir": str(state)})
+        self.assertEqual(set(flags), {"--name", "--state-dir"})
+        self.assertEqual(flags["--name"], "web")
+        # Minted in a root-only directory in the workload root, not in the
+        # workload user's state/ (audit F34).
+        self.assertEqual(Path(flags["--state-dir"]).parent, state.parent)
 
-    def test_the_state_dir_is_the_inspectors(self):
-        """The CA the mint writes is the one the inspector signs with, so
-        the two are handed one directory."""
+    def test_the_ca_the_mint_writes_is_where_the_inspector_reads(self):
+        """The CA the mint writes is the one the inspector signs with: it
+        lands under moatery's names in the inspector's state dir."""
         from gen_egress import inspect_listener_command
+        from moatery.egress_ca import ca_cert_path, ca_key_path
         argv, state = self._argv()
-        mint_dir = argv[argv.index("--state-dir") + 1]
         with mock.patch("gen_egress.workload_state_dir", return_value=state):
             cmd = inspect_listener_command("web", 10004)
-        self.assertEqual(cmd[cmd.index("--state-dir") + 1], mint_dir)
+        inspector_state = cmd[cmd.index("--state-dir") + 1]
+        self.assertEqual(inspector_state, str(state))
+        self.assertEqual(ca_key_path(inspector_state).read_text(), "KEY")
+        self.assertEqual(ca_cert_path(inspector_state).read_text(), "CERT")
 
     def test_the_mint_takes_each_handed_flag_and_requires_it(self):
         taken = _program_flags(MINT)

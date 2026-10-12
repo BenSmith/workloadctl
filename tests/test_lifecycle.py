@@ -1265,43 +1265,59 @@ image = "example.com/helper:latest"
                 with self.assertRaises(provisioning.ImageTransferError):
                     provisioning.transfer_image(cfg, manager)
 
+    def _transfer(self, cfg, results, pull, root_id="new-id",
+                  user_id="old-id"):
+        """transfer_one_image with podman doubled: `results` are the save,
+        load and is-active answers in turn; the save writes its archive.
+        Returns the run mock and the workload root used."""
+        manager = MagicMock()
+        manager.podman.return_value.image_id.return_value = user_id
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        results = iter(results)
+
+        def run(argv, **kw):
+            res = next(results)
+            if "save" in argv and res.returncode == 0:
+                Path(argv[argv.index("-o") + 1]).write_bytes(b"archive")
+            return res
+
+        with patch.object(type(cfg), 'uid', new_callable=lambda: property(lambda _: 12345)), \
+             patch.object(type(cfg), 'gid', new_callable=lambda: property(lambda _: 12345)), \
+             patch.object(provisioning.Podman, 'for_root') as for_root, \
+             patch.object(provisioning, 'workload_root_dir', return_value=root), \
+             patch.object(provisioning.subprocess, 'run', side_effect=run) as run_mock:
+            for_root.return_value.image_id.return_value = root_id
+            provisioning.transfer_one_image(cfg, manager, "test-wl",
+                                            "example.com/test:latest", pull)
+        return run_mock, root
+
     def test_transfer_one_image_needs_transfer_when_stale(self):
         with _cfg(_HOST_TOML, 'test-wl') as cfg:
-            manager = MagicMock()
-            manager.podman.return_value.image_id.return_value = "old-id"
-            with patch.object(type(cfg), 'uid', new_callable=lambda: property(lambda _: 12345)):
-                with patch.object(type(cfg), 'gid', new_callable=lambda: property(lambda _: 12345)):
-                    with patch.object(provisioning.Podman, 'for_root') as for_root:
-                        for_root.return_value.image_id.return_value = "new-id"
-                        with patch.object(provisioning.tempfile, 'mkstemp', return_value=(99, "/tmp/fake.tar")):
-                            with patch.object(provisioning.os, 'close'):
-                                with patch.object(provisioning.os, 'chown'):
-                                    with patch.object(provisioning.os, 'unlink'):
-                                        with patch.object(provisioning.subprocess, 'run') as run_mock:
-                                            save_res = MagicMock(returncode=0)
-                                            load_res = MagicMock(returncode=0)
-                                            active_res = MagicMock(returncode=1)
-                                            run_mock.side_effect = [save_res, load_res, active_res]
-                                            provisioning.transfer_one_image(cfg, manager, "test-wl", "example.com/test:latest", "never")
+            run_mock, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
+                      MagicMock(returncode=1)], "never")
             self.assertEqual(run_mock.call_count, 3)
+
+    def test_the_archive_is_roots_and_never_in_the_home(self):
+        # The home is the workload user's, and a name there may be a link it
+        # planted: the archive is saved in a root-only directory in the
+        # workload root, and the load reads it on stdin.
+        with _cfg(_HOST_TOML, 'test-wl') as cfg:
+            run_mock, root = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
+                      MagicMock(returncode=1)], "never")
+            save, load = run_mock.call_args_list[:2]
+            archive = Path(save.args[0][save.args[0].index("-o") + 1])
+            self.assertEqual(archive.parent.parent, root)
+            self.assertNotIn("-i", load.args[0])
+            self.assertEqual(load.kwargs["stdin"].name, str(archive))
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_transfer_one_image_save_failure_exits(self):
         with _cfg(_HOST_TOML, 'test-wl') as cfg:
-            manager = MagicMock()
-            manager.podman.return_value.image_id.return_value = ""
-            with patch.object(type(cfg), 'uid', new_callable=lambda: property(lambda _: 12345)):
-                with patch.object(type(cfg), 'gid', new_callable=lambda: property(lambda _: 12345)):
-                    with patch.object(provisioning.Podman, 'for_root') as for_root:
-                        for_root.return_value.image_id.return_value = "new-id"
-                        with patch.object(provisioning.tempfile, 'mkstemp', return_value=(99, "/tmp/fake.tar")):
-                            with patch.object(provisioning.os, 'close'):
-                                with patch.object(provisioning.os, 'chown'):
-                                    with patch.object(provisioning.os, 'unlink'):
-                                        with patch.object(provisioning.subprocess, 'run') as run_mock:
-                                            save_res = MagicMock(returncode=1, stderr=b"boom")
-                                            run_mock.return_value = save_res
-                                            with self.assertRaises(provisioning.ImageTransferError):
-                                                provisioning.transfer_one_image(cfg, manager, "test-wl", "example.com/test:latest", "never")
+            with self.assertRaises(provisioning.ImageTransferError):
+                self._transfer(cfg, [MagicMock(returncode=1, stderr=b"boom")],
+                               "never", user_id="")
 
     def test_transfer_one_image_missing_everywhere_pull_never_errors(self):
         with _cfg(_HOST_TOML, 'test-wl') as cfg:
@@ -1324,22 +1340,10 @@ image = "example.com/helper:latest"
 
     def test_transfer_one_image_root_override_transfers_for_pull_missing(self):
         with _cfg(_CONTAINER_TOML + "\n[build]\n", 'test-wl') as cfg:
-            manager = MagicMock()
-            manager.podman.return_value.image_id.return_value = "registry-id"
-            with patch.object(type(cfg), 'uid', new_callable=lambda: property(lambda _: 12345)):
-                with patch.object(type(cfg), 'gid', new_callable=lambda: property(lambda _: 12345)):
-                    with patch.object(provisioning.Podman, 'for_root') as for_root:
-                        for_root.return_value.image_id.return_value = "local-build-id"
-                        with patch.object(provisioning.tempfile, 'mkstemp', return_value=(99, "/tmp/fake.tar")):
-                            with patch.object(provisioning.os, 'close'):
-                                with patch.object(provisioning.os, 'chown'):
-                                    with patch.object(provisioning.os, 'unlink'):
-                                        with patch.object(provisioning.subprocess, 'run') as run_mock:
-                                            save_res = MagicMock(returncode=0)
-                                            load_res = MagicMock(returncode=0)
-                                            active_res = MagicMock(returncode=1)
-                                            run_mock.side_effect = [save_res, load_res, active_res]
-                                            provisioning.transfer_one_image(cfg, manager, "test-wl", "example.com/test:latest", "missing")
+            run_mock, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
+                      MagicMock(returncode=1)], "missing",
+                root_id="local-build-id", user_id="registry-id")
             self.assertEqual(run_mock.call_count, 3)
 
 

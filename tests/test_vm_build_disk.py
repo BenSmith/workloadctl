@@ -433,10 +433,17 @@ class TestMain(unittest.TestCase):
             self.assertEqual(self._run_main(["demo"], '[vm]\nlocal_image = "/x.qcow2"\n'), 0)
         build.assert_not_called()
 
+    @staticmethod
+    def _writes(data):
+        """A builder double that writes `data` at the disk path it is given."""
+        return lambda *args: Path(args[-1]).write_bytes(data)
+
     def test_local_image_build_invoked(self):
-        with mock.patch.object(vm_disk_build, "build_from_local_image") as build:
+        with mock.patch.object(vm_disk_build, "build_from_local_image",
+                               side_effect=self._writes(b"built")) as build:
             self.assertEqual(self._run_main(["demo"], '[vm]\nlocal_image = "/x.qcow2"\n'), 0)
         build.assert_called_once()
+        self.assertEqual((self.state / "system.qcow2").read_bytes(), b"built")
 
     def test_build_failure_restores_generation(self):
         self.state.mkdir(parents=True)
@@ -451,11 +458,51 @@ class TestMain(unittest.TestCase):
         self.assertFalse((self.state / "system.qcow2.gen-1").exists())
 
     def test_data_disk_created_when_configured(self):
-        with mock.patch.object(vm_disk_build, "build_from_local_image"), \
-             mock.patch.object(vm_disk_build, "create_data_disk") as cdd:
+        self.data.mkdir()
+        with mock.patch.object(vm_disk_build, "build_from_local_image",
+                               side_effect=self._writes(b"built")), \
+             mock.patch.object(vm_disk_build, "create_data_disk",
+                               side_effect=lambda d, size: (
+                                   Path(d) / "data.qcow2").write_bytes(b"data")
+                               ) as cdd:
             self._run_main(["demo"],
                            '[vm]\nlocal_image = "/x.qcow2"\ndata_disk_size = "5G"\n')
         cdd.assert_called_once()
+        self.assertEqual((self.data / "data.qcow2").read_bytes(), b"data")
+
+    def test_a_link_at_the_system_disk_is_replaced_not_written_through(self):
+        # The workload user owns state/: the disk is built in the workload
+        # root and renamed over the name, never written through a link.
+        canary = Path(self.tmp) / "canary"
+        self.state.mkdir()
+        (self.state / "system.qcow2").symlink_to(canary)
+        with mock.patch.object(vm_disk_build, "build_from_local_image",
+                               side_effect=self._writes(b"built")) as build:
+            self.assertEqual(self._run_main(["demo"], '[vm]\nlocal_image = "/x.qcow2"\n'), 0)
+        self.assertFalse(canary.exists())
+        self.assertFalse((self.state / "system.qcow2").is_symlink())
+        self.assertFalse(Path(build.call_args.args[-1]).is_relative_to(
+            self.state))
+
+    def test_a_link_at_the_data_disk_is_left_alone_not_written_through(self):
+        canary = Path(self.tmp) / "canary"
+        self.data.mkdir()
+        (self.data / "data.qcow2").symlink_to(canary)
+        with mock.patch.object(vm_disk_build, "build_from_local_image",
+                               side_effect=self._writes(b"built")), \
+             mock.patch.object(vm_disk_build.subprocess, "run") as run:
+            self._run_main(["demo"],
+                           '[vm]\nlocal_image = "/x.qcow2"\ndata_disk_size = "5G"\n')
+        run.assert_not_called()
+        self.assertFalse(canary.exists())
+        self.assertTrue((self.data / "data.qcow2").is_symlink())
+
+    def test_the_image_cache_is_the_workload_roots_not_states(self):
+        with mock.patch.object(vm_disk_build, "build_from_cloud_image",
+                               side_effect=self._writes(b"built")) as build:
+            self._run_main(["demo"], '[vm]\ncloud_image_url = "https://x/i.qcow2"\n'
+                                     'cloud_image_checksum = "sha256:00"\n')
+        self.assertEqual(Path(build.call_args.args[2]), Path(self.tmp))
 
 
 if __name__ == "__main__":

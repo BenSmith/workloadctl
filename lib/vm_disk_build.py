@@ -11,8 +11,10 @@ import os
 import pwd
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
+from ensure_common import _install_file_nofollow
 from helper_main import log
 from vm_disk_generations import rotate_generations
 from vm_image_fetch import download_cloud_image
@@ -169,6 +171,13 @@ def build_disks(name: str, update: bool):
     """Build what `name` is missing: the system disk unless it exists (or
     `update` says rebuild it), and the data disk if [vm] sizes one.
 
+    The workload user owns state/ and data/, and any name in them may be a
+    link it planted. So the build happens in the workload root, which is
+    root's: the image cache and bootc's output there, each disk made in a
+    root-only directory beside them and moved into place by the no-follow
+    walk. The system disk is renamed over its name; the data disk, the
+    precious one, is linked in only where nothing is.
+
     Raises on a failed system build, after restoring the rotated generation.
     """
     log(f"Building system disk for VM workload: {name}")
@@ -176,41 +185,52 @@ def build_disks(name: str, update: bool):
     vm_cfg = config.get("vm", {})
     home_dir = workload_state_dir(name)
     home_dir.mkdir(parents=True, exist_ok=True)
+    root_dir = home_dir.parent
     system_disk = home_dir / "system.qcow2"
 
-    if system_disk.exists() and not update:
-        # Fall through to the data disk: a data_disk_size added after first
-        # enable still has to create data.qcow2 on the next start.
-        log("  system.qcow2 already exists; skipping system disk build (use --update to rebuild)")
-    else:
-        rotated_to: Path | None = None
-        if update and system_disk.exists():
-            rotated_to = rotate_generations(home_dir, vm_cfg.get("rollback_keep", 2))
-        try:
-            build_system_disk(vm_cfg, home_dir, system_disk)
-        except Exception:
-            system_disk.unlink(missing_ok=True)
-            if rotated_to is not None and rotated_to.exists():
-                log(f"  Restoring previous generation: {rotated_to.name} → system.qcow2")
-                rotated_to.rename(system_disk)
-            raise
-        _chown_to_workload(system_disk, name)
+    with tempfile.TemporaryDirectory(prefix=".disk-build-",
+                                     dir=root_dir) as work:
+        work = Path(work)
+        if system_disk.exists() and not update:
+            # Fall through to the data disk: a data_disk_size added after
+            # first enable still has to create data.qcow2 on the next start.
+            log("  system.qcow2 already exists; skipping system disk build (use --update to rebuild)")
+        else:
+            rotated_to: Path | None = None
+            if update and system_disk.exists():
+                rotated_to = rotate_generations(home_dir, vm_cfg.get("rollback_keep", 2))
+            built = work / system_disk.name
+            try:
+                build_system_disk(vm_cfg, root_dir, built)
+                # The Fedora Cloud qcow2 is ~5GB; builds that write large
+                # artifacts need more. cloud-init's growpart expands the
+                # partition on first boot.
+                system_disk_size = vm_cfg.get("system_disk_size", "")
+                if system_disk_size:
+                    log(f"  Resizing system disk to {system_disk_size}...")
+                    subprocess.run(
+                        ["qemu-img", "resize", str(built), system_disk_size],
+                        check=True,
+                    )
+                    log(f"  System disk resized to {system_disk_size}")
+                _chown_to_workload(built, name)
+                if not _install_file_nofollow(built, root_dir, system_disk,
+                                              replace=True):
+                    raise RuntimeError(f"cannot install {system_disk} safely")
+            except Exception:
+                if rotated_to is not None and rotated_to.exists():
+                    log(f"  Restoring previous generation: {rotated_to.name} → system.qcow2")
+                    rotated_to.rename(system_disk)
+                raise
 
-        # The Fedora Cloud qcow2 is ~5GB; builds that write large artifacts
-        # need more. cloud-init's growpart expands the partition on first boot.
-        system_disk_size = vm_cfg.get("system_disk_size", "")
-        if system_disk_size:
-            log(f"  Resizing system disk to {system_disk_size}...")
-            subprocess.run(
-                ["qemu-img", "resize", str(system_disk), system_disk_size],
-                check=True,
-            )
-            log(f"  System disk resized to {system_disk_size}")
-
-    data_disk_size = vm_cfg.get("data_disk_size", "")
-    if data_disk_size:
-        data_dir = workload_data_dir(name)
-        create_data_disk(data_dir, data_disk_size)
-        _chown_to_workload(data_dir / "data.qcow2", name)
+        data_disk_size = vm_cfg.get("data_disk_size", "")
+        data_disk = workload_data_dir(name) / "data.qcow2"
+        if data_disk_size and not os.path.lexists(data_disk):
+            create_data_disk(work, data_disk_size)
+            _chown_to_workload(work / data_disk.name, name)
+            if not _install_file_nofollow(work / data_disk.name, root_dir,
+                                          data_disk, replace=False):
+                log(f"  WARNING: {data_disk} not installed: something is "
+                    f"at its name, or a component on the way is unsafe")
 
     log(f"Build complete for {name}")

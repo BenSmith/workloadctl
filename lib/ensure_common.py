@@ -29,6 +29,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 import deployment
@@ -345,6 +346,42 @@ def _read_file_nofollow(root_dir, host_path, limit: int = 1 << 20):
         os.close(fd)
 
 
+def _install_file_nofollow(src, root_dir, host_path, *,
+                           replace: bool) -> bool:
+    """Move the file `src`, in a root-only directory on the same
+    filesystem, to `host_path` below `root_dir`, without following a link.
+
+    The directory is reached by `_descend_nofollow`. With `replace`, a
+    rename over whatever is at the name: a link there is replaced, not
+    written through. Without it, a hard link that fails if anything is
+    there. Returns True, or False if a component was unsafe or, without
+    `replace`, the name was taken.
+    """
+    host_path = Path(host_path)
+    try:
+        parts = host_path.parent.relative_to(root_dir).parts
+    except ValueError:
+        return False
+    if ".." in parts:
+        return False
+    dir_fd = _descend_nofollow(root_dir, parts, f"install {host_path}")
+    if dir_fd is None:
+        return False
+    try:
+        if replace:
+            os.rename(src, host_path.name, dst_dir_fd=dir_fd)
+            return True
+        try:
+            os.link(src, host_path.name, dst_dir_fd=dir_fd,
+                    follow_symlinks=False)
+        except FileExistsError:
+            return False
+        os.unlink(src)
+        return True
+    finally:
+        os.close(dir_fd)
+
+
 def restore_selinux_labels(name):
     """Restore SELinux labels on the workload's whole tree (state/ + data/).
 
@@ -461,6 +498,26 @@ def setup_workload_runtime_dir(pw, name: str):
     log(f"  Socket directory: {sock_dir}")
 
 
+def _mint_ca_into(name: str, state_dir: Path) -> None:
+    """Run the mint against `state_dir`, or raise with what it said."""
+    try:
+        result = subprocess.run(
+            [CA_MINT_BIN, "--name", name, "--state-dir", str(state_dir)],
+            capture_output=True, text=True,
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f"moat-mint-ca (egress CA) could not run: {exc}") from exc
+    if result.returncode != 0:
+        # Both streams, as _ssh_keygen reports them: a program that could
+        # not start says so on either, and one of them is empty.
+        said = " / ".join(s.strip() for s in (result.stdout, result.stderr)
+                          if s.strip())
+        raise RuntimeError(
+            f"moat-mint-ca (egress CA) failed: "
+            f"{said or f'no output, exit {result.returncode}'}")
+
+
 def generate_egress_ca(pw, name: str):
     """Mint this workload's egress CA if absent, or raise with the mint's words.
 
@@ -486,42 +543,43 @@ def generate_egress_ca(pw, name: str):
     why removing them here is safe.
     """
     state_dir = workload_state_dir(name)
+    # The workload user owns state/ and state/ca, so any name there may be a
+    # link it planted. The CA is minted in a root-only directory in the
+    # workload root (state/'s parent, root's) and copied in without
+    # following one.
+    anchor = state_dir.parent
     dir_path = ca_dir(state_dir)
     key_path = ca_key_path(state_dir)
     cert_path = ca_cert_path(state_dir)
 
-    if key_path.exists() and cert_path.exists():
+    present = [p for p in (key_path, cert_path) if os.path.lexists(p)]
+    if len(present) == 2:
         return  # already minted -- keep the guest's anchor valid
-
-    dir_path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chown(dir_path, pw.pw_uid, pw.pw_gid)
-
-    # Half a CA is refused by the mint, naming both files, rather than
-    # re-minted over: the half that is there may be the guest's anchor.
-    try:
-        result = subprocess.run(
-            [CA_MINT_BIN, "--name", name, "--state-dir", str(state_dir)],
-            capture_output=True, text=True,
-        )
-    except OSError as exc:
+    # Half a CA is refused, naming both files, rather than re-minted over:
+    # the half that is there may be the guest's anchor.
+    if present:
         raise RuntimeError(
-            f"moat-mint-ca (egress CA) could not run: {exc}") from exc
-    if result.returncode != 0:
-        # Both streams, as _ssh_keygen reports them: a program that could
-        # not start says so on either, and one of them is empty.
-        said = " / ".join(s.strip() for s in (result.stdout, result.stderr)
-                          if s.strip())
-        raise RuntimeError(
-            f"moat-mint-ca (egress CA) failed: "
-            f"{said or f'no output, exit {result.returncode}'}")
+            f"moat-mint-ca (egress CA): half a CA is there ({present[0]} "
+            f"without {({key_path, cert_path} - set(present)).pop()}); "
+            f"refusing to mint over it")
 
-    os.chown(key_path, pw.pw_uid, pw.pw_gid)
-    os.chmod(key_path, 0o600)
-    os.chown(cert_path, pw.pw_uid, pw.pw_gid)
-    # The certificate is 0644 and the key is 0600: the certificate is a public
-    # anchor that the seed builder and `diagnose` both read, and the private
-    # half is the only part worth protecting.
-    os.chmod(cert_path, 0o644)
+    if not _provision_dir_secure(anchor, dir_path, pw.pw_uid, pw.pw_gid,
+                                 0o700):
+        raise RuntimeError(f"cannot provision {dir_path} safely")
+
+    with tempfile.TemporaryDirectory(prefix=".ca-mint-",
+                                     dir=anchor) as mint_dir:
+        _mint_ca_into(name, Path(mint_dir))
+        for src, dst, mode in (
+                (ca_key_path(mint_dir), key_path, 0o600),
+                # The certificate is a public anchor that the seed builder
+                # and `diagnose` both read; the key is the part worth
+                # protecting.
+                (ca_cert_path(mint_dir), cert_path, 0o644)):
+            if not _write_file_nofollow(anchor, dst,
+                                        Path(src).read_bytes(),
+                                        pw.pw_uid, pw.pw_gid, mode):
+                raise RuntimeError(f"cannot write {dst} safely")
 
     # A NEW CA MAKES EVERY CACHED LEAF A FORGERY, so the caches go with it.
     # This runs only on the branch that actually minted -- the guard above
@@ -564,8 +622,10 @@ def provision_egress_pki_dirs(pw, name: str):
     state_dir = workload_state_dir(name)
     for directory in (ca_dir(state_dir), leaf_dir(state_dir),
                       denial_dir(state_dir)):
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chown(directory, pw.pw_uid, pw.pw_gid)
+        # state/ is the workload user's: the walk refuses a link on the way.
+        if not _provision_dir_secure(state_dir.parent, directory,
+                                     pw.pw_uid, pw.pw_gid, 0o700):
+            raise RuntimeError(f"cannot provision {directory} safely")
         if shutil.which("restorecon"):
             # -F for the same reason apply_vm_fcontext needs it: svirt_image_t
             # is in contexts/customizable_types, so a plain restorecon skips

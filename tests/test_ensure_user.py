@@ -1544,7 +1544,8 @@ class TestVmHostKeyGeneration(unittest.TestCase):
     @unittest.skipUnless(shutil.which("ssh-keygen"),
                          "ssh-keygen not installed (minimal CI container)")
     def test_generates_host_keypair_idempotently(self):
-        with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None):
+        with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None):
             self.mod.generate_vm_host_keypair(self.pw, "myvm")
             priv = self.home / ".ssh" / "vm_host_ed25519_key"
             pub = priv.with_suffix(".pub")
@@ -1556,10 +1557,50 @@ class TestVmHostKeyGeneration(unittest.TestCase):
 
     def test_write_vm_known_hosts_line_format(self):
         (self.home / ".ssh").mkdir()
-        with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None):
+        with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None):
             self.mod.write_vm_known_hosts(self.pw, "myvm", "ssh-ed25519 AAAAHOST")
         known = (self.home / ".ssh" / "vm_known_hosts").read_text()
         self.assertEqual(known, "myvm ssh-ed25519 AAAAHOST\n")
+
+    def test_a_linked_known_hosts_is_replaced_not_written_through(self):
+        canary = Path(self.tmp) / "canary"
+        canary.write_text("canary\n")
+        (self.home / ".ssh").mkdir()
+        (self.home / ".ssh" / "vm_known_hosts").symlink_to(canary)
+        with mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None):
+            self.mod.write_vm_known_hosts(self.pw, "myvm", "ssh-ed25519 AAAAHOST")
+        self.assertEqual(canary.read_text(), "canary\n")
+        self.assertFalse((self.home / ".ssh" / "vm_known_hosts").is_symlink())
+
+    def test_a_linked_host_key_is_not_lent_to_the_seed(self):
+        # The private host key goes into the seed, which the workload user
+        # reads back from the ISO.
+        secret = Path(self.tmp) / "secret"
+        secret.write_text("root-only\n")
+        (self.home / ".ssh").mkdir()
+        (self.home / ".ssh" / "vm_host_ed25519_key").symlink_to(secret)
+        self.assertEqual(self.mod._read_vm_host_private_key(self.pw), "")
+
+    def test_a_linked_ssh_dir_is_refused_not_keyed_into(self):
+        outside = Path(self.tmp) / "outside"
+        outside.mkdir()
+        (self.home / ".ssh").symlink_to(outside)
+        with mock.patch.object(self.mod.subprocess, "run") as run:
+            with self.assertRaises(RuntimeError):
+                self.mod.generate_vm_host_keypair(self.pw, "myvm")
+        run.assert_not_called()
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_a_dangling_link_at_the_key_is_not_a_target(self):
+        target = Path(self.tmp) / "new-key"
+        (self.home / ".ssh").mkdir()
+        (self.home / ".ssh" / "vm_host_ed25519_key").symlink_to(target)
+        with mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.subprocess, "run") as run:
+            self.mod.generate_vm_host_keypair(self.pw, "myvm")
+        run.assert_not_called()
+        self.assertFalse(target.exists())
 
 
 class TestSetupVmVolumeDirectories(unittest.TestCase):
@@ -2237,7 +2278,7 @@ class TestSetupHomeDirectory(unittest.TestCase):
             pw = _fake_pw(state, uid=10001, gid=10001)
             with mock.patch.object(self.mod, "workload_state_dir", lambda n: state), \
                  mock.patch.object(self.mod, "workload_data_dir", lambda n: data), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.setup_home_directory(pw, "myapp")  # must not raise
             self.assertTrue(state.is_dir())
             self.assertTrue(data.is_dir())
@@ -2482,7 +2523,7 @@ class TestSetupVmSocketDir(unittest.TestCase):
             socket_base = Path(tmp) / "run" / "workload-vm"
             pw = _fake_pw(Path(tmp), uid=10001, gid=10001)
             with mock.patch.object(self.mod, "SOCKET_DIR", socket_base), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.setup_workload_runtime_dir(pw, "myvm")
             sock_dir = socket_base / "myvm"
             self.assertTrue(sock_dir.is_dir())
@@ -2494,7 +2535,7 @@ class TestSetupVmSocketDir(unittest.TestCase):
             (socket_base / "myvm").mkdir(parents=True)
             pw = _fake_pw(Path(tmp), uid=10001, gid=10001)
             with mock.patch.object(self.mod, "SOCKET_DIR", socket_base), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.setup_workload_runtime_dir(pw, "myvm")  # must not raise
 
     def test_the_policy_dir_is_roots_beside_the_runtime_dir(self):
@@ -2534,7 +2575,7 @@ class TestGenerateSshKeypair(unittest.TestCase):
                 return types.SimpleNamespace(returncode=0, stderr="")
 
             with mock.patch.object(self.mod.subprocess, "run", side_effect=fake_keygen), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.generate_ssh_keypair(pw, "myvm")
             self.assertTrue((home / ".ssh" / "id_ed25519").exists())
             self.assertTrue((home / ".ssh" / "id_ed25519.pub").exists())
@@ -2547,7 +2588,7 @@ class TestGenerateSshKeypair(unittest.TestCase):
             (home / ".ssh" / "id_ed25519").write_text("EXISTING")
             pw = _fake_pw(home, uid=10001, gid=10001)
             with mock.patch.object(self.mod.subprocess, "run") as m, \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.generate_ssh_keypair(pw, "myvm")
                 m.assert_not_called()
 
@@ -2559,7 +2600,7 @@ class TestGenerateSshKeypair(unittest.TestCase):
             with mock.patch.object(self.mod.subprocess, "run",
                                    return_value=types.SimpleNamespace(
                                        returncode=1, stdout="", stderr="bad args")), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 with self.assertRaises(RuntimeError) as ctx:
                     self.mod.generate_ssh_keypair(pw, "myvm")
                 self.assertIn("ssh-keygen (client key) failed", str(ctx.exception))
@@ -2579,7 +2620,7 @@ class TestGenerateSshKeypair(unittest.TestCase):
                                        returncode=1,
                                        stdout='Saving key "/x/k" failed: Permission denied',
                                        stderr="")), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 with self.assertRaises(RuntimeError) as ctx:
                     self.mod.generate_ssh_keypair(pw, "myvm")
                 self.assertIn("Permission denied", str(ctx.exception))
@@ -2592,7 +2633,7 @@ class TestGenerateSshKeypair(unittest.TestCase):
             with mock.patch.object(self.mod.subprocess, "run",
                                    return_value=types.SimpleNamespace(
                                        returncode=3, stdout="", stderr="")), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 with self.assertRaises(RuntimeError) as ctx:
                     self.mod.generate_ssh_keypair(pw, "myvm")
                 self.assertIn("exit 3", str(ctx.exception))
@@ -3222,29 +3263,33 @@ class TestKeygenLosesTheRaceGracefully(unittest.TestCase):
         self.mod = vm_ssh_keys
 
     def test_a_key_that_appeared_after_the_guard_is_adopted_not_fatal(self):
-        # ssh-keygen refuses to overwrite and exits nonzero. Only a concurrent
-        # provisioning run can have put that key there, and it's as good as the
-        # one we were about to write — so take it rather than fail the enable.
+        # The pair is made in a root-only directory and linked into ~/.ssh,
+        # which fails rather than replaces when a key is there. Only a
+        # concurrent provisioning run can have put it there, and it's as good
+        # as ours, so it is kept rather than the enable failed.
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             (home / ".ssh").mkdir(parents=True)
             pw = _fake_pw(home, uid=10001, gid=10001)
 
-            def _keygen_loses(*a, **kw):
-                # The rival finishes between our exists() guard and our exec.
+            def _keygen_races(argv, **kw):
+                # The rival finishes between our lexists() guard and our link.
                 (home / ".ssh" / "id_ed25519").write_text("rival key")
                 (home / ".ssh" / "id_ed25519.pub").write_text("rival pub")
-                return types.SimpleNamespace(
-                    returncode=1,
-                    stdout=f"{home}/.ssh/id_ed25519 already exists.",
-                    stderr="")
+                made = Path(argv[argv.index("-f") + 1])
+                made.write_text("our key")
+                made.with_suffix(".pub").write_text("our pub")
+                return types.SimpleNamespace(returncode=0, stdout="",
+                                             stderr="")
 
-            with mock.patch.object(self.mod.subprocess, "run", _keygen_loses), \
-                 mock.patch("os.chown"):
+            with mock.patch.object(self.mod.subprocess, "run", _keygen_races), \
+                 mock.patch("os.chown"), mock.patch("os.fchown"):
                 self.mod.generate_ssh_keypair(pw, "myvm")  # must not raise
 
             self.assertEqual((home / ".ssh" / "id_ed25519").read_text(),
                              "rival key")
+            self.assertEqual((home / ".ssh" / "id_ed25519.pub").read_text(),
+                             "rival pub")
 
 
 class TestProvision(unittest.TestCase):
