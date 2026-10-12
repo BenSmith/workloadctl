@@ -346,6 +346,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
                     )
         import shutil as _shutil
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir",
                                lambda _name: self.home), \
@@ -364,7 +365,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
 
     def _seed_dir(self, name: str = "myvm") -> Path:
         # The seed is staged on the tmpfs runtime dir (S6), never the home.
-        return self.runtime / name / ".cloud-init-seed"
+        return self.runtime / self.mod.SEED_DIRNAME / name
 
     def _read_user_data(self, name: str = "myvm") -> str:
         return (self._seed_dir(name) / "user-data").read_text()
@@ -899,6 +900,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         cfg = {"vm": {"cloud_init": {"user_data_file": "user-data"}}}
         import shutil as _shutil
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir",
                                lambda _name: self.home), \
@@ -929,6 +931,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         import shutil as _shutil
         rmtree_calls = []
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir",
                                lambda _name: self.home), \
@@ -973,6 +976,54 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self.assertIn("hostname: defvm", text)
         self.assertIn("- name: fedora", text)
         self.assertIn("ssh-ed25519 AAAAFAKEKEY", text)
+
+    def test_linked_state_files_are_replaced_not_written_through(self):
+        # The 2026-10-11 audit (L16, audit-vmfs, V5): the workload user links
+        # the fingerprint and instance-id at root-owned files, and the next
+        # rebuild wrote both and chowned them to the workload user.
+        cfg = {"vm": {"user": "fedora"}}
+        self._run_build(cfg, name="defvm")
+        outside = Path(self.tmp) / "outside"
+        outside.mkdir()
+        for state_name in (".cloud-init-fingerprint",
+                           ".cloud-init-instance-id"):
+            (outside / state_name).write_text("canary\n")
+            (self.home / state_name).unlink()
+            (self.home / state_name).symlink_to(outside / state_name)
+        self._run_build(cfg, name="defvm")
+        for state_name in (".cloud-init-fingerprint",
+                           ".cloud-init-instance-id"):
+            self.assertEqual((outside / state_name).read_text(), "canary\n")
+            self.assertFalse((self.home / state_name).is_symlink())
+
+    def test_a_linked_instance_id_is_not_lent_to_the_seed(self):
+        # A reused instance-id goes into meta-data, which the workload user
+        # reads back from the ISO: read through a link, it would carry
+        # another file out.
+        cfg = {"vm": {"user": "fedora"}}
+        self._run_build(cfg, name="defvm")
+        secret = Path(self.tmp) / "secret"
+        secret.write_text("root-only\n")
+        id_file = self.home / ".cloud-init-instance-id"
+        id_file.unlink()
+        id_file.symlink_to(secret)
+        self._iso_path("defvm").unlink()
+        self._run_build(cfg, name="defvm")
+        meta = (self._seed_dir("defvm") / "meta-data").read_text()
+        self.assertNotIn("root-only", meta)
+
+    def test_a_link_at_the_iso_name_is_replaced_not_written_through(self):
+        # The runtime dir is the workload user's: the ISO is built in the
+        # root-only seed dir and renamed into place.
+        canary = Path(self.tmp) / "canary"
+        canary.write_text("canary\n")
+        iso = self._iso_path("defvm")
+        iso.parent.mkdir(parents=True, exist_ok=True)
+        iso.symlink_to(canary)
+        self._run_build({"vm": {"user": "fedora"}}, name="defvm")
+        self.assertEqual(canary.read_text(), "canary\n")
+        self.assertFalse(iso.is_symlink())
+        self.assertFalse(self._seed_dir("defvm").is_relative_to(iso.parent))
 
     # --- S1 host-key pinning ---------------------------------------------
 
@@ -2064,8 +2115,10 @@ class TestResolveCloudInitInstanceId(unittest.TestCase):
         self.id_file = self.tmp / ".cloud-init-instance-id"
 
     def _resolve(self, fp_unchanged, marker=None):
+        existing = (self.id_file.read_text().strip()
+                    if self.id_file.exists() else "")
         return self.mod._resolve_cloud_init_instance_id(
-            "myvm", self.id_file, fp_unchanged, marker)
+            "myvm", existing, fp_unchanged, marker)
 
     @staticmethod
     def _marker(instance_id, status, heal_attempts=0):
@@ -2372,7 +2425,7 @@ class TestSetupNvram(unittest.TestCase):
             ovmf.write_bytes(b"nvramdata")
             pw = _fake_pw(home, uid=10001, gid=10001)
             with mock.patch.object(self.mod, "find_ovmf_vars", return_value=str(ovmf)), \
-                 mock.patch("os.chown"):
+                 mock.patch("os.fchown"):
                 self.mod.setup_nvram(pw, {})
             dst = home / "nvram.fd"
             self.assertTrue(dst.exists())
@@ -2390,6 +2443,24 @@ class TestSetupNvram(unittest.TestCase):
                 self.mod.setup_nvram(pw, {})
                 m.assert_not_called()
             self.assertEqual(dst.read_bytes(), b"existing")
+
+    def test_a_dangling_link_is_left_alone_not_written_through(self):
+        # The 2026-10-11 audit (L16, audit-vmfs, V4): nvram.fd as a dangling
+        # link made root create its target, owned by the workload user.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            ovmf = Path(tmp) / "OVMF_VARS.fd"
+            ovmf.write_bytes(b"nvramdata")
+            target = Path(tmp) / "new-nvram"
+            (home / "nvram.fd").symlink_to(target)
+            pw = _fake_pw(home, uid=10001, gid=10001)
+            with mock.patch.object(self.mod, "find_ovmf_vars",
+                                   return_value=str(ovmf)), \
+                 mock.patch("os.fchown"):
+                self.mod.setup_nvram(pw, {})
+            self.assertFalse(target.exists())
+            self.assertTrue((home / "nvram.fd").is_symlink())
 
     def test_raises_when_ovmf_vars_not_found(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3028,6 +3099,7 @@ class TestBuildCloudInitIsoValidation(unittest.TestCase):
     def test_invalid_guest_user_raises(self):
         cfg = {"vm": {"user": "Not Valid!"}}
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir", lambda n: self.home):
             with self.assertRaises(RuntimeError) as ctx:
@@ -3038,6 +3110,7 @@ class TestBuildCloudInitIsoValidation(unittest.TestCase):
         (self.home / ".ssh" / "id_ed25519.pub").unlink()
         cfg = {"vm": {}}
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir", lambda n: self.home):
             with self.assertRaises(RuntimeError) as ctx:
@@ -3050,6 +3123,7 @@ class TestBuildCloudInitIsoValidation(unittest.TestCase):
         cfg = {"vm": {}}
         import shutil as _shutil
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir", lambda n: self.home), \
              mock.patch.object(_shutil, "which", return_value=None):
@@ -3061,6 +3135,7 @@ class TestBuildCloudInitIsoValidation(unittest.TestCase):
         msgs = []
         import shutil as _shutil
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir", lambda n: self.home), \
              mock.patch.object(_shutil, "which", return_value=None), \
@@ -3074,6 +3149,7 @@ class TestBuildCloudInitIsoValidation(unittest.TestCase):
         msgs = []
         import shutil as _shutil
         with mock.patch.object(self.mod.os, "chown", lambda *a, **kw: None), \
+             mock.patch.object(self.mod.os, "fchown", lambda *a, **kw: None), \
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir", lambda n: self.home), \
              mock.patch.object(_shutil, "which",

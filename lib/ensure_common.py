@@ -27,7 +27,9 @@ nothing patches it -- the difference is the traffic, not the taste.)
 
 import os
 import shutil
+import stat
 import subprocess
+from pathlib import Path
 
 import deployment
 from config_parser import workload_root_dir
@@ -253,6 +255,94 @@ def _descend_nofollow(root_dir, parts, what: str):
         os.close(dir_fd)
         dir_fd = child_fd
     return dir_fd
+
+
+def _write_file_nofollow(root_dir, host_path, content: bytes, uid, gid,
+                         mode) -> bool:
+    """Replace the file `host_path` (below `root_dir`) with `content`, owned
+    uid:gid at `mode`, without following a symlink.
+
+    Root writes these into a directory the workload user owns, so anything at
+    the name may be a link it planted. The directory is reached by
+    `_descend_nofollow`, the content goes to a temp created
+    O_EXCL|O_NOFOLLOW, and the rename replaces whatever is at the name rather
+    than writing through it. Returns True, or False if a component on the way
+    was unsafe.
+    """
+    host_path = Path(host_path)
+    try:
+        parts = host_path.parent.relative_to(root_dir).parts
+    except ValueError:
+        return False
+    if ".." in parts:
+        return False
+    dir_fd = _descend_nofollow(root_dir, parts, f"write {host_path}")
+    if dir_fd is None:
+        return False
+    tmp = f".{host_path.name}.tmp"
+    try:
+        try:
+            os.unlink(tmp, dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=dir_fd)
+        try:
+            view = memoryview(content)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fchown(fd, uid, gid)
+            os.fchmod(fd, mode)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, host_path.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        return True
+    finally:
+        os.close(dir_fd)
+
+
+def _read_file_nofollow(root_dir, host_path, limit: int = 1 << 20):
+    """The bytes of the file `host_path` (below `root_dir`), read without
+    following a symlink; None if it is missing, a link, not a regular file,
+    hardlinked, larger than `limit`, or below an unsafe component.
+
+    What root reads here can reach a place the workload user reads back (the
+    seed ISO), so a link at the name must not lend it another file.
+    """
+    host_path = Path(host_path)
+    try:
+        parts = host_path.parent.relative_to(root_dir).parts
+    except ValueError:
+        return None
+    if ".." in parts:
+        return None
+    dir_fd = _descend_nofollow(root_dir, parts, f"read {host_path}")
+    if dir_fd is None:
+        return None
+    try:
+        fd = os.open(host_path.name,
+                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=dir_fd)
+    except OSError:
+        return None
+    finally:
+        os.close(dir_fd)
+    try:
+        st = os.fstat(fd)
+        if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
+                or st.st_size > limit):
+            return None
+        chunks, size = [], 0
+        while size <= limit:
+            chunk = os.read(fd, limit + 1 - size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        return None if size > limit else b"".join(chunks)
+    finally:
+        os.close(fd)
 
 
 def restore_selinux_labels(name):

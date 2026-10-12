@@ -95,7 +95,9 @@ def setup_nvram(pw, config: dict):
     """Copy OVMF_VARS.fd to workload home as nvram.fd (per-VM writable NVRAM)."""
     home_path = Path(pw.pw_dir)
     nvram_dst = home_path / "nvram.fd"
-    if nvram_dst.exists():
+    # lexists: a link the workload user put here is its own, and QEMU opens it
+    # as that user; root must neither overwrite the vars nor write through it.
+    if os.path.lexists(nvram_dst):
         return  # already present — do not overwrite (would reset EFI vars)
 
     ovmf_vars = find_ovmf_vars()
@@ -105,9 +107,11 @@ def setup_nvram(pw, config: dict):
             "and would fail to boot. Install edk2-ovmf (Fedora) or ovmf (Debian)."
         )
 
-    shutil.copy2(ovmf_vars, nvram_dst)
-    os.chown(nvram_dst, pw.pw_uid, pw.pw_gid)
-    os.chmod(nvram_dst, 0o600)
+    # The home's parent is root's: the anchor the no-follow walk starts from.
+    if not ensure_common._write_file_nofollow(
+            home_path.parent, nvram_dst, Path(ovmf_vars).read_bytes(),
+            pw.pw_uid, pw.pw_gid, 0o600):
+        raise RuntimeError(f"cannot write {nvram_dst} safely")
     ensure_common.log(f"  Copied NVRAM: {ovmf_vars} → {nvram_dst}")
 
 
@@ -175,7 +179,7 @@ def _bundle_rpms(seed_dir: Path) -> bool:
     return True
 
 
-def _resolve_cloud_init_instance_id(name: str, instance_id_file: Path,
+def _resolve_cloud_init_instance_id(name: str, existing: str,
                                     fp_unchanged: bool,
                                     marker: dict | None = None
                                     ) -> tuple[str, bool, int]:
@@ -198,19 +202,37 @@ def _resolve_cloud_init_instance_id(name: str, instance_id_file: Path,
     fails deterministically re-provisions once and then stays put rather than
     churning a new instance on every start.
 
+    `existing` is the persisted id, '' when there is none.
+
     Returns ``(instance_id, minted, heal_attempts)`` — ``minted`` is True when a
     new id was generated and the caller must persist it, and ``heal_attempts``
     is the lineage's attempt count to persist alongside it (nonzero only for a
     heal).
     """
-    existing = (instance_id_file.read_text().strip()
-                if instance_id_file.exists() else "")
     if fp_unchanged and existing:
         if not should_heal(marker, existing):
             return existing, False, 0
         attempts = heal_attempts(marker, existing) + 1
         return f"{name}-{uuid.uuid4().hex[:8]}", True, attempts
     return f"{name}-{uuid.uuid4().hex[:8]}", True, 0
+
+
+# Where the seed is staged and the ISO built, root's and 0700, beside the
+# runtime dirs (the same tmpfs, so the ISO's rename into place is atomic).
+SEED_DIRNAME = "_seed"
+
+
+def _read_state_text(anchor: Path, path: Path) -> str:
+    """A state file's stripped text, or '' if it is missing or not a plain
+    file (a link the workload user left there is not followed)."""
+    data = ensure_common._read_file_nofollow(anchor, path)
+    return data.decode("utf-8", "replace").strip() if data is not None else ""
+
+
+def _write_state_text(anchor: Path, path: Path, text: str, pw) -> None:
+    if not ensure_common._write_file_nofollow(
+            anchor, path, text.encode(), pw.pw_uid, pw.pw_gid, 0o644):
+        raise RuntimeError(f"cannot write {path} safely")
 
 
 def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None = None):
@@ -254,6 +276,12 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     # records, so a stale passwd home would otherwise strand these files in the
     # wrong tree (see warn_if_stale_home).
     home_path = workload_state_dir(name)
+    # The workload user owns state/ and the runtime dir, and may have planted
+    # a link at any name in either. state/'s parent is root's, the anchor for
+    # the no-follow reads and writes below; the seed is staged in a root-only
+    # directory beside the runtime dirs and the ISO renamed into place, which
+    # replaces a link at its name rather than writing through it.
+    anchor = home_path.parent
     # The ISO lives on tmpfs (the VM runtime dir), never the persistent home —
     # it can embed decrypted secrets. setup_workload_runtime_dir() created this dir
     # earlier in the same invocation; recreate it defensively in case this is
@@ -264,11 +292,14 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     os.chmod(runtime_dir, 0o750)
     iso_path = runtime_dir / "cloud-init.iso"
     # The seed staging dir holds the rendered user-data, which in template mode
-    # is plaintext secrets (0600). It lives on the tmpfs runtime dir alongside
-    # the ISO, never the persistent home: it's rmtree'd once the ISO is built,
-    # but if that step is cut short by a crash the leftover must not survive a
-    # reboot at rest (the offline-disk-read threat the ISO placement guards).
-    seed_dir = runtime_dir / ".cloud-init-seed"
+    # is plaintext secrets (0600). It lives on tmpfs beside the runtime dirs,
+    # never the persistent home: it's rmtree'd once the ISO is built, but if
+    # that step is cut short by a crash the leftover must not survive a reboot
+    # at rest (the offline-disk-read threat the ISO placement guards).
+    # `_seed` cannot be a workload name (NAME_PATTERN).
+    seed_root = SOCKET_DIR / SEED_DIRNAME
+    seed_dir = seed_root / name
+    iso_staged = seed_root / f"{name}.iso"
 
     # Migration: older builds wrote the ISO — and staged the seed dir — in the
     # persistent home. Both can embed plaintext secrets, so remove any stale
@@ -623,8 +654,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     # any of them reliably triggers a rebuild (and instance-id rotation).
     current_fp = hashlib.sha256(user_data_text.encode()).hexdigest()
     fingerprint_file = home_path / ".cloud-init-fingerprint"
-    fp_unchanged = (fingerprint_file.exists()
-                    and fingerprint_file.read_text().strip() == current_fp)
+    fp_unchanged = _read_state_text(anchor, fingerprint_file) == current_fp
 
     # The recorded outcome of the guest's own cloud-init run, if we ever
     # observed one. Read before the early return because a recorded *failure*
@@ -634,8 +664,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     # single boot (i.e. `workloadctl restart` heals; it need not wait for the
     # next host reboot to wipe /run).
     instance_id_file = home_path / ".cloud-init-instance-id"
-    existing_id = (instance_id_file.read_text().strip()
-                   if instance_id_file.exists() else "")
+    existing_id = _read_state_text(anchor, instance_id_file)
     marker = read_provision_marker(home_path)
     healing = fp_unchanged and bool(existing_id) and should_heal(marker, existing_id)
 
@@ -652,7 +681,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     # re-provision. An absent/empty id file falls back to a fresh mint (first
     # provision).
     instance_id, minted, attempts = _resolve_cloud_init_instance_id(
-        name, instance_id_file, fp_unchanged, marker)
+        name, existing_id, fp_unchanged, marker)
     if minted:
         if attempts:
             errors = (marker or {}).get("errors") or []
@@ -660,8 +689,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                 + (f": {errors[0]}" if errors else "")
                 + f" — re-provisioning with a fresh instance-id (heal {attempts}"
                   f"/{MAX_HEAL_ATTEMPTS})")
-        instance_id_file.write_text(instance_id)
-        os.chown(instance_id_file, pw.pw_uid, pw.pw_gid)
+        _write_state_text(anchor, instance_id_file, instance_id, pw)
         # Record the new id as unverified straight away, so the marker always
         # names the instance currently in play. Without this a heal would leave
         # the *old* failure record in place, and the next start would read it
@@ -670,8 +698,10 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                                heal_attempts=attempts,
                                uid=pw.pw_uid, gid=pw.pw_gid)
 
-    seed_dir.mkdir(exist_ok=True)
-    os.chown(seed_dir, pw.pw_uid, pw.pw_gid)
+    seed_root.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(seed_root, 0o700)
+    shutil.rmtree(seed_dir, ignore_errors=True)
+    seed_dir.mkdir(mode=0o700, exist_ok=True)
 
     meta_data = f"instance-id: {instance_id}\nlocal-hostname: {name}\n"
     (seed_dir / "meta-data").write_text(meta_data)
@@ -703,7 +733,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     if iso_tool == "xorriso":
         cmd = [
             "xorriso", "-as", "mkisofs",
-            "-o", str(iso_path),
+            "-o", str(iso_staged),
             "-V", "CIDATA",
             "-joliet", "-rock",
             str(seed_dir),
@@ -711,7 +741,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
     else:
         cmd = [
             iso_tool,
-            "-output", str(iso_path),
+            "-output", str(iso_staged),
             "-volid", "CIDATA",
             "-joliet", "-rock",
             str(seed_dir),
@@ -722,11 +752,11 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
         ensure_common.log(f"  WARNING: ISO build failed: {result.stderr.strip()}")
         return
 
-    os.chown(iso_path, pw.pw_uid, pw.pw_gid)
-    os.chmod(iso_path, 0o640)
+    os.chown(iso_staged, pw.pw_uid, pw.pw_gid)
+    os.chmod(iso_staged, 0o640)
+    os.replace(iso_staged, iso_path)
 
-    fingerprint_file.write_text(current_fp)
-    os.chown(fingerprint_file, pw.pw_uid, pw.pw_gid)
+    _write_state_text(anchor, fingerprint_file, current_fp, pw)
 
     # Remove the seed staging directory — the rendered user-data contains
     # secrets in plaintext and is no longer needed once the ISO is built.

@@ -85,6 +85,29 @@ class TestMarkerPersistence(unittest.TestCase):
                          PROVISION_DONE)
 
 
+    def test_a_link_at_the_temp_name_is_replaced_not_written_through(self):
+        # Root writes the marker into the workload user's state dir (at mint,
+        # and from diagnose); a link left at the temp's name must not carry
+        # the write to another file. The 2026-10-11 audit's V5 probe planted
+        # the wrong temp name and read this as held.
+        canary = self.tmp / "canary"
+        canary.write_text("canary\n")
+        state = self.tmp / "state"
+        state.mkdir()
+        (state / f".{vm_provision.PROVISION_MARKER_FILE}.tmp").symlink_to(
+            canary)
+        write_provision_marker(state, "vm-abc", PROVISION_DONE)
+        self.assertEqual(canary.read_text(), "canary\n")
+        self.assertEqual(read_provision_marker(state)["status"],
+                         PROVISION_DONE)
+
+    def test_a_linked_marker_reads_as_none(self):
+        other = self.tmp / "other.json"
+        other.write_text('{"instance_id": "vm-abc", "status": "done"}')
+        provision_marker_path(self.tmp).symlink_to(other)
+        self.assertIsNone(read_provision_marker(self.tmp))
+
+
 class TestMarkerPredicates(unittest.TestCase):
     @staticmethod
     def _m(instance_id, status, attempts=0):

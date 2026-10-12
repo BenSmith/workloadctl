@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import os
 import pwd
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -96,8 +97,18 @@ def read_provision_marker(state_dir: Path) -> dict | None:
     already has to handle (a workload provisioned by an older workloadctl is
     exactly that case).
     """
+    # O_NOFOLLOW: the workload user owns the state dir, and root reads this
+    # too (ensure-user, diagnose); a link here must not lend it another file.
     try:
-        data = json.loads(provision_marker_path(state_dir).read_text())
+        fd = os.open(provision_marker_path(state_dir),
+                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        with os.fdopen(fd, "rb") as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                return None
+            data = json.loads(f.read(1 << 20))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or not data.get("instance_id"):
@@ -129,14 +140,21 @@ def write_provision_marker(state_dir: Path, instance_id: str, status: str,
     if errors:
         payload["errors"] = [str(e) for e in errors]
 
+    # The temp is created afresh, O_EXCL|O_NOFOLLOW: when root writes it, a
+    # link the workload user left at the name must not take the write.
     tmp = state_dir / f".{PROVISION_MARKER_FILE}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o644)
     try:
         os.write(fd, (json.dumps(payload, indent=2) + "\n").encode())
+        if uid is not None and gid is not None:
+            os.fchown(fd, uid, gid)
     finally:
         os.close(fd)
-    if uid is not None and gid is not None:
-        os.chown(tmp, uid, gid)
     os.replace(tmp, provision_marker_path(state_dir))
 
 
