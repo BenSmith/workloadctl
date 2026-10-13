@@ -41,7 +41,7 @@ def _create_ns(**kw):
     """Namespace with every attribute cmd_create reads, defaulted off."""
     base = dict(
         name=None, image=None, systemd=None, groups=None,
-        device=None, gpu=None, input=False, audio=False, virtualization=False,
+        device=None, gpu=None, input=False, audio=False,
         network=None, ports=None, volumes=None,
         cpu_quota=None, cpu_weight=None, memory_max=None, memory_high=None,
         memory_swap_max=None, io_weight=None, tasks_max=None, shm_size=None,
@@ -110,11 +110,10 @@ class CreateTest(unittest.TestCase):
 
     def test_device_flags(self):
         self._create(name="gpubox", image="x", gpu="all",
-                     audio=True, virtualization=True, device=["/dev/foo"])
+                     audio=True, device=["/dev/foo"])
         dev = self._toml("gpubox")["devices"]
         self.assertEqual(dev["gpu"], "all")
         self.assertTrue(dev["audio"])
-        self.assertTrue(dev["virtualization"])
         self.assertEqual(dev["devices"], ["/dev/foo"])
 
     def test_ports_default_to_pasta(self):

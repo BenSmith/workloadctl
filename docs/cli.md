@@ -330,7 +330,6 @@ workloadctl create <name> --image IMAGE [OPTIONS]
 | `--device DEVICE ...` | Generic device passthrough (e.g., `/dev/ttyUSB0`) |
 | `--input` | Enable input devices (`/dev/input` + `/dev/uinput`) |
 | `--audio` | Enable audio (`/dev/snd` + auto-mount PulseAudio/PipeWire sockets) |
-| `--virtualization` | Enable KVM (`/dev/kvm` + vhost devices) |
 | `--systemd {always,true,false}` | Systemd container mode (skips `--init`, adds `KillSignal`) |
 | `--shm-size SIZE` | Shared memory size (e.g., `256m`, `2g`; default: `64m`) |
 | `--cpu-quota PERCENT` | CPU quota (e.g., `50%`, `200%` for 2 cores) |

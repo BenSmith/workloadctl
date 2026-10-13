@@ -1527,14 +1527,6 @@ input = true
 # (PulseAudio: /run/user/{uid}/pulse, PipeWire: /run/user/{uid}/pipewire-0)
 audio = true
 
-# Optional: Enable virtualization support (KVM)
-# Type: boolean
-# Default: false
-# Expands to: --device /dev/kvm --device /dev/vhost-net (no vsock)
-# Useful for: nested virtualization, running VMs in containers
-# Requires: extra_groups = ["kvm"]
-virtualization = true
-
 [security]
 # Optional: User namespace mode
 # Type: string
@@ -3120,7 +3112,7 @@ ports = ["8080:80", "8443:443"]
 # image = "tianon/qemu:latest"
 #
 # [devices]
-# virtualization = true  # Enable KVM
+# devices = ["/dev/kvm"]
 #
 # [security]
 # extra_groups = ["kvm"]

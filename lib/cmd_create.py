@@ -67,7 +67,7 @@ def cmd_create(args, manager: WorkloadManager):
         ])
 
     # Devices section - add if any devices specified
-    if args.device or args.gpu or args.input or args.audio or args.virtualization:
+    if args.device or args.gpu or args.input or args.audio:
         config_lines.extend(["", "[devices]"])
 
         # Generic device passthrough
@@ -84,9 +84,6 @@ def cmd_create(args, manager: WorkloadManager):
 
         if args.audio:
             config_lines.append("audio = true")
-
-        if args.virtualization:
-            config_lines.append("virtualization = true")
 
     if args.network or args.ports:
         config_lines.extend(["", "[network]"])

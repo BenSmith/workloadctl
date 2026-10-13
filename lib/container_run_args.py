@@ -525,7 +525,7 @@ def _security_args(spec):
 
 
 def _device_args(spec):
-    """--device flags: generic passthrough + input/audio/virtualization
+    """--device flags: generic passthrough + input/audio
     convenience flags from [devices].
 
     --device is for single device NODES (and CDI names). A device DIRECTORY
@@ -562,14 +562,6 @@ def _device_args(spec):
         # empty string (mounting host "/pulse") if the EnvironmentFile is missing.
         for suffix in ["pulse", "pipewire-0"]:
             args.append(f"--volume /run/user/{uid}/{suffix}:/run/user/{uid}/{suffix}:ro")
-
-    # Virtualization devices. No /dev/vhost-vsock: a workload opens no
-    # vsock, and the image refuses its modules.
-    if devices_config.get("virtualization", False):
-        args.extend([
-            "--device /dev/kvm",
-            "--device /dev/vhost-net",
-        ])
 
     return args
 

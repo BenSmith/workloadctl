@@ -85,7 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--shm-size", metavar="SIZE", help="Shared memory size (e.g., 256m, 2g; default: 64m)")
     create_parser.add_argument("--systemd", metavar="MODE", choices=["always", "true", "false"],
                                help="Systemd container mode: 'always', 'true', or 'false' (skips --init, adds KillSignal)")
-    create_parser.add_argument("--virtualization", action="store_true", help="Enable KVM (/dev/kvm + vhost devices) - convenience flag")
     create_parser.add_argument("--volumes", metavar="VOL", action="append", help="Volume mount; repeat per volume (e.g., --volumes /host/path:/container/path:ro)")
     create_parser.add_argument("name", help="Workload name (lowercase letters, numbers, hyphens, max 27 chars)")
 

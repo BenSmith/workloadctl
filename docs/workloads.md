@@ -2063,7 +2063,6 @@ Creates a new workload configuration file in `/etc/workloads.d/`. This is the ea
 - `--gpu TYPE` - GPU convenience flag: `amd`, `nvidia`, or `none`
 - `--input` - Input device convenience flag
 - `--audio` - Audio convenience flag
-- `--virtualization` - KVM convenience flag
 - `--enable` - Enable and start the workload immediately
 
 **Examples:**
@@ -2602,7 +2601,6 @@ For scenarios requiring multiple devices or special handling, use convenience fl
 | `--gpu nvidia` | `nvidia.com/gpu=all`, `/dev/dri` | `video` | NVIDIA GPU access |
 | `--input` | `/dev/input`, `/dev/uinput` | `input` | Keyboard/mouse access |
 | `--audio` | `/dev/snd` + PulseAudio/PipeWire sockets | `audio` | Audio devices |
-| `--virtualization` | `/dev/kvm`, `/dev/vhost-*` | `kvm` | KVM virtualization |
 
 **Examples with convenience flags:**
 
@@ -2628,7 +2626,7 @@ sudo workloadctl create sunshine \
 # KVM virtualization
 sudo workloadctl create qemu \
   --image tianon/qemu:latest \
-  --virtualization \
+  --device /dev/kvm \
   --groups kvm \
   --enable
 ```
@@ -2661,7 +2659,7 @@ sudo workloadctl create frigate \
 sudo workloadctl create qemu-vm \
   --image tianon/qemu:latest \
   --device /dev/sdb \
-  --virtualization \
+  --device /dev/kvm \
   --groups kvm disk \
   --enable
 ```

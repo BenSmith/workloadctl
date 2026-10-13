@@ -140,7 +140,7 @@ Stopping the umbrella tears everything down (`PartOf=`). The CLI accepts `<workl
 
 ### Device convenience flags
 
-`--gpu amd|nvidia|intel|auto` (or `nvidia:<index|UUID>` to pin one card), `--audio`, `--input` and `--virtualization` expand to the right devices, groups and mounts rather than making the author spell them out. `[devices]` carries the same thing declaratively.
+`--gpu amd|nvidia|intel|auto` (or `nvidia:<index|UUID>` to pin one card), `--audio` and `--input` expand to the right devices, groups and mounts rather than making the author spell them out. `[devices]` carries the same thing declaratively.
 
 ### Lifecycle: pet vs cattle
 
@@ -420,7 +420,7 @@ Workloads are defined in `/etc/workloads.d/<name>/workload.toml`. Key sections:
 - `[container.environment]` — env vars, supports `${SECRET:name}` syntax
 - `[setup]` — required_files that must exist before enable
 - `[secrets]` — file-mounted systemd credentials
-- `[devices]` — generic device passthrough, GPU (amd/nvidia), input, audio, virtualization flags
+- `[devices]` — generic device passthrough, GPU (amd/nvidia), input, audio flags
 - `[security]` — userns mode (keep-id, host), extra_groups, capabilities, seccomp profile (`seccomp_allow` adds syscalls to the baseline, rendered beside the units as `workload-<name>.seccomp.json`), `selinux_policy`
 - `[network]` — mode (pasta/host/none/custom), ports, DNS
 - `[resources]` — cpu-quota, cpu-weight, memory-max, memory-high, io-weight, tasks-max, shm-size, service_type (default: `exec`)

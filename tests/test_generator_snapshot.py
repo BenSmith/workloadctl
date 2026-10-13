@@ -204,7 +204,7 @@ FIXTURES = {
         """),
     ],
 
-    # devices: input, audio, virtualization, generic devices=[...]
+    # devices: input, audio, generic devices=[...]
     "devices-misc": [
         ("devmisc", """\
             [workload]
@@ -217,7 +217,6 @@ FIXTURES = {
             devices = ["/dev/ttyUSB0"]
             input = true
             audio = true
-            virtualization = true
 
             [security]
             extra_groups = ["input", "audio", "kvm", "dialout"]

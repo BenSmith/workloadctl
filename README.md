@@ -84,8 +84,7 @@ commands take `<workload>/<container>`.
 
 Convenience flags expand to the right devices, groups and mounts rather than
 making you spell them out: `--gpu amd|nvidia|intel|auto` (or
-`nvidia:<index|UUID>` to pin one card), `--audio`, `--input`,
-`--virtualization`.
+`nvidia:<index|UUID>` to pin one card), `--audio`, `--input`.
 
 **Reading logs:** units run with `--log-driver=passthrough`, so `podman logs`
 will not work. Use `workloadctl logs <name>`, which knows where journald

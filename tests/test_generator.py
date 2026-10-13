@@ -2861,14 +2861,13 @@ class TestGeneratorContainerFlags(unittest.TestCase):
             svc, r"--volume /run/user/\d+/pipewire-0:/run/user/\d+/pipewire-0:ro"
         )
 
-    def test_virtualization_devices_shortcut(self):
+    def test_virtualization_is_no_shortcut(self):
         svc, _ = self._gen("""
             [devices]
             virtualization = true
         """)
-        self.assertIn("--device /dev/kvm", svc)
-        self.assertIn("--device /dev/vhost-net", svc)
-        self.assertNotIn("vhost-vsock", svc)
+        self.assertNotIn("/dev/kvm", svc)
+        self.assertNotIn("vhost", svc)
 
     def test_gpu_nvidia_all(self):
         svc, _ = self._gen("""
