@@ -49,7 +49,7 @@ from vm_provision import (
 )
 from secrets_template import substitute_template
 import ensure_common
-from ensure_common import _provision_dir_secure
+from ensure_common import _provision_dir_secure, volume_dir_mode
 from vm_default_seed import (
     VM_CA_BUNDLE_AVAILABLE,
     covers_guest_home,
@@ -88,7 +88,8 @@ def setup_vm_volume_directories(pw, config):
             continue  # Outside the workload dir — admin's responsibility
         if not host_path.exists():
             ensure_common.log(f"  Creating virtiofs host directory {host_path}")
-        _provision_dir_secure(root_dir, host_path, pw.pw_uid, pw.pw_gid, 0o755)
+        _provision_dir_secure(root_dir, host_path, pw.pw_uid, pw.pw_gid,
+                              volume_dir_mode(name, host_path))
 
 
 def setup_nvram(pw, config: dict):

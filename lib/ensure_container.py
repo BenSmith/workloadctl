@@ -33,6 +33,7 @@ from workload_uid import (
 import ensure_common
 from ensure_common import (
     _provision_dir_secure, _descend_nofollow, _make_missing_dirs_secure,
+    volume_dir_mode,
 )
 
 
@@ -282,7 +283,8 @@ def setup_volume_directories(pw, config):
 
         if not host_path.exists():
             ensure_common.log(f"  Creating volume directory {host_path}")
-        _provision_dir_secure(root_dir, host_path, pw.pw_uid, pw.pw_gid, 0o755)
+        _provision_dir_secure(root_dir, host_path, pw.pw_uid, pw.pw_gid,
+                              volume_dir_mode(name, host_path))
 
     for ctr in normalize_containers(config):
         for parent in _nested_mount_parents(

@@ -188,6 +188,17 @@ def _provision_dir_secure(root_dir, host_path, uid, gid, mode):
         os.close(dir_fd)
 
 
+def volume_dir_mode(name, host_path):
+    """The mode a volume's host directory is given: 0755, so container users
+    other than the workload's own can traverse it, except when the volume is
+    the workload's data/ or state/ itself. Those stay 0700: under the
+    root-owned workload root, they are what keeps the tree from every other
+    host account."""
+    if host_path in (workload_data_dir(name), workload_state_dir(name)):
+        return 0o700
+    return 0o755
+
+
 def _make_missing_dirs_secure(root_dir, host_path, uid, gid, mode):
     """Create the directories missing on the way to `host_path` (a descendant
     of `root_dir`), `host_path` included, owned by the workload user. A

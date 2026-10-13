@@ -3017,6 +3017,54 @@ class TestSetupVolumeDirectoriesSkipBranches(unittest.TestCase):
                 self.mod.setup_volume_directories(pw, config)  # must not raise
 
 
+class TestVolumeOnTheDataRootStaysClosed(unittest.TestCase):
+    """A volume's host directory is made 0755 at each start. When the
+    volume is `./`, that directory is data/ itself, which ensure_user made
+    0700: under the root-owned 0755 workload root, every host account could
+    then list the workload's data (audit F7, measured on the proving host
+    2026-10-11 with the registry bundle)."""
+
+    def _modes(self, setup, config):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "state").mkdir()
+            (root / "data").mkdir()
+            modes = {}
+            real_fchmod = os.fchmod
+
+            def fchmod(fd, mode):
+                modes[os.readlink(f"/proc/self/fd/{fd}")] = mode
+                real_fchmod(fd, mode)
+
+            pw = _fake_pw(root / "state", uid=10001, gid=10001)
+            with mock.patch.object(ensure_common, "workload_state_dir",
+                                   lambda n: root / "state"), \
+                 mock.patch.object(ensure_common, "workload_data_dir",
+                                   lambda n: root / "data"), \
+                 mock.patch.dict(setup.__globals__, {
+                     "workload_state_dir": lambda n: root / "state",
+                     "workload_root_dir": lambda n: root}), \
+                 mock.patch("os.fchown"), \
+                 mock.patch("os.fchmod", side_effect=fchmod):
+                setup(pw, config)
+            return {Path(k).relative_to(root).as_posix(): v
+                    for k, v in modes.items()}
+
+    def test_a_container_volume_on_the_data_root_leaves_it_0700(self):
+        modes = self._modes(ensure_container.setup_volume_directories, {
+            "workload": {"name": "myapp"},
+            "storage": {"volumes": ["./:/var/lib/registry", "./sub:/sub"]},
+        })
+        self.assertEqual(modes, {"data": 0o700, "data/sub": 0o755})
+
+    def test_a_vm_volume_on_the_data_root_leaves_it_0700(self):
+        modes = self._modes(ensure_vm.setup_vm_volume_directories, {
+            "workload": {"name": "myapp"},
+            "vm": {"volumes": ["./:/srv", "./sub:/sub"]},
+        })
+        self.assertEqual(modes, {"data": 0o700, "data/sub": 0o755})
+
+
 class TestSetupVolumeDirectoriesNestedMounts(unittest.TestCase):
     """A volume mounted inside another has its mount point's parents in the
     outer volume's directory. crun creates missing ones as the container's
