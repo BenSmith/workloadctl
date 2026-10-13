@@ -1530,7 +1530,7 @@ audio = true
 # Optional: Enable virtualization support (KVM)
 # Type: boolean
 # Default: false
-# Expands to: --device /dev/kvm --device /dev/vhost-net --device /dev/vhost-vsock
+# Expands to: --device /dev/kvm --device /dev/vhost-net (no vsock)
 # Useful for: nested virtualization, running VMs in containers
 # Requires: extra_groups = ["kvm"]
 virtualization = true

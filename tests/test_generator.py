@@ -2868,7 +2868,7 @@ class TestGeneratorContainerFlags(unittest.TestCase):
         """)
         self.assertIn("--device /dev/kvm", svc)
         self.assertIn("--device /dev/vhost-net", svc)
-        self.assertIn("--device /dev/vhost-vsock", svc)
+        self.assertNotIn("vhost-vsock", svc)
 
     def test_gpu_nvidia_all(self):
         svc, _ = self._gen("""
