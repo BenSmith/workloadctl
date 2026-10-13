@@ -34,7 +34,7 @@ volumes = [
     "./alloy-config.alloy:/etc/alloy/config.alloy:ro",
     "/run/log/journal:/run/log/journal:ro",
     "/var/log/journal:/var/log/journal:ro",
-    "/:/host:ro,rslave",
+    "/:/host:rro",
 ]
 
 [security]

@@ -524,6 +524,27 @@ sudo semanage permissive -d wl_<name>.process                # back to enforcing
 
 ---
 
+### Read-only All the Way Down: `rro`
+
+A volume declared `:ro` is read-only at its own mount only: the mounts beneath
+it keep their own flags, so `/:/host:ro` still shows `/host/proc`,
+`/host/sys`, `/host/run/user/*` and the homes read-write. Declare it `:rro`
+instead and every mount beneath it is read-only too. podman refuses the
+option, so the generator emits the bind as `ro` and adds `--hooks-dir` and an
+annotation that select a precreate OCI hook
+(`/usr/share/workloadctl/oci-hooks.d/workloadctl-rro.json`), which makes it
+`rro` in the config crun receives. If the hook fails, podman refuses to create
+the container.
+
+The flag reaches only the mounts that exist when the container starts, so
+`rro` requires private propagation (the default) and validation refuses it
+with `slave`, `rslave`, `shared` or `rshared`: under those, a mount the host
+makes later would arrive writable. The cost is that the container sees no
+mount made after it starts, and keeps the ones the host removes, until it
+restarts. `workloadctl diagnose` (and `doctor`) reads the running container's
+mountinfo and fails `recursive_readonly` when anything under an `rro` volume
+is read-write, which is the case if the hook never ran.
+
 ### Volumes on External Filesystems
 
 A `[storage].volumes` entry whose host path lives outside

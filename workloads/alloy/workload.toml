@@ -66,10 +66,12 @@ volumes = [
     # :ro, never :U — a rootless container can't chown a root-owned file
     # (lchown EPERM); the file is world-readable so it doesn't need to.
     "/run/workload-exporter:/run/workload-exporter:ro",
-    # Host rootfs (recursive, slave propagation) so node_exporter can read
-    # the real /host/proc, /host/sys, and stat host mount points. Matching
-    # procfs_path/sysfs_path/rootfs_path are set in alloy-config.alloy.
-    "/:/host:ro,rslave",
+    # Host rootfs so node_exporter can read the real /host/proc, /host/sys,
+    # and stat host mount points. Matching procfs_path/sysfs_path/rootfs_path
+    # are set in alloy-config.alloy. rro: read-only with every mount beneath
+    # it, under private propagation, so a mount the host makes after alloy
+    # starts is not seen until alloy restarts (and one it removes stays here).
+    "/:/host:rro",
 ]
 
 [security]

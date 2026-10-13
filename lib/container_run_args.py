@@ -36,6 +36,9 @@ from workload_addr import resolve_address
 from secrets_template import (
     SECRET_PATTERN, secret_files_dir, validate_env_key)
 from gen_common import log_msg, _external_host_path
+from recursive_readonly import (
+    RRO_HOOKS_DIR, rro_annotation, rro_volume_flag,
+)
 from validation import valid_userns_mode
 from workload_seccomp import (
     SECCOMP_BASELINE, derived_profile_name, seccomp_allow,
@@ -726,15 +729,21 @@ def volume_args(spec):
     unit may write to buy nothing. So is anything that is not a directory or a
     regular file -- see _rw_path_is_bindable, where naming it is both
     unnecessary and fatal.
+
+    An `rro` volume is emitted as `ro`, followed by the flags that select the
+    hook making it recursive -- see recursive_readonly.
     """
     container, home_dir, name = spec.container, spec.home_dir, spec.name
     args = []
     external = []
     external_rw = []
+    rro_destinations = []
     for volume in container.get("storage", {}).get("volumes", []):
         expanded = expand_volume_path(volume, home_dir)
         if ':' in expanded:
-            parts = expanded.split(':', 2)
+            parts, rro_destination = rro_volume_flag(expanded.split(':', 2))
+            if rro_destination is not None:
+                rro_destinations.append(rro_destination)
             # Warn if host path escapes the workload home directory
             resolved = _external_host_path(parts[0], name)
             if resolved is not None:
@@ -751,6 +760,9 @@ def volume_args(spec):
         else:
             expanded = dq(expanded)
         args.append(f"--volume {expanded}")
+    if rro_destinations:
+        args.append(f"--hooks-dir {dq(RRO_HOOKS_DIR)}")
+        args.append(f"--annotation {dq(rro_annotation(rro_destinations))}")
     return args, external, external_rw
 
 

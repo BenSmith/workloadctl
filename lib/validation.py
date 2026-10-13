@@ -24,6 +24,7 @@ from container_validate import (
 )
 from vm_validate import validate_vm_config, vm_network_warnings
 from workload_seccomp import validate_seccomp_allow
+from recursive_readonly import rro_volume_errors
 from container_network_config import container_allow_entries
 from egress_policy import container_uses_resolve
 
@@ -228,6 +229,8 @@ def validate_workload_config(config: dict) -> list[str]:
     # cannot answer it. See container_runs_on_host_network().
     errors.extend(validate_container_network(config.get("network", {}), config))
     errors.extend(validate_seccomp_allow(config, kind))
+    for where, volumes in _volume_lists(config):
+        errors.extend(rro_volume_errors(volumes, where))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
     # (mode) in lockstep so `is_multi <=> mode != "single"` holds. The generator
@@ -277,6 +280,23 @@ def validate_workload_config(config: dict) -> list[str]:
         )
 
     return errors
+
+
+def _volume_lists(config: dict) -> list[tuple[str, list[str]]]:
+    """Each container's [storage].volumes, with where it is written; the
+    malformed shapes reported above contribute none."""
+    if "containers" not in config:
+        found = [("storage.volumes",
+                  config.get("storage", {}).get("volumes", []))]
+    elif isinstance(config["containers"], list):
+        found = [(f"containers[{c.get('name', i)}].storage.volumes",
+                  c.get("storage", {}).get("volumes", []))
+                 for i, c in enumerate(config["containers"])
+                 if isinstance(c, dict)]
+    else:
+        found = []
+    return [(where, [v for v in volumes if isinstance(v, str)])
+            for where, volumes in found if isinstance(volumes, list)]
 
 
 def uses_host_userns(config: dict) -> bool:

@@ -154,6 +154,14 @@ install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-qmp \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-qmp
 install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-shutdown \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-shutdown
+install -Dpm 0755 %{_sourcedir}/libexec/workload-oci-rro \
+    %{buildroot}%{_libexecdir}/workloadctl/workload-oci-rro
+
+# The precreate hook behind the `rro` volume option. Only a container started
+# with --hooks-dir pointing here runs it: rootless podman reads no hook
+# directory otherwise. See lib/recursive_readonly.py.
+install -Dpm 0644 %{_sourcedir}/oci-hooks/workloadctl-rro.json \
+    %{buildroot}%{_datadir}/workloadctl/oci-hooks.d/workloadctl-rro.json
 
 install -Dpm 0644 %{_sourcedir}/systemd/workload-exporter.service \
     %{buildroot}%{_unitdir}/workload-exporter.service
@@ -529,6 +537,7 @@ fi
 %{_libexecdir}/workloadctl/workload-vm-clock
 %{_libexecdir}/workloadctl/workload-vm-qmp
 %{_libexecdir}/workloadctl/workload-vm-shutdown
+%{_libexecdir}/workloadctl/workload-oci-rro
 %{_unitdir}/workload-exporter.service
 %{_unitdir}/workload-exporter.timer
 %{_unitdir}/workload-exporter-disk.service

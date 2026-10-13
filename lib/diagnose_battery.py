@@ -50,9 +50,12 @@ from vm_provision import (
     PROVISION_DONE, PROVISION_FAILED,
     read_provision_marker, record_guest_provision_result,
 )
+from recursive_readonly import (
+    RRO_HOOKS_DIR, rro_volume_flag, rro_writable_mounts,
+)
 from workload_lib import (
-    expand_volume_path, HOST_USERNS_OPT_IN, selinux_module_name,
-    selinux_type_name, WORKLOADCTL_VERSION,
+    expand_volume_path, HOST_USERNS_OPT_IN, normalize_containers,
+    selinux_module_name, selinux_type_name, WORKLOADCTL_VERSION,
 )
 from workload_uid import (
     derived_subid_range, login_defs_subid_window, read_subid_entry,
@@ -739,6 +742,62 @@ def _container_running_checks(config, manager, _check, podman_read):
                fix=f"Check logs: sudo journalctl -u {config.service_name} -n 50")
 
 
+def _rro_targets(config):
+    """(check suffix, podman container name, rro destinations) per container
+    that declares an `rro` volume."""
+    targets = []
+    for c in normalize_containers(config.config):
+        destinations = []
+        for volume in c.get("storage", {}).get("volumes", []):
+            expanded = expand_volume_path(volume, str(config.home_dir))
+            _, destination = rro_volume_flag(expanded.split(":", 2))
+            if destination is not None:
+                destinations.append(destination)
+        if not destinations:
+            continue
+        if config.is_multi:
+            targets.append((f"[{c['name']}]",
+                            config.podman_container_name(c["name"]),
+                            destinations))
+        else:
+            targets.append(("", config.container_name, destinations))
+    return targets
+
+
+def _recursive_readonly_checks(config, manager, _check, podman_read):
+    """An `rro` volume is read-only all the way down in the running container.
+
+    The generator's flags and the hook are what make it so, and podman says
+    nothing when the hook does not run; the container's own mountinfo is the
+    one reading that shows the result. See recursive_readonly.
+    """
+    for suffix, pn, destinations in _rro_targets(config):
+        ok, info = podman_read(manager.podman(config).container_inspect, pn)
+        pid = ((info or {}).get("State") or {}).get("Pid") if ok else None
+        if not pid:
+            continue  # not running: container_running says so
+        try:
+            mountinfo = Path(f"/proc/{pid}/mountinfo").read_text()
+        except OSError as e:
+            _check(f"recursive_readonly{suffix}", False,
+                   f"Cannot read {pn}'s mountinfo: {e}")
+            continue
+        writable = [point for destination in destinations
+                    for point in rro_writable_mounts(mountinfo, destination)]
+        if writable:
+            _check(f"recursive_readonly{suffix}", False,
+                   f"{pn}: read-write under an rro volume: "
+                   f"{', '.join(writable[:5])}"
+                   + (f" (+{len(writable) - 5} more)"
+                      if len(writable) > 5 else ""),
+                   fix=f"Check {RRO_HOOKS_DIR}/workloadctl-rro.json is "
+                   f"installed and the units are current, then: sudo "
+                   f"workloadctl restart {config.name}")
+        else:
+            _check(f"recursive_readonly{suffix}", True,
+                   f"{pn}: read-only under {', '.join(destinations)}")
+
+
 def _volume_paths_check(config, _check):
     volumes = config.get_volumes()
     if not volumes:
@@ -872,6 +931,7 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
     # simply never find anything.
     if user_exists and not config.is_vm:
         _container_running_checks(config, manager, _check, podman_read)
+        _recursive_readonly_checks(config, manager, _check, podman_read)
 
     _volume_paths_check(config, _check)
     _check_mcs_labels(config, _check)

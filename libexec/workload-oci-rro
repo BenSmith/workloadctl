@@ -1,0 +1,26 @@
+#!/usr/bin/python3
+"""
+workload-oci-rro: the precreate OCI hook behind the `rro` volume option.
+
+podman runs it with the container's OCI config on stdin and creates the
+container from what it prints; a non-zero exit refuses the container. The
+program is lib/recursive_readonly.py; this file is main().
+"""
+import json
+import sys
+
+from recursive_readonly import RroHookError, rro_rewrite
+
+
+def main():
+    try:
+        config = rro_rewrite(json.load(sys.stdin))
+    except (RroHookError, ValueError) as e:
+        print(f"workload-oci-rro: {e}", file=sys.stderr)
+        return 1
+    json.dump(config, sys.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

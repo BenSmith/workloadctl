@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "hook": {
+    "path": "/usr/libexec/workloadctl/workload-oci-rro",
+    "timeout": 10
+  },
+  "when": {
+    "annotations": {
+      "^io\\.workloadctl\\.recursive-readonly$": ".+"
+    }
+  },
+  "stages": ["precreate"]
+}
