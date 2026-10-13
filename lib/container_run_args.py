@@ -13,6 +13,7 @@ Installed to /usr/libexec/workloadctl/container_run_args.py.
 """
 import os
 import grp
+import re
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -91,15 +92,32 @@ def build_userns_args(security, uid, extra_groups, name):
                 args.append(f"--gidmap +{group_gid}:@{group_gid}:1")
                 mapped_gids.add(group_gid)
         # Explicit maps from TOML (with {UID}/{GID} placeholder substitution)
-        for m in extra_uidmaps:
-            m = m.replace("{UID}", str(uid)).replace("{GID}", str(gid))
-            args.append(f"--uidmap {m}")
-        for m in extra_gidmaps:
-            m = m.replace("{UID}", str(uid)).replace("{GID}", str(gid))
-            args.append(f"--gidmap {m}")
+        host_ids = {"uid": {uid}, "gid": mapped_gids}
+        for kind, maps in (("uid", extra_uidmaps), ("gid", extra_gidmaps)):
+            for m in maps:
+                m = m.replace("{UID}", str(uid)).replace("{GID}", str(gid))
+                _warn_on_a_mapped_host_id(name, kind, m, host_ids[kind])
+                args.append(f"--{kind}map {m}")
     else:
         args.append(f"--userns={userns_mode}")
     return args
+
+
+def _warn_on_a_mapped_host_id(name, kind, mapping, mapped):
+    """Warn when an extra map's host ids are already mapped. A host id
+    takes one container id, and podman keeps the last map that names it,
+    so the earlier container id silently lands on a subordinate id."""
+    match = re.fullmatch(r"\+?\d+:@?(\d+):(\d+)", mapping)
+    if not match:
+        return
+    host, size = (int(g) for g in match.groups())
+    ids = set(range(host, host + size))
+    if ids & mapped:
+        log_msg(f"WARNING: {name}'s {kind} map {mapping} maps host "
+                f"{kind} {min(ids & mapped)} a second time; podman keeps "
+                f"this map, and the container {kind} mapped to it before "
+                f"lands on a subordinate id.", level="warning")
+    mapped |= ids
 
 
 def _needs_auto_maps(security, userns_mode, extra_groups):

@@ -31,15 +31,17 @@ on_failure = "kill"
 gpu = "auto"
 
 [security]
-userns = "keep-id:uid=1000,gid=1000"
+# Container root is the workload user on the host: container-bootstrap runs as
+# root and its files land as _wl-vncdesktop-wayfire. The desktop user (uid
+# 1000) is a subordinate id, and bootstrap hands it its home. A host uid takes
+# one container uid, so root and uid 1000 cannot both be the workload user.
+userns = "keep-id:uid=0,gid=0"
 capabilities = [
     "CHOWN", "DAC_OVERRIDE", "FOWNER",
     "SETUID", "SETGID", "FSETID",
     "KILL",
 ]
 extra_groups = ["video", "render"]
-extra_uidmaps = ["+0:@{UID}:1"]
-extra_gidmaps = ["+0:@{GID}:1"]
 selinux_policy = true
 
 [storage]

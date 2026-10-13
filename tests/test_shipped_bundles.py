@@ -164,6 +164,29 @@ class TestShippedBundlesGenerate(unittest.TestCase):
                         )
 
 
+class TestShippedBundlesMapEachHostIdOnce(unittest.TestCase):
+    """A host id takes one container id; podman keeps the last map naming
+    it. The desktops once mapped container root and uid 1000 both onto the
+    workload's uid, and uid 1000 silently became a subordinate id (audit
+    F6)."""
+
+    def test_no_unit_maps_a_host_id_twice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            units = sorted(svc.glob("*.service"))
+            self.assertGreater(len(units), 0)
+            for unit in units:
+                for line in unit.read_text().splitlines():
+                    for kind in ("uid", "gid"):
+                        hosts = re.findall(
+                            rf"--{kind}map \+?\d+:@?(\d+):1\b", line)
+                        with self.subTest(unit=unit.name, kind=kind):
+                            self.assertEqual(
+                                len(hosts), len(set(hosts)), line)
+
+
 class TestShippedServicesAskForALogin(unittest.TestCase):
     """A shipped service that serves anything to whoever reaches it is a
     finding, not a default.

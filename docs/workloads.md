@@ -615,6 +615,8 @@ extra_gidmaps = ["+1000:@1000:1"]
 
 If a group from `extra_groups` doesn't exist on the host, the generator warns and skips that gidmap.
 
+A host id takes one container id, and podman keeps the last map that names it. The workload user's own host uid and gid are always mapped (to the keep-id target), so an explicit map onto `{UID}` or `{GID}` silently moves that id to a subordinate one; the generator warns. To make container root the workload user, write `userns = "keep-id:uid=0,gid=0"` instead.
+
 ---
 
 ### Resource Constraints

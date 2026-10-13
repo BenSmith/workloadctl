@@ -37,7 +37,11 @@ gpu = "auto"
 devices = ["/dev/uinput"]
 
 [security]
-userns = "keep-id:uid=1000,gid=1000"
+# Container root is the workload user on the host: container-bootstrap runs as
+# root and its files land as _wl-sunshine-streaming. The desktop user (uid
+# 1000) is a subordinate id, and bootstrap hands it its home. A host uid takes
+# one container uid, so root and uid 1000 cannot both be the workload user.
+userns = "keep-id:uid=0,gid=0"
 capabilities = [
     "CHOWN", "DAC_OVERRIDE", "FOWNER",
     "SETUID", "SETGID", "FSETID",
@@ -46,13 +50,6 @@ capabilities = [
     "SYS_CHROOT", "SYS_NICE",
 ]
 extra_groups = ["video", "render", "input", "audio"]
-# Map container root to the workload user on the host as well, so files
-# created by container-bootstrap (running as uid 0 inside) end up owned by
-# _wl-sunshine-streaming on the host — same as files created by desktop
-# (mapped via the keep-id suffix above). Without this, root-created dirs like
-# /home/desktop/.config land on a subuid the host workload user can't touch.
-extra_uidmaps = ["+0:@{UID}:1"]
-extra_gidmaps = ["+0:@{GID}:1"]
 selinux_policy = true
 # Steam's runtime sandboxes a game in namespaces of its own (bwrap).
 seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]

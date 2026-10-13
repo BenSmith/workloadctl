@@ -3084,6 +3084,45 @@ class TestGeneratorAutoMaps(unittest.TestCase):
         self.assertRegex(svc, r"--uidmap \+1000:@\d+:1")
         self.assertRegex(svc, r"--gidmap \+1000:@\d+:1")
 
+    def test_a_second_map_onto_the_workload_uid_is_warned(self):
+        # Podman keeps the last map naming a host id: here root takes the
+        # workload's uid and keep-id's uid 1000 lands on a subordinate id.
+        write_config(self.config_dir, "maps", """\
+            [workload]
+            name = "maps"
+
+            [container]
+            image = "myapp"
+
+            [security]
+            userns = "keep-id:uid=1000,gid=1000"
+            extra_uidmaps = ["+0:@{UID}:1"]
+            extra_gidmaps = ["+5:@{GID}:1"]
+        """)
+        result = run_generator(self.config_dir, self.services_dir,
+                               self.sysusers_dir)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertRegex(result.stderr,
+                         r"uid map \+0:@\d+:1 maps host uid \d+ a second")
+        self.assertRegex(result.stderr,
+                         r"gid map \+5:@\d+:1 maps host gid \d+ a second")
+
+    def test_a_map_onto_another_host_id_is_not_warned(self):
+        write_config(self.config_dir, "maps", """\
+            [workload]
+            name = "maps"
+
+            [container]
+            image = "myapp"
+
+            [security]
+            extra_uidmaps = ["+5:@1:1"]
+        """)
+        result = run_generator(self.config_dir, self.services_dir,
+                               self.sysusers_dir)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertNotIn("a second time", result.stderr)
+
     def test_nonexistent_extra_group_skipped_in_maps(self):
         # get_group_gid returns None for an unknown group; the +GID map is skipped
         # but the workload's own auto-map still lands and --userns is omitted.
