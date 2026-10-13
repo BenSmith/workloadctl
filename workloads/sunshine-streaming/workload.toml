@@ -49,7 +49,7 @@ capabilities = [
     "SETFCAP", "SETPCAP",
     "SYS_CHROOT", "SYS_NICE",
 ]
-extra_groups = ["video", "render", "input", "audio"]
+extra_groups = ["video", "render", "uinput", "audio"]
 selinux_policy = true
 # Steam's runtime sandboxes a game in namespaces of its own (bwrap).
 seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]

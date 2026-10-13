@@ -3,6 +3,15 @@
 Things that aren't obvious from reading the code, captured here so the next
 person doesn't have to rediscover them.
 
+## Input devices and the host's console
+
+The workload's user is in `uinput`, not `input`: it opens /dev/uinput and the
+input nodes uinput makes, and none of the host's physical keyboards or mice,
+so it reads nothing typed at the host. uinput itself cannot be scoped: what
+the workload synthesizes goes to whatever holds the host's focus, a console
+included. Stop the workload before working at the host's own screen and
+keyboard.
+
 ## What's Wolf?
 https://github.com/games-on-whales/wolf is a game streaming server that
 supports [the Moonlight protocol](https://moonlight-stream.org). It is 

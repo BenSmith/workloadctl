@@ -173,13 +173,13 @@ XML
 
 enable() {
     # The uinput module autoload and the /dev/uinput group-access rule
-    # (KERNEL=="uinput", GROUP="input", MODE="0660") ship in the hypervisor
+    # (KERNEL=="uinput", GROUP="uinput", MODE="0660") ship in the hypervisor
     # image (/usr/lib/modules-load.d/uinput.conf +
     # /usr/lib/udev/rules.d/72-uinput-input.rules), so they persist across bootc
     # upgrades and can't be clobbered when a sibling streaming workload is
     # disabled. Just load the module now so /dev/uinput exists before the
     # container starts on a first enable that precedes a reboot; the image udev
-    # rule already sets its perms to 0660 root:input.
+    # rule already sets its perms to 0660 root:uinput.
     echo "  [host] Ensuring uinput kernel module is loaded..."
     modprobe uinput 2>/dev/null || true
 

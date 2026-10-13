@@ -5,6 +5,15 @@ learned while deploying a headless desktop + Sunshine game streaming container
 as a rootless podman workload on a Fedora bootc (immutable) system with SELinux
 enforcing.
 
+## Input devices and the host's console
+
+The workload's user is in `uinput`, not `input`: it opens /dev/uinput and the
+input nodes uinput makes, and none of the host's physical keyboards or mice,
+so it reads nothing typed at the host. uinput itself cannot be scoped: what
+the workload synthesizes goes to whatever holds the host's focus, a console
+included. Stop the workload before working at the host's own screen and
+keyboard.
+
 ---
 
 ## Architecture Overview
