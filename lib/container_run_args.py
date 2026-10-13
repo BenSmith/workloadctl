@@ -40,6 +40,7 @@ from recursive_readonly import (
     RRO_HOOKS_DIR, rro_annotation, rro_volume_flag,
 )
 from validation import valid_userns_mode
+from workload_mcs import mcs_level
 from workload_seccomp import (
     SECCOMP_BASELINE, derived_profile_name, seccomp_allow,
 )
@@ -435,6 +436,18 @@ def _base_run_args(spec, service_type, wl_lifecycle, systemd_mode):
     return args
 
 
+def label_level_args(uid, security_opts=(), privileged=False):
+    """--security-opt=label=level for the workload's own MCS level, unless
+    the container is unlabelled (privileged, label=disable) or names a
+    level itself. In pod mode it goes on the pod: every member shares the
+    infra container's level."""
+    if privileged or any(opt in ("label=disable", "label:disable")
+                         or opt.startswith(("label=level:", "label:level:"))
+                         for opt in security_opts):
+        return []
+    return [f"--security-opt=label=level:{mcs_level(uid)}"]
+
+
 def _security_args(spec):
     """--user/--cap-add/--security-opt (selinux label, seccomp baseline,
     privileged)/--group-add=keep-groups flags from [security].
@@ -498,6 +511,8 @@ def _security_args(spec):
                 f"in this workload.", level="warning")
     if workload_selinux:
         args.append(f"--security-opt=label=type:{selinux_type_name(name)}")
+    if mode != "pod":
+        args.extend(label_level_args(spec.uid, security_opts, privileged))
 
     # Apply baseline seccomp profile unless the workload overrides it or uses --privileged
     # (--privileged disables seccomp anyway; adding it would just be noise).

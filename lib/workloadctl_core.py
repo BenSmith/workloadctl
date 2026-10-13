@@ -322,7 +322,7 @@ class WorkloadConfig:
         it declares the per-workload process type `wl_<name>.process`, which the
         generator hands to podman as `--security-opt=label=type:`. A VM workload
         makes no podman call, so nothing ever applies that type: under ADR 006
-        step 3 the VM runs as `svirt_t` (see `vm.VM_QEMU_CONTEXT`), and a VM's
+        step 3 the VM runs as `svirt_t` (see `egress_selinux.vm_qemu_context`), and a VM's
         `policy.cil` is a *delta against `svirt_t`* rather than a udica-style
         container type. The flag is worth keeping for both — "this workload
         ships a policy delta" is true either way and the load/remove mechanism

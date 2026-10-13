@@ -1962,6 +1962,7 @@ class DiagnoseMcsLabelTest(unittest.TestCase):
         (self.tmp / "app" / "data").mkdir(parents=True)
         self.config = mock.Mock()
         self.config.name = "app"
+        self.config.uid = 10042
 
     def _run(self, returncode=0, stdout="", side_effect=None):
         checks = []
@@ -1980,12 +1981,24 @@ class DiagnoseMcsLabelTest(unittest.TestCase):
         self.run_mock = run
         return checks
 
-    def test_categorised_files_fail_with_count_and_fix(self):
+    def test_files_off_the_level_fail_with_count_and_fix(self):
         checks = self._run(stdout="/a/one\n/a/two\n")
         self.assertEqual(len(checks), 1)
         self.assertFalse(checks[0]["passed"])
         self.assertIn("2 file(s)", checks[0]["message"])
-        self.assertIn("chcon -l s0", checks[0]["fix"])
+        self.assertEqual(checks[0]["fix"], "sudo workloadctl recreate app")
+
+    def test_it_looks_for_files_not_at_the_workloads_own_level(self):
+        from workload_mcs import mcs_level
+        self._run(stdout="")
+        argv = self.run_mock.call_args[0][0]
+        self.assertEqual(argv[-4:],
+                         ["!", "-context", f"*:{mcs_level(10042)}", "-print"])
+        self.assertIn("-mindepth", argv)
+
+    def test_no_workload_user_is_silent(self):
+        type(self.config).uid = mock.PropertyMock(side_effect=ValueError)
+        self.assertEqual(self._run(stdout="/a/one\n"), [])
 
     def test_clean_tree_passes(self):
         checks = self._run(stdout="")
@@ -2012,14 +2025,20 @@ class DiagnoseMcsLabelTest(unittest.TestCase):
         self.config.name = "nosuch"
         self.assertEqual(self._run(), [])
 
-    def test_glob_is_anchored_on_the_level_field(self):
-        """`*:c*` also matches the type in `...:container_file_t:s0`, which
-        reports every file on the host as broken. The level anchor is the
-        whole correctness of the predicate."""
+    def test_the_glob_is_the_whole_level_field(self):
+        """A file at a neighbouring level must not pass for the workload's:
+        the glob ends at the level, so c43 does not match c430."""
+        import fnmatch
+        from workload_mcs import mcs_level
         self._run(stdout="")
         argv = self.run_mock.call_args.args[0]
-        self.assertIn("*:s0:c*", argv)
-        self.assertNotIn("*:c*", argv)
+        glob = argv[argv.index("-context") + 1]
+        level = mcs_level(10042)
+        self.assertTrue(fnmatch.fnmatchcase(
+            f"system_u:object_r:container_file_t:{level}", glob))
+        for other in (level + "0", "s0", level.replace(",c", ",c1")):
+            self.assertFalse(fnmatch.fnmatchcase(
+                f"system_u:object_r:container_file_t:{other}", glob), other)
 
     def test_scan_is_scoped_to_data_not_state(self):
         """state/ is the rootless podman graphroot, where per-container MCS

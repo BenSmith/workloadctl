@@ -12,8 +12,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from workload_selinux import LOCAL_FCONTEXT_ROOTS, shadowed_filecon_paths
+from workload_mcs import mcs_level
 from egress_selinux import (
-    VM_QEMU_CONTEXT, VM_QEMU_TYPE, VM_RUNCON_BIN, VM_SELINUX_CIL,
+    VM_QEMU_TYPE, VM_RUNCON_BIN, VM_SELINUX_CIL, vm_qemu_context,
     VM_SELINUX_MODULE, qemu_launch_argv,
 )
 
@@ -38,12 +39,15 @@ def vm_config(name="v1", volumes=None):
     return SimpleNamespace(name=name, is_vm=True, config=cfg)
 
 
+UID = 10042
+
+
 class TestLaunchArgv(unittest.TestCase):
     """The runcon prefix, and the two ways it must decline to apply."""
 
     def test_prefixes_runcon_with_the_svirt_context(self):
-        argv = qemu_launch_argv(SAMPLE, enabled=True, runcon=__file__)
-        self.assertEqual(argv[:2], [__file__, VM_QEMU_CONTEXT])
+        argv = qemu_launch_argv(SAMPLE, UID, enabled=True, runcon=__file__)
+        self.assertEqual(argv[:2], [__file__, vm_qemu_context(UID)])
         self.assertEqual(argv[2:], SAMPLE)
 
     def test_execs_qemu_directly_with_no_shell_in_between(self):
@@ -53,7 +57,7 @@ class TestLaunchArgv(unittest.TestCase):
         an `ExecStart=/bin/sh -c 'runcon … qemu …'`, so assert the binary runcon
         is handed is QEMU itself.
         """
-        argv = qemu_launch_argv(SAMPLE, enabled=True, runcon=__file__)
+        argv = qemu_launch_argv(SAMPLE, UID, enabled=True, runcon=__file__)
         self.assertEqual(argv[2], QEMU)
         for arg in argv:
             self.assertNotIn("sh -c", arg)
@@ -61,24 +65,25 @@ class TestLaunchArgv(unittest.TestCase):
 
     def test_selinux_disabled_leaves_the_command_alone(self):
         """runcon's setexeccon fails on a disabled host and would kill QEMU."""
-        self.assertEqual(qemu_launch_argv(SAMPLE, enabled=False), SAMPLE)
+        self.assertEqual(qemu_launch_argv(SAMPLE, UID, enabled=False), SAMPLE)
 
     def test_missing_runcon_leaves_the_command_alone(self):
-        argv = qemu_launch_argv(SAMPLE, enabled=True,
+        argv = qemu_launch_argv(SAMPLE, UID, enabled=True,
                                 runcon="/nonexistent/runcon")
         self.assertEqual(argv, SAMPLE)
 
     def test_returns_a_copy_not_the_caller_s_list(self):
         original = list(SAMPLE)
-        argv = qemu_launch_argv(original, enabled=False)
+        argv = qemu_launch_argv(original, UID, enabled=False)
         argv.append("-snapshot")
         self.assertEqual(original, SAMPLE)
 
-    def test_context_names_svirt_t_at_s0(self):
-        """s0 with no categories is deliberate (ADR 006 §9.5)."""
-        user, role, typ, level = VM_QEMU_CONTEXT.split(":")
+    def test_context_names_svirt_t_at_the_workloads_level(self):
+        """Each VM at its own category pair, as sVirt does (audit F3)."""
+        user, role, typ, level = vm_qemu_context(UID).split(":", 3)
         self.assertEqual((user, role, typ, level),
-                         ("system_u", "system_r", VM_QEMU_TYPE, "s0"))
+                         ("system_u", "system_r", VM_QEMU_TYPE, mcs_level(UID)))
+        self.assertNotEqual(vm_qemu_context(UID), vm_qemu_context(UID + 1))
 
 
 class TestCilModule(unittest.TestCase):
@@ -478,7 +483,8 @@ class TestNotifyWrapperUsesTheTransition(unittest.TestCase):
         every VM unconfined with no test failing anywhere else."""
         text = (ROOT / "lib" / "vm_notify.py").read_text()
         self.assertIn("qemu_launch_argv", text)
-        self.assertRegex(text, r"Popen\(\s*qemu_launch_argv\(qemu_cmd\)")
+        self.assertRegex(text,
+                         r"Popen\(\s*qemu_launch_argv\(qemu_cmd, os\.getuid\(\)\)")
         self.assertNotRegex(text, r"Popen\(qemu_cmd,")
 
 

@@ -26,6 +26,7 @@ from provisioning import (
 )
 from host_setup import run_host_setup
 from workload_selinux import (
+    apply_level_fcontext,
     apply_selinux_policy,
     apply_vm_fcontext,
     SelinuxPolicyError,
@@ -101,6 +102,8 @@ def cmd_enable(args, manager: WorkloadManager):
         subprocess.run(["systemctl", "daemon-reload"], check=False)
         raise
     provision_user(config)
+    # Now that the user, and so its level, exists.
+    apply_level_fcontext(config, "enable")
     if not config.is_vm:
         # Same shape as the SELinux step: the diagnostic is the raiser's, the
         # machine-readable result is this layer's.

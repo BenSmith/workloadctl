@@ -90,9 +90,9 @@
 ; restricts its own view of the filesystem, so the mount namespace and this
 ; module have to be right.
 ;
-; A dedicated type also separates virtiofsd from QEMU directly, so MCS
-; categories stay unused (ADR 006 §9.5) — under the blanket allow, every VM's
-; sidecar would share one type and only categories could tell them apart.
+; A dedicated type also separates virtiofsd from QEMU directly. Each VM's
+; sidecar and QEMU run at the workload's own MCS level (workload_mcs.py), and
+; the VM's files carry it, so categories tell one VM's from another's.
 ;
 ; WHY THIS IS HOST-GLOBAL AND NOT A PER-WORKLOAD BUNDLE
 ;

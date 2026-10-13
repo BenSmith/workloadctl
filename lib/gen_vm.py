@@ -20,6 +20,7 @@ Installed to /usr/libexec/workloadctl/gen_vm.py.
 
 
 from config_parser import parse_volume_spec
+from workload_mcs import mcs_level
 from workload_lib import (
     workload_state_dir, workload_data_dir, expand_volume_path, dq, uq,
     virtiofs_tags, systemd_escape_path,
@@ -245,6 +246,9 @@ def generate_virtiofs_service(name: str, tag: str, host_path: str, user_name: st
     # /home/<user>/.ssh 0700 and authorized_keys 0600.
     svc.set("User", user_name)
     svc.set("Group", user_name)
+    # The VM's own level, so the volume's files at it are readable and the
+    # QEMU at it may connect. Ignored by systemd on a host without SELinux.
+    svc.set("SELinuxContext", f"system_u:system_r:wlvfsd_t:{mcs_level(uid)}")
     # Empty, not merely reduced: with no credential switch, nothing here wants a
     # capability. This is also why security/workload-vm.cil carries no capability
     # rule — SELinux cannot grant a capability the process does not hold.

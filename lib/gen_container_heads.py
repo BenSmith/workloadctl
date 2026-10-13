@@ -12,7 +12,9 @@ from egress_policy import container_uses_resolve
 from workload_lib import workload_state_dir, dq
 from run_files import GENERATED_BY
 from broker_config import container_uses_credentials
-from container_run_args import build_userns_args, container_network_mode_arg
+from container_run_args import (
+    build_userns_args, container_network_mode_arg, label_level_args,
+)
 from unit_file import Unit
 
 
@@ -183,6 +185,9 @@ def generate_pod_service(workload, user_name, uid):
     pod_args.extend(
         build_userns_args(workload.get("security", {}), uid, extra_groups, name)
     )
+    # The members run at the infra container's level, so the pod carries it.
+    pod_args.extend(label_level_args(
+        uid, privileged=bool(workload.get("security", {}).get("privileged"))))
     pod_args_str = " ".join(pod_args)
 
     return _head_unit(

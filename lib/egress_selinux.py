@@ -17,6 +17,7 @@ Installed to /usr/libexec/workloadctl/egress_selinux.py.
 import os
 
 from config_parser import SOCKET_DIR
+from workload_mcs import mcs_level
 
 
 # QEMU runs as svirt_t (alias qemu_t), the domain the shipped policy already
@@ -29,14 +30,15 @@ from config_parser import SOCKET_DIR
 # so passt and swtpm transition to passt_t/swtpm_t automatically the moment QEMU
 # is svirt_t, with no rules of ours.
 #
-# s0 with no categories: svirt_t is mcs_constrained and libvirt allocates a
-# category pair per VM because all of its VMs share one uid. Ours each run as
-# their own _wl-<name>, so DAC already provides the inter-VM separation MCS
-# would buy — and categories on files are invisible to `ls -l` and produce EPERM
-# that looks like nothing is wrong, a failure mode this project has been bitten
-# by before. Categories stay available if uid separation ever stops sufficing.
+# At the workload's own level (workload_mcs), as libvirt's sVirt gives each VM
+# a category pair: the VM's disks and state carry it, so a QEMU escape is held
+# from another VM's files by SELinux as well as by its uid.
 VM_QEMU_TYPE = "svirt_t"
-VM_QEMU_CONTEXT = f"system_u:system_r:{VM_QEMU_TYPE}:s0"
+
+
+def vm_qemu_context(uid: int) -> str:
+    """The context QEMU runs in for the workload with this uid."""
+    return f"system_u:system_r:{VM_QEMU_TYPE}:{mcs_level(uid)}"
 
 # The host-global policy delta VM confinement needs: a domain for the virtiofsd
 # sidecar, and one grant to svirt_t that only a QEMU-native passt netdev needs.
@@ -109,7 +111,8 @@ def selinux_enabled(root: str = "") -> bool:
     return os.path.exists(root + SELINUX_ENFORCE_PATH)
 
 
-def qemu_launch_argv(qemu_cmd: list[str], *, enabled: bool | None = None,
+def qemu_launch_argv(qemu_cmd: list[str], uid: int, *,
+                     enabled: bool | None = None,
                      runcon: str = VM_RUNCON_BIN) -> list[str]:
     """`qemu_cmd`, prefixed with runcon so QEMU enters svirt_t.
 
@@ -122,4 +125,4 @@ def qemu_launch_argv(qemu_cmd: list[str], *, enabled: bool | None = None,
         enabled = selinux_enabled()
     if not enabled or not os.path.exists(runcon):
         return list(qemu_cmd)
-    return [runcon, VM_QEMU_CONTEXT, *qemu_cmd]
+    return [runcon, vm_qemu_context(uid), *qemu_cmd]

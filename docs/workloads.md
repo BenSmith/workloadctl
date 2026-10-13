@@ -1438,6 +1438,18 @@ you with a share that mounts empty.
 
 ### SELinux Confinement
 
+**Every workload runs at an MCS level of its own**, two categories derived
+from its uid (`s0:cA,cB`): its containers (on the pod, in pod mode), its QEMU
+and its virtiofsd sidecars. Everything under its `data/` and `state/` carries
+the same level, from per-workload fcontext rules `workloadctl enable` and
+`recreate` register, so another workload's process is refused those files by
+SELinux whatever their mode; a file a container creates takes its directory's
+level, so new files carry it too. The `state/` directory itself, and the
+egress inspector's CA under it, stay at `s0`, for the host's own daemons. A volume outside the tree keeps its own label: a share two workloads
+read, such as a downloads directory, stays at `s0`, reachable by both.
+`diagnose` reports files under `data/` that are not at the level
+(`mcs_labels`); `workloadctl recreate <name>` registers the rules and relabels.
+
 VM workloads run QEMU as `svirt_t`, the domain the distro policy already
 maintains for a hypervisor process hosting an untrusted guest. This is
 unconditional — there is no flag to set — and applies to every VM workload.

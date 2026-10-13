@@ -30,7 +30,8 @@ from workload_lib import (
     selinux_module_name,
     selinux_type_name,
 )
-from workloadctl_core import WorkloadConfig
+from workload_mcs import mcs_level
+from workloadctl_core import WorkloadConfig, WorkloadUserNotFound
 
 
 # THE PKI SUBTREE HAS ITS OWN LABELS, AND THAT IS THE WHOLE POINT
@@ -258,6 +259,77 @@ def apply_vm_fcontext(config: WorkloadConfig, action: str):
     subprocess.run(["restorecon", "-RF", str(workload_root_dir(config.name))],
                    check=False, capture_output=True)
 
+
+
+def level_fcontext_patterns(name: str) -> list[str]:
+    """What carries the workload's MCS level: data/ and all below it, and
+    everything below state/. state/ itself stays s0 so the host's confined
+    daemons can traverse it; the PKI subtree, more specific, stays s0.
+
+    data/ carries it too because a file a container creates takes its
+    directory's level, not the container's (measured: a container's writes
+    into a bind-mounted volume land at the directory's s0), so a data/ at s0
+    would give a new top-level file s0 until the next relabel."""
+    root = workload_root_dir(name)
+    return [f"{root}/data(/.*)?", f"{root}/state/.+"]
+
+
+def _registered_contexts(listing: str) -> dict[str, str]:
+    """pattern -> context, from `semanage fcontext -l`."""
+    out = {}
+    for line in listing.splitlines():
+        words = line.split()
+        if len(words) >= 3 and ":" in words[-1]:
+            out[words[0]] = words[-1]
+    return out
+
+
+def apply_level_fcontext(config: WorkloadConfig, action: str):
+    """Register (enable) or unregister (disable) the rules that give a
+    workload's data and state its own MCS level (workload_mcs), then
+    relabel.
+
+    After the user exists, since the level comes from its uid: the enable
+    calls this after provisioning, recreate after the units. Not at each
+    start, where N workloads would race semanage's lock. A workload started
+    before this runs is not broken by it: its processes run at the level and
+    read the s0 files they find; this only takes the files off s0.
+    Best-effort, like apply_vm_fcontext.
+    """
+    if not shutil.which("semanage"):
+        return
+    patterns = level_fcontext_patterns(config.name)
+    if action == "disable":
+        for pattern in patterns:
+            subprocess.run(["semanage", "fcontext", "-d", pattern],
+                           check=False, capture_output=True)
+        return
+    try:
+        level = mcs_level(config.uid)
+    except (WorkloadUserNotFound, ValueError) as e:
+        warn(f"  WARNING: no SELinux level for '{config.name}': {e}")
+        return
+    selinux_type = IMAGE_SELINUX_TYPE if config.is_vm else "container_file_t"
+    listed = subprocess.run(["semanage", "fcontext", "-l"],
+                            capture_output=True, text=True)
+    known = _registered_contexts(listed.stdout if listed.returncode == 0
+                                 else "")
+    for pattern in patterns:
+        context = known.get(pattern)
+        if context and context.endswith(f":{selinux_type}:{level}"):
+            continue
+        verb = "-m" if context else "-a"
+        result = subprocess.run(
+            ["semanage", "fcontext", verb, "-t", selinux_type, "-r", level,
+             pattern], capture_output=True, text=True)
+        if result.returncode != 0:
+            warn(f"  WARNING: could not register the SELinux level rule for "
+                 f"'{config.name}': {result.stderr.strip()}")
+            continue
+        info(f"  Registered SELinux fcontext: {pattern} -> "
+             f"{selinux_type}:{level}")
+    subprocess.run(["restorecon", "-RF", str(workload_root_dir(config.name))],
+                   check=False, capture_output=True)
 
 # Path prefixes workloadctl registers in file_contexts.local (the blanket rule
 # from the RPM's %post, plus every per-workload VM rule under the same root).

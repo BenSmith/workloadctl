@@ -169,7 +169,9 @@ def supervise(name: str, qemu_cmd: list[str]) -> int:
     # runcon execs QEMU in its own process rather than forking, so `proc` is
     # still QEMU itself — the pid we signal below and the pid systemd sees are
     # unchanged by confinement.
-    proc = subprocess.Popen(qemu_launch_argv(qemu_cmd), stdin=subprocess.DEVNULL)
+    # The unit runs as the workload user, whose uid gives the VM its level.
+    proc = subprocess.Popen(qemu_launch_argv(qemu_cmd, os.getuid()),
+                            stdin=subprocess.DEVNULL)
 
     # Forward SIGTERM/SIGINT to QEMU. In a normal stop the graceful ExecStop
     # (workload-vm-shutdown) has already powered the guest off and QEMU has

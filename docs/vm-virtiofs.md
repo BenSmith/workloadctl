@@ -272,9 +272,10 @@ Three groups of options, each load-bearing:
 - **`uid=`/`gid=`/`forceuid`/`forcegid`/`file_mode`/`dir_mode`** are what
   isolate the share, and on this kind of volume they are doing the work alone.
   Every VM's sidecar is `wlvfsd_t` and the superblock is one type, so type
-  enforcement cannot tell two workloads apart here (MCS categories are unused —
-  ADR 006 §9.5). DAC is the boundary: mode 0700 owned by `_wl-<name>` means
-  another workload's user is refused.
+  enforcement cannot tell two workloads apart here; each sidecar runs at its
+  workload's own MCS level, and files under the workload's data/ carry it. On
+  a share outside that tree DAC is the boundary: mode 0700 owned by
+  `_wl-<name>` means another workload's user is refused.
 - **`mfsymlinks,sfu`** because SMB has no native symlinks, FIFOs or unix
   sockets for a session like this. Without them `ln -s` and `mkfifo` in the
   share fail with **EOPNOTSUPP**, which is not a policy fault and must not be

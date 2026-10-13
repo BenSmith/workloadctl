@@ -28,7 +28,9 @@ from workloadctl_core import (
     require_root,
 )
 from host_setup import run_host_setup
-from workload_selinux import apply_selinux_policy, apply_vm_fcontext
+from workload_selinux import (
+    apply_level_fcontext, apply_selinux_policy, apply_vm_fcontext,
+)
 
 
 def _remove_runtime_env_files(config: WorkloadConfig) -> list[str]:
@@ -235,6 +237,8 @@ def cmd_disable(args, manager: WorkloadManager):
     # [security].selinux_policy).
     attempt("remove SELinux fcontext rule",
             lambda: apply_vm_fcontext(config, "disable"))
+    attempt("remove SELinux level rules",
+            lambda: apply_level_fcontext(config, "disable"))
 
     # Mark disabled so a future generation (next enable of anything, or boot)
     # won't re-emit this workload.
