@@ -28,6 +28,7 @@ from workloadctl_core import (
     require_root,
 )
 from host_setup import run_host_setup
+from shares_setup import apply_shares
 from workload_selinux import (
     apply_level_fcontext, apply_selinux_policy, apply_vm_fcontext,
 )
@@ -239,6 +240,8 @@ def cmd_disable(args, manager: WorkloadManager):
             lambda: apply_vm_fcontext(config, "disable"))
     attempt("remove SELinux level rules",
             lambda: apply_level_fcontext(config, "disable"))
+    attempt("retire share membership",
+            lambda: apply_shares(config, "disable"))
 
     # Mark disabled so a future generation (next enable of anything, or boot)
     # won't re-emit this workload.

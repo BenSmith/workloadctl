@@ -1450,6 +1450,42 @@ read, such as a downloads directory, stays at `s0`, reachable by both.
 `diagnose` reports files under `data/` that are not at the level
 (`mcs_labels`); `workloadctl recreate <name>` registers the rules and relabels.
 
+**A directory several workloads use is a share.** Declare it once, in
+`/etc/workloads.d/shares.toml`, and join it from each workload:
+
+```toml
+# /etc/workloads.d/shares.toml
+[shares.downloads]
+path = "/var/mnt/downloads"
+```
+
+```toml
+# the torrent client's workload.toml
+[[shares]]
+name = "downloads"
+target = "/downloads"
+access = "write"
+
+# jellyfin's
+[[shares]]
+name = "downloads"
+target = "/media"
+access = "read"
+subpath = "media"
+```
+
+The share's files carry a category of their own, which its members hold
+beside their pair, so a workload outside it is refused them; a file a
+writer creates takes the category from its directory. Writers join the
+share's group (`wl-share-<name>`), which owns the tree; readers get a read
+ACL and a read-only mount, so a reader cannot plant a file a writer then
+trusts. `enable` and `recreate` of a member label the tree, set its group
+and ACLs, and `disable` takes a reader's ACL away. The category comes from
+the name; two shares that draw the same one are refused until one is given
+a `category` (300 to 1023). Shares are for container workloads, and every
+container of a workload mounts them. `diagnose` reports a share's label
+(`share[<name>]`).
+
 VM workloads run QEMU as `svirt_t`, the domain the distro policy already
 maintains for a hypervisor process hosting an untrusted guest. This is
 unconditional — there is no flag to set — and applies to every VM workload.

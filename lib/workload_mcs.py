@@ -41,6 +41,8 @@ def mcs_categories(uid: int) -> tuple[int, int]:
     return low, low + 1 + rank
 
 
-def mcs_level(uid: int) -> str:
-    """`s0:cA,cB` for the workload with this uid."""
-    return "s0:c{},c{}".format(*mcs_categories(uid))
+def mcs_level(uid: int, share_categories=()) -> str:
+    """`s0:cA,cB` for the workload with this uid, with the categories of
+    the shares it is in (shares.py) beside its pair."""
+    categories = sorted({*mcs_categories(uid), *share_categories})
+    return "s0:" + ",".join(f"c{c}" for c in categories)

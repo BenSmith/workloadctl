@@ -13,6 +13,7 @@ Installed to /usr/libexec/workloadctl/validation.py.
 import re
 
 from config_parser import infer_workload_mode
+from shares import validate_memberships
 from workload_lib import (
     MAX_CONTAINER_NAME_LENGTH, CONTAINER_NAME_PATTERN, MAX_NAME_LENGTH,
     NAME_PATTERN, HOST_USERNS_OPT_IN, WORKLOAD_TOKEN_NAMES,
@@ -152,7 +153,7 @@ def _vm_scannable(config: dict) -> dict:
 
 def validate_workload_config(config: dict) -> list[str]:
     """Run schema-level checks. Returns a list of error strings (empty = OK)."""
-    errors = []
+    errors = validate_memberships(config)
 
     kind = infer_workload_kind(config)
 

@@ -186,8 +186,10 @@ def generate_pod_service(workload, user_name, uid):
         build_userns_args(workload.get("security", {}), uid, extra_groups, name)
     )
     # The members run at the infra container's level, so the pod carries it.
+    security = workload.get("security", {})
     pod_args.extend(label_level_args(
-        uid, privileged=bool(workload.get("security", {}).get("privileged"))))
+        uid, privileged=bool(security.get("privileged")),
+        share_categories=security.get("share_categories", ())))
     pod_args_str = " ".join(pod_args)
 
     return _head_unit(

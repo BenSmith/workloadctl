@@ -436,7 +436,8 @@ def _base_run_args(spec, service_type, wl_lifecycle, systemd_mode):
     return args
 
 
-def label_level_args(uid, security_opts=(), privileged=False):
+def label_level_args(uid, security_opts=(), privileged=False,
+                     share_categories=()):
     """--security-opt=label=level for the workload's own MCS level, unless
     the container is unlabelled (privileged, label=disable) or names a
     level itself. In pod mode it goes on the pod: every member shares the
@@ -445,7 +446,8 @@ def label_level_args(uid, security_opts=(), privileged=False):
                          or opt.startswith(("label=level:", "label:level:"))
                          for opt in security_opts):
         return []
-    return [f"--security-opt=label=level:{mcs_level(uid)}"]
+    return [f"--security-opt=label=level:"
+            f"{mcs_level(uid, share_categories)}"]
 
 
 def _security_args(spec):
@@ -512,7 +514,9 @@ def _security_args(spec):
     if workload_selinux:
         args.append(f"--security-opt=label=type:{selinux_type_name(name)}")
     if mode != "pod":
-        args.extend(label_level_args(spec.uid, security_opts, privileged))
+        args.extend(label_level_args(
+            spec.uid, security_opts, privileged,
+            config.get("security", {}).get("share_categories", ())))
 
     # Apply baseline seccomp profile unless the workload overrides it or uses --privileged
     # (--privileged disables seccomp anyway; adding it would just be noise).

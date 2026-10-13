@@ -14,6 +14,7 @@ lib/diagnose_subid.py, lib/diagnose_ca_trust.py and lib/diagnose_provisioning.py
 (host artifacts, cloud-init marker). The fold that hides a disabled workload's
 consequences is here too, because the battery is its only caller.
 """
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,6 +26,7 @@ from diagnose_egress import (
     vm_egress_check, vm_network_check,
 )
 from diagnose_image_age import image_age_check
+from shares import load_shares, memberships, shares_file
 from diagnose_inspect import inspect_check
 from diagnose_resolve import container_resolve_check, vm_resolve_check
 from diagnose_provisioning import collect_host_artifact_checks, vm_provisioning_check
@@ -570,6 +572,41 @@ def _image_age_checks(config, manager, _check, podman_read):
             _check(*result)
 
 
+def _share_checks(config, _check, shares=None, getxattr=os.getxattr):
+    """Each share the workload is in: declared, there, and at its category
+    (shares.py). A label that cannot be read (no SELinux) is not judged."""
+    joined = memberships(config.config)
+    if not joined:
+        return
+    if shares is None:
+        shares, _ = load_shares()
+    for m in joined:
+        name = f"share[{m.name}]"
+        share = shares.get(m.name)
+        if share is None:
+            _check(name, False, f"Share {m.name} is not declared in "
+                   f"{shares_file()}", fix=f"Declare [shares.{m.name}] "
+                   f"with its path")
+            continue
+        if not Path(share.path).is_dir():
+            _check(name, False, f"Share {m.name}'s path {share.path} is not "
+                   f"a directory")
+            continue
+        try:
+            label = getxattr(share.path, "security.selinux").decode()
+        except OSError:
+            continue
+        level = f"s0:c{share.category}"
+        if label.rstrip("\0").endswith(f":{level}"):
+            _check(name, True, f"Share {m.name} ({m.access}) at {share.path}, "
+                   f"{level}")
+        else:
+            _check(name, False, f"Share {m.name} at {share.path} is labelled "
+                   f"{label.rstrip(chr(0))}, not {level}: a workload outside "
+                   f"it may reach its files where their mode allows",
+                   fix=f"sudo workloadctl recreate {config.name}")
+
+
 def _service_file_checks(config, _check) -> bool:
     """Service file(s) exist; returns whether the main unit does."""
     service_file = Path(f"/run/systemd/system/{config.service_name}")
@@ -950,6 +987,8 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
         _recursive_readonly_checks(config, manager, _check, podman_read)
 
     _volume_paths_check(config, _check)
+    if not config.is_vm:
+        _share_checks(config, _check)
     _check_mcs_labels(config, _check)
 
     userns_mode = config.config.get("security", {}).get("userns", "keep-id")

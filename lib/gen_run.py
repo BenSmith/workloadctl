@@ -27,6 +27,7 @@ from workload_lib import (
 )
 from workload_uid import claim_uid, subid_lock
 from validation import validate_workload_config
+from shares import load_shares, resolve as resolve_shares
 from gen_container import generate_container_workload
 from gen_vm import generate_vm_workload
 from gen_common import (
@@ -189,6 +190,16 @@ def generate_workload(config_file, all_workload_names):
     kind = infer_workload_kind(config)
     user_name = workload_username(name)
     log_msg(f"  Processing {kind} workload {name}")
+
+    # The shares it is in, mounted and in its label (shares.resolve).
+    if kind != "vm":
+        shares, share_errors = load_shares()
+        for e in share_errors:
+            log_msg(f"  WARNING: {e}", level="warning")
+        config = resolve_shares(
+            config, shares,
+            warn=lambda m: log_msg(f"  WARNING: {name}: {m}",
+                                   level="warning"))
 
     uid = resolve_uid(config, name, user_name, kind)
 

@@ -18,6 +18,7 @@ from workload_lib import workload_config_path
 from workloadctl_core import WorkloadConfig, WorkloadManager, require_root
 from substrate import get_substrate, service_active
 from provisioning import regenerate_units, transfer_image
+from shares_setup import apply_shares
 from workload_selinux import apply_level_fcontext, apply_vm_fcontext
 
 
@@ -144,6 +145,7 @@ def cmd_recreate(args, manager: WorkloadManager):
     apply_vm_fcontext(config, "enable")
     # And the level rules: an enable from before them, or a moved uid.
     apply_level_fcontext(config, "enable")
+    apply_shares(config, "enable")
 
     # RE-RUN THE SETUP UNIT, or a workload that GAINED something /var-side is
     # regenerated into units whose prerequisites do not exist.

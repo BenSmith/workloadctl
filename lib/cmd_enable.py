@@ -25,6 +25,7 @@ from provisioning import (
     transfer_image,
 )
 from host_setup import run_host_setup
+from shares_setup import apply_shares
 from workload_selinux import (
     apply_level_fcontext,
     apply_selinux_policy,
@@ -104,6 +105,7 @@ def cmd_enable(args, manager: WorkloadManager):
     provision_user(config)
     # Now that the user, and so its level, exists.
     apply_level_fcontext(config, "enable")
+    apply_shares(config, "enable")
     if not config.is_vm:
         # Same shape as the SELinux step: the diagnostic is the raiser's, the
         # machine-readable result is this layer's.
