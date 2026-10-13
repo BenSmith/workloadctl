@@ -78,6 +78,25 @@ class TestSshdRefusesWorkloadUsers(unittest.TestCase):
         for user in ("root", "ben", "admin", "wl-downloads", "wl_web"):
             self.assertFalse(self._denied(user), f"{user} is refused")
 
+    def test_no_key_is_read_from_a_workload_users_home(self):
+        # A Match block holds to the end of the drop-in, so it must be the
+        # file's last: anything after it would apply to workload users only.
+        # Proven on the proving host (2026-10-13): with DenyUsers removed, a
+        # key planted in a workload user's home was refused with the block
+        # and accepted without it; sshd -T for other users was unchanged.
+        lines = [l.strip() for l in SSHD.read_text().splitlines()
+                 if l.strip() and not l.lstrip().startswith("#")]
+        matches = [i for i, l in enumerate(lines)
+                   if l.lower().startswith("match ")]
+        self.assertEqual(len(matches), 1, lines)
+        self.assertEqual(lines[matches[0]].split()[1:], ["User", "_wl-*"])
+        block = dict(l.split(None, 1) for l in lines[matches[0] + 1:])
+        self.assertEqual(block, {
+            "AuthorizedKeysFile": "none",
+            "AuthorizedPrincipalsFile": "none",
+            "AuthorizedKeysCommand": "none",
+        })
+
     def test_it_lands_where_sshd_includes_drop_ins(self):
         installs, files = _spec_parts()
         self.assertEqual(
