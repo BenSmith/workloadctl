@@ -264,9 +264,9 @@ All workloads run with a hardened seccomp profile (`/usr/share/containers/seccom
 
 The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `mount`, `syslog`, `socketcall`.
 
-`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`).
+`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`), `AF_ALG` and the other uncommon families and netlink protocols listed in workloadctl's workloads.md. Families and protocols outside both lists are allowed and logged (`journalctl -k --grep 'type=1326'`).
 
-Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `socketcall`, and a vsock. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`, the mount calls, `syslog`, and a new namespace. An EPERM from a call the profile allows is SELinux's, not seccomp's.
+Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `socketcall`, a vsock and the other refused socket families. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`, the mount calls, `syslog`, and a new namespace. An EPERM from a call the profile allows is SELinux's, not seccomp's.
 
 **Confirm seccomp is the cause:**
 ```bash

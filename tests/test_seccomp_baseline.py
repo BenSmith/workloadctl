@@ -28,6 +28,7 @@ EPERM_TEXT = "Operation not permitted"
 FUTEX2 = {"futex_requeue", "futex_wait", "futex_waitv", "futex_wake"}
 
 ALLOW = "allow"
+LOG = "log"
 EPERM, EINVAL, ENOSYS = 1, 22, 38
 MASK64 = (1 << 64) - 1
 # What a container holds when its workload adds none: podman's default.
@@ -40,6 +41,21 @@ CLONE_NEWTIME = 0x80
 CLONE_THREAD = 0x10000
 SIGCHLD = 17
 AF_NETLINK, NETLINK_AUDIT, AF_VSOCK = 16, 9, 40
+
+# The socket families in three tiers (audit F4's workload side). Allowed:
+# what workloads use. Refused: uncommon families with a record of kernel
+# bugs, and vsock. Logged, then allowed: the rest, until their use is known.
+ALLOWED_FAMILIES = {1, 2, 10}                     # unix, inet, inet6
+REFUSED_FAMILIES = {
+    38,                                           # AF_ALG
+    9, 3, 6, 11, 8, 20, 24, 36, 39, 37, 35, 34,   # X.25 .. ISDN
+    21, 30, 26, 41, 33, 42, 43, 45,               # RDS .. MCTP
+    AF_VSOCK,
+}
+# netlink: route, sock_diag, netfilter, uevent, generic.
+ALLOWED_NETLINK = {0, 4, 12, 15, 16}
+# xfrm, crypto, rdma, iscsi, scsitransport; audit is its own rule.
+REFUSED_NETLINK = {6, 21, 20, 8, 18}
 MOUNTS = ("fsconfig", "fsmount", "fsopen", "fspick", "mount",
           "mount_setattr", "move_mount", "open_tree", "open_tree_attr",
           "pivot_root", "umount", "umount2")
@@ -72,6 +88,7 @@ def decide(profile, name, *args, arch="amd64", caps=PODMAN_CAPS):
     conditions wins."""
     args = (*args, *(0,) * (6 - len(args)))
     found = {ALLOW if e["action"] == "SCMP_ACT_ALLOW"
+             else LOG if e["action"] == "SCMP_ACT_LOG"
              else e.get("errnoRet", profile["defaultErrnoRet"])
              for e in profile["syscalls"]
              if name in e["names"] and _applies(e, arch, caps)
@@ -272,15 +289,36 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
         # pointer.
         self.assertEqual(decide(self.profile, "socketcall", 1), ENOSYS)
 
-    def test_the_other_families_are_allowed_and_upper_bits_are_not(self):
+    def test_each_family_is_in_its_tier(self):
         for family in range(64):
-            if family != AF_VSOCK:
+            if family == AF_NETLINK:
+                continue
+            want = (ALLOW if family in ALLOWED_FAMILIES
+                    else ENOSYS if family in REFUSED_FAMILIES else LOG)
+            self.assertEqual(decide(self.profile, "socket", family, 1, 0),
+                             want, family)
+
+    def test_upper_bits_are_refused_not_taken_for_another_family(self):
+        for family in range(64):
+            for high in (1 << 32, 1 << 63):
                 self.assertEqual(
-                    decide(self.profile, "socket", family, 1, 0), ALLOW,
-                    family)
-                self.assertEqual(
-                    decide(self.profile, "socket", (1 << 32) | family, 1, 0),
+                    decide(self.profile, "socket", high | family, 1, 0),
                     ENOSYS, family)
+
+    def test_each_netlink_protocol_is_in_its_tier(self):
+        for caps in (PODMAN_CAPS, PODMAN_CAPS | {"CAP_AUDIT_WRITE"}):
+            for protocol in range(34):
+                if protocol == NETLINK_AUDIT:
+                    continue
+                want = (ALLOW if protocol in ALLOWED_NETLINK
+                        else ENOSYS if protocol in REFUSED_NETLINK
+                        or protocol >= 32 else LOG)
+                self.assertEqual(
+                    decide(self.profile, "socket", AF_NETLINK, 3, protocol,
+                           caps=caps), want, (protocol, len(caps)))
+                self.assertEqual(
+                    decide(self.profile, "socket", AF_NETLINK, 3,
+                           (1 << 32) | protocol, caps=caps), ENOSYS)
 
     def test_the_audit_socket_fails_as_on_a_kernel_without_audit(self):
         """EINVAL, which sudo takes as no audit, unless the workload holds
@@ -457,6 +495,81 @@ class TestDerivedProfile(unittest.TestCase):
         derived_profile(self.baseline, _restricted_names(self.baseline))
         self.assertEqual(json.dumps(self.baseline), before)
 
+
+
+def _libseccomp():
+    try:
+        import seccomp
+    except ImportError:
+        return None
+    return seccomp
+
+
+@unittest.skipUnless(_libseccomp(), "libseccomp's Python binding absent")
+class TestTheBaselineUnderLibseccomp(unittest.TestCase):
+    """decide() models libseccomp; this asks it. The profile is built rule
+    by rule as crun builds it, loaded in a child, and socket() called
+    there. Only calls the filter refuses, or families the kernel has built
+    in, are made: a logged family would be allowed, and could make the
+    kernel load its module."""
+
+    OPS = ("EQ", "NE", "LT", "LE", "GT", "GE", "MASKED_EQ")
+
+    def _build(self, profile):
+        sc = _libseccomp()
+        ops = {f"SCMP_CMP_{op}": getattr(sc, op) for op in self.OPS}
+        flt = sc.SyscallFilter(sc.ERRNO(profile["defaultErrnoRet"]))
+        for e in profile["syscalls"]:
+            if not _applies(e, "amd64", PODMAN_CAPS):
+                continue
+            action = {"SCMP_ACT_ALLOW": sc.ALLOW, "SCMP_ACT_LOG": sc.LOG}.get(
+                e["action"]) or sc.ERRNO(
+                    e.get("errnoRet", profile["defaultErrnoRet"]))
+            args = [sc.Arg(c["index"], ops[c["op"]], c["value"],
+                           c["valueTwo"]) for c in e.get("args") or ()]
+            for name in e["names"]:
+                try:
+                    sc.resolve_syscall(sc.Arch.NATIVE, name)
+                except (ValueError, RuntimeError):
+                    continue
+                flt.add_rule(action, name, *args)
+        return flt
+
+    def _sockets(self, calls):
+        import ctypes
+        import os
+        flt = self._build(json.loads(PROFILE.read_text()))
+        read, write = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(read)
+            flt.load()
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.syscall.restype = ctypes.c_long
+            out = []
+            for family, kind, protocol in calls:
+                fd = libc.syscall(41, ctypes.c_long(family),
+                                  ctypes.c_long(kind), ctypes.c_long(protocol))
+                if fd >= 0:
+                    os.close(fd)
+                out.append(ALLOW if fd >= 0 else ctypes.get_errno())
+            os.write(write, json.dumps(out).encode())
+            os._exit(0)
+        os.close(write)
+        data = os.read(read, 65536)
+        os.waitpid(pid, 0)
+        return json.loads(data)
+
+    def test_it_loads_and_the_tiers_hold(self):
+        calls = {(1, 1, 0): ALLOW, (2, 1, 0): ALLOW, (10, 2, 0): ALLOW,
+                 (38, 5, 0): ENOSYS, (AF_VSOCK, 1, 0): ENOSYS,
+                 ((1 << 32) | AF_VSOCK, 1, 0): ENOSYS,
+                 ((1 << 32) | 1, 1, 0): ENOSYS,
+                 (AF_NETLINK, 3, 0): ALLOW, (AF_NETLINK, 3, 16): ALLOW,
+                 (AF_NETLINK, 3, 6): ENOSYS, (AF_NETLINK, 3, 21): ENOSYS,
+                 (AF_NETLINK, 3, NETLINK_AUDIT): EINVAL}
+        got = self._sockets(list(calls))
+        self.assertEqual(dict(zip(calls, got)), calls)
 
 if __name__ == "__main__":
     unittest.main()

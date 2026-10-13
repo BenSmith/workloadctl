@@ -1492,12 +1492,12 @@
       "args": [
         {
           "index": 0,
-          "value": 18446744073709551600,
-          "valueTwo": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 1,
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "unix, inet and inet6",
       "includes": {},
       "excludes": {}
     },
@@ -1506,6 +1506,108 @@
         "socket"
       ],
       "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 2,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "unix, inet and inet6",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 10,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "unix, inet and inet6",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551614,
+          "valueTwo": 4,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 7,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551612,
+          "valueTwo": 12,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
       "args": [
         {
           "index": 0,
@@ -1514,7 +1616,7 @@
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "the uncommon families, allowed and logged",
       "includes": {},
       "excludes": {}
     },
@@ -1522,7 +1624,7 @@
       "names": [
         "socket"
       ],
-      "action": "SCMP_ACT_ALLOW",
+      "action": "SCMP_ACT_LOG",
       "args": [
         {
           "index": 0,
@@ -1531,7 +1633,7 @@
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "the uncommon families, allowed and logged",
       "includes": {},
       "excludes": {}
     },
@@ -1539,84 +1641,16 @@
       "names": [
         "socket"
       ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 18446744073709551612,
-          "valueTwo": 20,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
-      "includes": {},
-      "excludes": {}
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 18446744073709551608,
-          "valueTwo": 24,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
-      "includes": {},
-      "excludes": {}
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 18446744073709551608,
-          "valueTwo": 32,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
-      "includes": {},
-      "excludes": {}
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 18446744073709551615,
-          "valueTwo": 41,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
-      "includes": {},
-      "excludes": {}
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
+      "action": "SCMP_ACT_LOG",
       "args": [
         {
           "index": 0,
           "value": 18446744073709551614,
-          "valueTwo": 42,
+          "valueTwo": 22,
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "the uncommon families, allowed and logged",
       "includes": {},
       "excludes": {}
     },
@@ -1624,16 +1658,101 @@
       "names": [
         "socket"
       ],
-      "action": "SCMP_ACT_ALLOW",
+      "action": "SCMP_ACT_LOG",
       "args": [
         {
           "index": 0,
-          "value": 18446744073709551612,
+          "value": 18446744073709551615,
+          "valueTwo": 25,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 27,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551614,
+          "valueTwo": 28,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 31,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
+          "valueTwo": 32,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551615,
           "valueTwo": 44,
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "the uncommon families, allowed and logged",
       "includes": {},
       "excludes": {}
     },
@@ -1641,7 +1760,24 @@
       "names": [
         "socket"
       ],
-      "action": "SCMP_ACT_ALLOW",
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 18446744073709551614,
+          "valueTwo": 46,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the uncommon families, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
       "args": [
         {
           "index": 0,
@@ -1650,7 +1786,7 @@
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "each family but a vsock, which reaches the host or a VM around the network namespace; the mask keeps the upper bits, which the kernel ignores",
+      "comment": "the uncommon families, allowed and logged",
       "includes": {},
       "excludes": {}
     },
@@ -1665,9 +1801,383 @@
           "value": 16,
           "valueTwo": 0,
           "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "",
+      "comment": "netlink: route, sock_diag, netfilter, uevent and generic",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 4,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink: route, sock_diag, netfilter, uevent and generic",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 12,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink: route, sock_diag, netfilter, uevent and generic",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 15,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink: route, sock_diag, netfilter, uevent and generic",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 16,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink: route, sock_diag, netfilter, uevent and generic",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 1,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 2,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 5,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 7,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 10,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 13,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 14,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 17,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 19,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 22,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_LOG",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 24,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "netlink's uncommon protocols, allowed and logged",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 16,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 9,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "the audit socket, to a workload that may write to it",
       "includes": {
         "caps": [
           "CAP_AUDIT_WRITE"
@@ -1689,9 +2199,9 @@
         },
         {
           "index": 2,
-          "value": 9,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
+          "value": 18446744073709551615,
+          "valueTwo": 9,
+          "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
       "comment": "the audit socket, as on a kernel without audit",
@@ -1703,141 +2213,6 @@
       },
       "errnoRet": 22,
       "errno": "EINVAL"
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 16,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
-        },
-        {
-          "index": 2,
-          "value": 18446744073709551608,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "",
-      "includes": {},
-      "excludes": {
-        "caps": [
-          "CAP_AUDIT_WRITE"
-        ]
-      }
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 16,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
-        },
-        {
-          "index": 2,
-          "value": 18446744073709551615,
-          "valueTwo": 8,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "",
-      "includes": {},
-      "excludes": {
-        "caps": [
-          "CAP_AUDIT_WRITE"
-        ]
-      }
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 16,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
-        },
-        {
-          "index": 2,
-          "value": 18446744073709551614,
-          "valueTwo": 10,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "",
-      "includes": {},
-      "excludes": {
-        "caps": [
-          "CAP_AUDIT_WRITE"
-        ]
-      }
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 16,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
-        },
-        {
-          "index": 2,
-          "value": 18446744073709551612,
-          "valueTwo": 12,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "",
-      "includes": {},
-      "excludes": {
-        "caps": [
-          "CAP_AUDIT_WRITE"
-        ]
-      }
-    },
-    {
-      "names": [
-        "socket"
-      ],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 16,
-          "valueTwo": 0,
-          "op": "SCMP_CMP_EQ"
-        },
-        {
-          "index": 2,
-          "value": 18446744073709551600,
-          "valueTwo": 16,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ],
-      "comment": "",
-      "includes": {},
-      "excludes": {
-        "caps": [
-          "CAP_AUDIT_WRITE"
-        ]
-      }
     },
     {
       "names": [
