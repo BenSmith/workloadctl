@@ -24,6 +24,7 @@ from diagnose_egress import (
     allow_drift_check, capture_check, container_resolver_check,
     vm_egress_check, vm_network_check,
 )
+from diagnose_image_age import image_age_check
 from diagnose_inspect import inspect_check
 from diagnose_resolve import container_resolve_check, vm_resolve_check
 from diagnose_provisioning import collect_host_artifact_checks, vm_provisioning_check
@@ -555,6 +556,20 @@ def _image_checks(config, manager, _check, podman_read):
     _check("image_available", False, f"Image not available: {config.image}", fix=fix)
 
 
+def _image_age_checks(config, manager, _check, podman_read):
+    """Each present image's age: stale past IMAGE_STALE_DAYS."""
+    podman = manager.podman(config)
+    for cname, image, pull in config.container_specs():
+        ok, info = podman_read(podman.image_info, image)
+        if not ok or not info:
+            continue
+        check_name = (f"image_current[{cname}]" if config.is_multi
+                      else "image_current")
+        result = image_age_check(config.name, check_name, image, pull, info)
+        if result:
+            _check(*result)
+
+
 def _service_file_checks(config, _check) -> bool:
     """Service file(s) exist; returns whether the main unit does."""
     service_file = Path(f"/run/systemd/system/{config.service_name}")
@@ -911,6 +926,7 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
     # the substrate, not pulled, and `config.image` is the sentinel "(vm)".
     if user_exists and not config.is_vm:
         _image_checks(config, manager, _check, podman_read)
+        _image_age_checks(config, manager, _check, podman_read)
 
     if _service_file_checks(config, _check):
         _units_current_checks(config, _check)
