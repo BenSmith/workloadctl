@@ -3593,7 +3593,7 @@ class ContainerEgressCaGateTest(unittest.TestCase):
         "ensure_manager_slice",
     )
     _GATED = ("setup_workload_runtime_dir", "generate_egress_ca",
-              "provision_egress_pki_dirs")
+              "write_container_ca_bundle", "provision_egress_pki_dirs")
 
     def _drive(self, network):
         """Run provision() for a container config and report which of the

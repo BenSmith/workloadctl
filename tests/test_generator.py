@@ -3643,10 +3643,14 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         result = self.run_gen()
         self.assertEqual(result.returncode, 0, result.stderr)
         service = self.read("workload-agent.service")
-        self.assertIn("egress-ca.crt", service)
+        from guest_ca import CA_BUNDLE_PATH
+        # The bundle (host roots and the CA), not the CA alone: a spliced
+        # connection presents the origin's own certificate.
+        self.assertIn(f'/ca/bundle.pem":"{CA_BUNDLE_PATH}":ro', service)
+        self.assertNotIn("egress-ca.crt", service)
         for var in ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
                     "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "PIP_CERT"):
-            self.assertIn(f"--env {var}=", service)
+            self.assertIn(f'--env {var}="{CA_BUNDLE_PATH}"', service)
 
     def test_ca_delivery_mount_uses_operator_path_with_no_env_vars(self):
         write_config(self.config_dir, "agent2", """\

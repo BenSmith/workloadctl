@@ -41,6 +41,7 @@ from moatery.egress_ca import (
 )
 from config_parser import SOCKET_DIR
 from egress_policy import POLICY_DIRNAME
+from guest_ca import container_ca_bundle_path, host_trust_bundle
 
 # moatery's CA mint: the one place the CA's openssl invocation and its
 # refusals live, so the inspector that signs with the CA and the step that
@@ -606,6 +607,21 @@ def generate_egress_ca(pw, name: str):
         shutil.rmtree(cache_dir, ignore_errors=True)
 
     log(f"  Generated egress CA: {cert_path}")
+
+
+def write_container_ca_bundle(pw, name: str):
+    """Write the bundle a container mounts, from this host's roots now.
+
+    On every start, so a host's root update reaches the container at its
+    next one. Beside the CA, so provision_egress_pki_dirs labels it with
+    the CA's type, which the containers may read.
+    """
+    state_dir = workload_state_dir(name)
+    content = host_trust_bundle(ca_cert_path(state_dir).read_bytes())
+    if not _write_file_nofollow(state_dir.parent,
+                                container_ca_bundle_path(state_dir), content,
+                                pw.pw_uid, pw.pw_gid, 0o644):
+        raise RuntimeError(f"cannot write the CA bundle for {name} safely")
 
 
 def provision_egress_pki_dirs(pw, name: str):

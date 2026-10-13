@@ -174,9 +174,12 @@ write_files:
 # Uncomment them at the same moment you set egress = "filtered".
 #
 # TWO ROUTES, BOTH NEEDED. The guest's system trust store covers almost
-# everything; the copy at the fixed path is what the five environment variables
-# name, for the runtimes that carry their own root list and never consult the
-# system store. Either alone leaves a measured population of clients failing.
+# everything; a bundle of the guest's roots and the CA at /usr/local/share/workloadctl/egress-ca-bundle.pem
+# is what the five environment variables name, for the runtimes that carry
+# their own root list and never consult the system store. Each variable
+# replaces that runtime's store, so the bundle needs the roots too: a spliced
+# connection presents the origin's own certificate. Either route alone leaves
+# a measured population of clients failing.
 #
 # BOTH ROUTES USE THE B64 FORM, AND THAT IS NOT A STYLE CHOICE. Substitution is
 # a plain textual replace, so a multi-line value keeps the placeholder's
@@ -207,15 +210,25 @@ write_files:
 #   - path: /etc/environment
 #     append: true
 #     content: |
-#       SSL_CERT_FILE=/usr/local/share/ca-certificates/egress-ca.crt
-#       NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/egress-ca.crt
-#       REQUESTS_CA_BUNDLE=/usr/local/share/ca-certificates/egress-ca.crt
-#       GIT_SSL_CAINFO=/usr/local/share/ca-certificates/egress-ca.crt
-#       PIP_CERT=/usr/local/share/ca-certificates/egress-ca.crt
+#       SSL_CERT_FILE=/usr/local/share/workloadctl/egress-ca-bundle.pem
+#       NODE_EXTRA_CA_CERTS=/usr/local/share/workloadctl/egress-ca-bundle.pem
+#       REQUESTS_CA_BUNDLE=/usr/local/share/workloadctl/egress-ca-bundle.pem
+#       GIT_SSL_CAINFO=/usr/local/share/workloadctl/egress-ca-bundle.pem
+#       PIP_CERT=/usr/local/share/workloadctl/egress-ca-bundle.pem
 #
-# runcmd (add as an item to the `runcmd:` list AT THE END OF THIS FILE, never as
-# a second `runcmd:` key -- see below):
+# runcmd (add as items to the `runcmd:` list AT THE END OF THIS FILE, never as
+# a second `runcmd:` key -- see below), the second building the bundle; the
+# same block under a `bootcmd:` key rebuilds it on every later boot:
 #   - update-ca-trust extract
+#   - |
+#     if [ -s /usr/local/share/ca-certificates/egress-ca.crt ]; then
+#       mkdir -p /usr/local/share/workloadctl
+#       for f in /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem; do
+#         if [ -s "$f" ]; then cat "$f"; break; fi
+#       done > /usr/local/share/workloadctl/egress-ca-bundle.pem.tmp
+#       cat /usr/local/share/ca-certificates/egress-ca.crt >> /usr/local/share/workloadctl/egress-ca-bundle.pem.tmp
+#       chmod 0644 /usr/local/share/workloadctl/egress-ca-bundle.pem.tmp && mv /usr/local/share/workloadctl/egress-ca-bundle.pem.tmp /usr/local/share/workloadctl/egress-ca-bundle.pem
+#     fi
 #
 # `tls = "splice"` on the workload (with the `tls_reason` it requires) is the
 # answer for a guest that cannot be given the anchor — a weaker property, not a

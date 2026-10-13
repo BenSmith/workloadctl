@@ -33,7 +33,7 @@ from workload_lib import (
 from egress_policy import vm_uses_inspect
 from workload_addr import UID_MAX, UID_MIN, inspect_address
 from moatery.egress_ca import ca_cert_path
-from guest_ca import CA_BUNDLE_PATH, CA_ENV_VARS
+from guest_ca import CA_BUNDLE_PATH, CA_ENV_VARS, GUEST_CA_PATH
 from broker_config import vm_credential_env
 from config_parser import SOCKET_DIR
 from vm_defs import (
@@ -517,10 +517,11 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                 f"and point the guest's HTTP clients at it -- without it the "
                 f"guest cannot verify the certificates its own inspector "
                 f"presents, and every HTTPS fetch fails as a bad certificate "
-                f"rather than as a policy decision. Write the bundle from "
-                f"${{WORKLOADCTL_VM_EGRESS_CA_B64}} (encoding: b64), add it to "
-                f"the guest's system store with a ca_certs: block, and export "
-                f"{', '.join(CA_ENV_VARS)} -- "
+                f"rather than as a policy decision. Write the CA from "
+                f"${{WORKLOADCTL_VM_EGRESS_CA_B64}} (encoding: b64) to "
+                f"{GUEST_CA_PATH}, add it to the guest's system store, build "
+                f"{CA_BUNDLE_PATH} from the guest's roots and the CA, and "
+                f"export {', '.join(CA_ENV_VARS)} naming it -- "
                 f"workloads/vm-base/cloud-init/user-data carries the whole "
                 f"block to copy. Or set "
                 f"[vm.cloud_init].seed_provides = [\"ca\"] if the guest image "

@@ -29,7 +29,7 @@ from workload_lib import (
     selinux_type_name, RUN_SYSTEMD_SYSTEM,
 )
 from moatery.egress_ca import ca_cert_path
-from guest_ca import CA_ENV_VARS, CA_BUNDLE_PATH
+from guest_ca import CA_ENV_VARS, CA_BUNDLE_PATH, container_ca_bundle_path
 from broker_config import container_uses_credentials
 from egress_policy import container_uses_resolve
 from workload_addr import resolve_address
@@ -846,14 +846,18 @@ def _container_ca_delivery_args(spec) -> list:
     delivery = container_ca_delivery(net)
     if delivery in (None, "image"):
         return []
-    cert_path = str(ca_cert_path(workload_state_dir(name)))
+    state_dir = workload_state_dir(name)
     if delivery == "mount":
         dest = container_ca_mount_path(net)
         if not dest:
             return []
+        cert_path = str(ca_cert_path(state_dir))
         return [f"--volume {dq(cert_path)}:{dq(dest)}:ro"]
-    # "env"
-    args = [f"--volume {dq(cert_path)}:{dq(CA_BUNDLE_PATH)}:ro"]
+    # "env": the five variables replace each runtime's store, so they name
+    # the host's roots with the CA (a spliced connection presents the
+    # origin's own certificate).
+    bundle = str(container_ca_bundle_path(state_dir))
+    args = [f"--volume {dq(bundle)}:{dq(CA_BUNDLE_PATH)}:ro"]
     for var in CA_ENV_VARS:
         args.append(f"--env {var}={dq(CA_BUNDLE_PATH)}")
     return args

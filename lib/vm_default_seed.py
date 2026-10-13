@@ -13,7 +13,9 @@ Installed to /usr/libexec/workloadctl/vm_default_seed.py.
 
 from pathlib import PurePosixPath
 
-from guest_ca import CA_BUNDLE_PATH, CA_ENV_VARS
+from guest_ca import (
+    CA_BUNDLE_PATH, CA_ENV_VARS, GUEST_BUNDLE_LINES, GUEST_CA_PATH,
+)
 from egress_policy import vm_uses_inspect
 from vm_defs import VM_GUEST_UID, VM_HOME_SELINUX_CONTEXT
 from vm_ptp import vm_ptp_kvm_runcmd_lines, vm_ptp_kvm_seed_files
@@ -31,8 +33,8 @@ from vm_ptp import vm_ptp_kvm_runcmd_lines, vm_ptp_kvm_seed_files
 # guest, not a degraded mode.
 #
 # THREE THINGS MOVE TOGETHER OR NONE OF THEM DO: this flag, the write_files
-# entry in render_default_user_data below that puts the PEM at CA_BUNDLE_PATH,
-# and the seed contract in build_cloud_init_iso. Two of the three live in this
+# entry and the runcmd in render_default_user_data below that put the PEM at
+# GUEST_CA_PATH and build CA_BUNDLE_PATH from it, and the seed contract in build_cloud_init_iso. Two of the three live in this
 # file, which is why the flag and the env block moved here from egress_ca:
 # egress_ca is on the listener's side of the line and does not know which
 # workload is a filtered VM. Flipping this alone points
@@ -50,8 +52,9 @@ def vm_ca_env(config: dict) -> dict[str, str]:
     reaches a host address where nothing listens.
 
     This workload's own CA is minted into
-    its state directory, written into the seed at CA_BUNDLE_PATH, and named
-    by these five variables -- and under the default `tls = "inspect"` the guest
+    its state directory, written into the seed at GUEST_CA_PATH, built with the
+    guest's own roots into CA_BUNDLE_PATH, and named by these five
+    variables -- and under the default `tls = "inspect"` the guest
     NEEDS it, because the leaf the inspector presents is signed by nothing else.
 
     ONCE PER INSTANCE ID, the same caveat the proxy block carried. cloud-init
@@ -216,7 +219,7 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
         for contentline in content.splitlines():
             lines.append(f"      {contentline}")
     if ca_cert:
-        lines.append(f"  - path: {CA_BUNDLE_PATH}")
+        lines.append(f"  - path: {GUEST_CA_PATH}")
         lines.append("    permissions: '0644'")
         lines.append("    content: |")
         for certline in ca_cert.splitlines():
@@ -257,6 +260,8 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
     # Each block is a single `- |` shell fragment, so a failure in one does not
     # decide whether the next one runs.
     runcmd_blocks = [vm_ptp_kvm_runcmd_lines()]
+    if ca_cert:
+        runcmd_blocks.append(list(GUEST_BUNDLE_LINES))
     if has_data_disk:
         # Mount /dev/vdb at /data on first boot, formatting it only if it has no
         # filesystem yet. Formatting and mounting are separate steps on purpose:
@@ -275,6 +280,13 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
             "  mountpoint -q /data || mount /data",
             "fi",
         ])
+    if ca_cert:
+        # Every boot after the first, so the guest's own root updates reach
+        # the bundle; on the first, write_files has not run yet and the guard
+        # leaves it to runcmd.
+        lines.append("bootcmd:")
+        lines.append("  - |")
+        lines += [f"    {shline}" for shline in GUEST_BUNDLE_LINES]
     lines.append("runcmd:")
     for block in runcmd_blocks:
         lines.append("  - |")

@@ -397,6 +397,67 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         self.assertTrue((self.state / "leaves" / "keep.pem").exists())
 
 
+
+class TestTheBundleTheVariablesName(unittest.TestCase):
+    """The five variables replace each runtime's store, so what they name
+    holds the system's roots and the CA (audit F33: a splicing guest that
+    trusted the CA alone verified no origin's certificate)."""
+
+    CA = b"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n"
+
+    def test_the_first_bundle_with_roots_then_the_ca(self):
+        import guest_ca
+        with tempfile.TemporaryDirectory() as tmp:
+            empty, roots = Path(tmp) / "empty", Path(tmp) / "roots"
+            empty.write_bytes(b"\n")
+            roots.write_bytes(b"ROOTS")
+            got = guest_ca.host_trust_bundle(
+                self.CA, (str(Path(tmp) / "absent"), str(empty), str(roots)))
+        self.assertEqual(got, b"ROOTS\n" + self.CA)
+
+    def test_no_system_bundle_is_an_error_not_the_ca_alone(self):
+        import guest_ca
+        with self.assertRaises(FileNotFoundError):
+            guest_ca.host_trust_bundle(self.CA, ("/nonexistent/a",))
+
+    def test_the_bundle_and_the_ca_alone_are_two_paths(self):
+        import guest_ca
+        self.assertNotEqual(guest_ca.CA_BUNDLE_PATH, guest_ca.GUEST_CA_PATH)
+        with mock.patch.object(vm_default_seed, "vm_uses_inspect",
+                               return_value=True):
+            env = vm_default_seed.vm_ca_env({})
+        self.assertEqual(env, {v: guest_ca.CA_BUNDLE_PATH
+                               for v in guest_ca.CA_ENV_VARS})
+
+    def test_a_container_bundle_is_written_beside_the_ca(self):
+        import guest_ca
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "wl" / "state"
+            cert = ensure_common.ca_cert_path(state)
+            cert.parent.mkdir(parents=True)
+            cert.write_bytes(self.CA)
+            pw = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+            with mock.patch.object(ensure_common, "workload_state_dir",
+                                   return_value=state), \
+                    mock.patch.object(ensure_common, "host_trust_bundle",
+                                      side_effect=lambda ca: b"R\n" + ca):
+                ensure_common.write_container_ca_bundle(pw, "wl")
+            path = guest_ca.container_ca_bundle_path(state)
+            self.assertEqual(path.read_bytes(), b"R\n" + self.CA)
+            self.assertEqual(path.parent, cert.parent)
+
+    def test_the_custom_seed_template_builds_it_as_the_built_in_does(self):
+        import guest_ca
+        from tests import REPO_ROOT
+        for rel in ("workloads/vm-base/cloud-init/user-data",
+                    "lib/scratch_vm.py"):
+            text = (REPO_ROOT / rel).read_text()
+            for line in guest_ca.GUEST_BUNDLE_LINES:
+                self.assertIn(f"#     {line}", text, rel)
+            for var in guest_ca.CA_ENV_VARS:
+                self.assertIn(f"#       {var}={guest_ca.CA_BUNDLE_PATH}",
+                              text, rel)
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -422,11 +483,26 @@ class TestTheCaReachesTheSeed(unittest.TestCase):
             name="myvm", guest_user="fedora", pubkey="ssh-ed25519 AAAA u@h",
             mounts=[], has_data_disk=False, **kw)
 
-    def test_the_bundle_is_written_where_the_env_vars_point(self):
-        from guest_ca import CA_BUNDLE_PATH
+    def test_the_ca_alone_is_written_where_the_store_takes_it(self):
+        from guest_ca import GUEST_CA_PATH
         out = self._render(ca_cert=self.PEM)
-        self.assertIn(f"  - path: {CA_BUNDLE_PATH}", out)
+        self.assertIn(f"  - path: {GUEST_CA_PATH}", out)
         self.assertIn("-----BEGIN CERTIFICATE-----", out)
+
+    def test_the_guest_builds_the_bundle_at_first_boot_and_every_boot(self):
+        from guest_ca import CA_BUNDLE_PATH, GUEST_BUNDLE_LINES
+        out = self._render(ca_cert=self.PEM)
+        block = "\n".join(f"    {line}" for line in GUEST_BUNDLE_LINES)
+        runcmd = out.index("runcmd:")
+        bootcmd = out.index("bootcmd:")
+        self.assertIn(block, out[runcmd:])
+        self.assertIn(block, out[bootcmd:runcmd])
+        self.assertIn(f"mv {CA_BUNDLE_PATH}.tmp {CA_BUNDLE_PATH}", block)
+
+    def test_no_ca_builds_no_bundle(self):
+        out = self._render(ca_cert="")
+        self.assertNotIn("bootcmd:", out)
+        self.assertNotIn("egress-ca-bundle", out)
 
     def test_it_also_goes_into_the_system_trust_store(self):
         out = self._render(ca_cert=self.PEM)
