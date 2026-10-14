@@ -3359,6 +3359,7 @@ class TestProvision(unittest.TestCase):
             "infer_workload_kind": mock.patch.object(self.mod, "infer_workload_kind", return_value=kind),
             "setup_home_directory": mock.patch.object(self.mod, "setup_home_directory"),
             "configure_subuid_subgid": mock.patch.object(self.mod, "configure_subuid_subgid"),
+            "ensure_transient_store": mock.patch.object(self.mod, "ensure_transient_store"),
             "setup_volume_directories": mock.patch.object(self.mod, "setup_volume_directories"),
             "write_environment_file": mock.patch.object(self.mod, "write_environment_file"),
             "restore_selinux_labels": mock.patch.object(self.mod, "restore_selinux_labels"),
@@ -3393,6 +3394,7 @@ class TestProvision(unittest.TestCase):
         rc = self.mod.provision("myapp")
         self.assertEqual(rc, 0)
         mocks["configure_subuid_subgid"].assert_called_once()
+        mocks["ensure_transient_store"].assert_called_once_with(self.pw, "myapp")
         mocks["setup_volume_directories"].assert_called_once()
         mocks["write_environment_file"].assert_called_once()
         mocks["restore_selinux_labels"].assert_called_once()
@@ -3432,6 +3434,7 @@ class TestProvision(unittest.TestCase):
     # a regression flipping either direction is caught.
     CONTAINER_MUST_SUCCEED = (
         "configure_subuid_subgid",
+        "ensure_transient_store",
         "setup_volume_directories",
         "write_environment_file",
         "enable_linger",
@@ -3480,6 +3483,7 @@ class TestProvision(unittest.TestCase):
         mocks["write_environment_file"].assert_called_once()
         mocks["restore_selinux_labels"].assert_called_once()
         # Container-only steps must not run for VM workloads
+        mocks["ensure_transient_store"].assert_not_called()
         mocks["configure_subuid_subgid"].assert_not_called()
         mocks["setup_volume_directories"].assert_not_called()
         mocks["enable_linger"].assert_not_called()
@@ -3611,7 +3615,7 @@ class ContainerEgressCaGateTest(unittest.TestCase):
     _STUBBED = (
         "warn_if_stale_home", "setup_home_directory",
         "record_deployment_provenance", "configure_subuid_subgid",
-        "setup_volume_directories", "setup_required_file_ownership",
+        "ensure_transient_store", "setup_volume_directories", "setup_required_file_ownership",
         "write_environment_file", "restore_selinux_labels", "enable_linger",
         "ensure_manager_slice",
     )

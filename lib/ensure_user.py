@@ -39,6 +39,7 @@ from ensure_container import (
     configure_subuid_subgid, setup_required_file_ownership,
     setup_volume_directories, enable_linger, ensure_manager_slice,
 )
+from podman_storage import ensure_transient_store
 from shares import load_shares, resolve as resolve_shares
 
 
@@ -270,6 +271,12 @@ def provision(name: str) -> int:
             configure_subuid_subgid(pw, resolve_shares(config, shares))
         except Exception as e:
             ensure_common.log(f"  ERROR: Failed to configure subuid/subgid for {username}: {e}")
+            return 1
+
+        try:
+            ensure_transient_store(pw, name)
+        except Exception as e:
+            ensure_common.log(f"  ERROR: Failed to make {username}'s podman store transient: {e}")
             return 1
 
         # The egress CA (P1-10, G12's container half). generate_egress_ca

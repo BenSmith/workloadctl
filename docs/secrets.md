@@ -20,9 +20,9 @@ This document describes the recommended approach for managing secrets (API keys,
 The workload system uses **systemd credentials** (`systemd-creds`) for secure secrets management. This provides:
 
 - **Encryption at rest** using AES256-GCM with TPM2 or host keys
-- **Runtime decryption** into RAM-only tmpfs; a `${SECRET:}` environment
-  variable is also recorded by podman on disk (see "File Permissions and
-  Isolation")
+- **Runtime decryption** into RAM-only tmpfs; podman's record of a
+  `${SECRET:}` environment variable is on tmpfs too (see "File Permissions
+  and Isolation")
 - **Per-workload isolation** preventing credential leakage between workloads
 - **Automatic cleanup** when services stop
 - **Bootc compatibility** - encrypted credentials can be safely committed to git
@@ -178,14 +178,17 @@ sudo systemd-creds encrypt --with-key=host+tpm2 --name=my-secret - /etc/credstor
 | `/run/credentials/{service}/` | Plain text | Service user only | NO (tmpfs, RAM only) |
 | `/run/user/<uid>/workload-secrets/<container>/` | Plain text, `[[secrets.files]]` only | The workload user; inside, its own container | NO (tmpfs, RAM only; rewritten at each start) |
 | Inside container | Plain text (env/file) | Container processes | NO (dies with container) |
-| `state/.local/share/containers/storage/` (`db.sql`, the container's `userdata/config.json`) | Plain text, `${SECRET:}` environment variables only | The workload user, root | YES (persistent disk) |
+| `/run/user/<uid>/containers/` (podman's database, the container's `userdata/config.json`) | Plain text, `${SECRET:}` environment variables only | The workload user, root | NO (tmpfs, RAM only; the transient store) |
 
 **Where the plaintext is:** a decrypted credential lives in RAM (`/run` is
-tmpfs). A `${SECRET:}` environment variable does not stay there: podman
-records every container's environment in its own storage, so the value is
-in the workload's `state/` tree on disk, readable by the workload user and
-root, and in any copy of that tree. Encrypt `/var` if that matters, or keep
-such a secret out of the environment.
+tmpfs). podman records every container's environment, a `${SECRET:}` value
+included, in its database and the container's `config.json`; setup gives
+each container workload's user a storage.conf with `transient_store = true`
+(`state/.config/containers/storage.conf`: what a rootless podman takes from
+the system's file, with that set), so both are under the runroot,
+`/run/user/<uid>/containers`, and gone at the container's removal or the
+next boot. Images and the containers' writable layers stay in `state/`. A
+value the container itself writes to disk is the container's.
 
 ### Per-Workload Isolation
 

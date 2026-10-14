@@ -214,7 +214,7 @@ class TestASharedModuleIsNotShadowedByItsCaller(unittest.TestCase):
         "lib/container_run_args.py": ("gen_common",),
         "lib/gen_container_heads.py": ("container_run_args",),
         "lib/ensure_user.py": ("ensure_common", "ensure_vm",
-                               "ensure_container"),
+                               "ensure_container", "podman_storage"),
         "lib/ensure_container.py": ("ensure_common",),
         "lib/vm_validate.py": ("vm_egress_validate",),
         "lib/vm_egress_validate.py": ("vm_network_config",),
