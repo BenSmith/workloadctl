@@ -65,6 +65,16 @@ class FakeQMP:
 # ---------------------------------------------------------------------------
 
 class NotifyTest(unittest.TestCase):
+    def setUp(self):
+        # QEMU's runcon prefix asks the uid for the VM's level, which the
+        # test's own uid has none of. On an SELinux host with runcon it
+        # raised (measured on the forge's runner 2026-10-14); the prefix is
+        # test_vm_passt_beside's.
+        patcher = mock.patch.object(notify, "qemu_launch_argv",
+                                    lambda cmd, uid: list(cmd))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_wait_running_returns_when_running(self):
         fake = FakeQMP(handler=lambda c, a=None: {"return": {"running": True}})
         notify.wait_running(fake, timeout=5.0)  # should not raise
