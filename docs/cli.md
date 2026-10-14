@@ -666,6 +666,12 @@ workloadctl logs [-f] [-n N] [--since TIME] <workload>[/<container>] [extra jour
 | `-n N` / `--lines N` | Show last N lines |
 | `--since TIME` | Show logs since TIME (journalctl format, e.g., `"1 hour ago"`) |
 
+A container given the host's journal socket sets its own entries' identifier
+and priority: the bundles that run systemd as PID 1 forward their journal
+through it. journald stamps `_UID` and `_SYSTEMD_UNIT` from the sender, which
+no client can set, and `logs` selects a workload by its `_UID`; alloy labels
+each entry with both.
+
 [↑ top](#workloadctl-command-reference)
 
 ### `stats`

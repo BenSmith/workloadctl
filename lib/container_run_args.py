@@ -699,7 +699,7 @@ def _rw_path_is_bindable(resolved):
     ReadWritePaths= entry inside the unit's namespace, and the targeted policy
     does not let init_t `mounton` a sock_file, so the unit dies at namespace
     setup with a bare 226/NAMESPACE (`avc: denied { mounton } ...
-    tcontext=...:syslogd_var_run_t tclass=sock_file`). Four shipped bundles
+    tcontext=...:syslogd_var_run_t tclass=sock_file`). Three shipped bundles
     mount /run/systemd/journal/socket that way.
 
     Nor is the entry needed: the kernel's read-only-filesystem check

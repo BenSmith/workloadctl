@@ -137,9 +137,30 @@ otelcol.receiver.loki "journal" {
   }
 }
 
+// A container given the host's journal socket sets its own entries'
+// identifier and priority; journald stamps the sender's unit and uid, which
+// it cannot set. Both are labels beside the identifier, so an entry under
+// another program's name shows where it came from.
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal__uid"]
+    target_label  = "uid"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "identifier"
+  }
+}
+
 loki.source.journal "system" {
   // Forward all journal entries. The transform processor adds host/role labels.
-  forward_to = [otelcol.receiver.loki.journal.receiver]
+  forward_to    = [otelcol.receiver.loki.journal.receiver]
+  relabel_rules = loki.relabel.journal.rules
   // Explicit path: sd_journal's default location keys off /etc/machine-id,
   // which inside the container is the container's id, not the host's, so the
   // reader would open /var/log/journal/<container-id>/ (empty) and silently

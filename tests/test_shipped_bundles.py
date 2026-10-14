@@ -224,6 +224,74 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
         self.assertRegex(unit, r'CADDY_ADMIN="?unix//')
 
 
+class TestTheHostJournalSocket(unittest.TestCase):
+    """A container given the host's journal socket writes entries under any
+    identifier, at any priority (audit F13, measured 2026-10-11); journald
+    still stamps the sender's uid and unit. The bundles that run systemd as
+    PID 1 forward their own journal there and keep it; the rest log to
+    stdout, where the journal names the container."""
+
+    @staticmethod
+    def _volumes(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "volumes" and isinstance(value, list):
+                    yield from value
+                else:
+                    yield from TestTheHostJournalSocket._volumes(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from TestTheHostJournalSocket._volumes(value)
+
+    def test_only_a_bundle_forwarding_its_own_journal_mounts_it(self):
+        mounting = []
+        for toml_path in sorted(WORKLOADS_DIR.glob("*/workload.toml")):
+            config = tomllib.loads(toml_path.read_text())
+            for volume in self._volumes(config):
+                source, _, rest = volume.partition(":")
+                if source != "/run/systemd/journal/socket":
+                    continue
+                bundle = toml_path.parent
+                mounting.append(bundle.name)
+                target = rest.split(":")[0]
+                containerfile = bundle / "Containerfile"
+                with self.subTest(bundle=bundle.name):
+                    self.assertTrue(containerfile.exists())
+                    self.assertIn(f"ForwardToSocket={target}",
+                                  containerfile.read_text())
+        self.assertGreater(len(mounting), 0)
+
+    def test_smb_server_logs_to_stdout(self):
+        bundle = WORKLOADS_DIR / "smb-server"
+        self.assertRegex((bundle / "entrypoint.sh").read_text(),
+                         r"exec smbd .*--debug-stdout")
+        self.assertNotRegex((bundle / "smb.conf").read_text(),
+                            r"(?m)^\s*logging\s*=\s*systemd")
+
+    def test_alloy_labels_an_entry_with_its_unit_and_uid(self):
+        """Checked 2026-10-14 with the bundle's image: an entry a rootless
+        container sent as sshd arrived labelled with its uid and
+        user@<uid>.service; without the rules, with neither."""
+        text = (WORKLOADS_DIR / "alloy" / "alloy-config.alloy").read_text()
+        source = re.search(r'loki\.source\.journal "system" \{(.*?)\n\}',
+                           text, re.S)
+        self.assertIsNotNone(source)
+        rules = re.search(
+            r"relabel_rules\s*=\s*loki\.relabel\.(\w+)\.rules",
+            source.group(1))
+        self.assertIsNotNone(rules)
+        relabel = re.search(
+            rf'loki\.relabel "{rules.group(1)}" \{{(.*?)\n\}}', text, re.S)
+        self.assertIsNotNone(relabel)
+        for field, label in (("__journal__systemd_unit", "unit"),
+                             ("__journal__uid", "uid")):
+            with self.subTest(field=field):
+                self.assertRegex(
+                    relabel.group(1),
+                    rf'source_labels = \["{field}"\]\s*'
+                    rf'target_label\s*=\s*"{label}"')
+
+
 class TestTheSteamBundlesOptOutOfTheBaseline(unittest.TestCase):
     """Steam's client is a 32-bit program, and its runtime starts games in
     bwrap. The baseline kills a 32-bit syscall and refuses bwrap's mounts

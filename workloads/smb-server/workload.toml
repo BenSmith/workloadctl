@@ -77,7 +77,6 @@ volumes = [
     "./samba-run:/run/samba",
     "./samba-logs:/var/log/samba",
     "./smb.conf:/etc/samba/smb.conf:ro",
-    "/run/systemd/journal/socket:/run/systemd/journal/socket",
 ]
 
 [security]

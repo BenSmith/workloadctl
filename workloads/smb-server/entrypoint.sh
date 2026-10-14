@@ -33,4 +33,4 @@ for gid in $(id -G); do
     fi
 done
 
-exec smbd --foreground --no-process-group
+exec smbd --foreground --no-process-group --debug-stdout
