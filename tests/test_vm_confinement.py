@@ -272,6 +272,17 @@ class TestCilModule(unittest.TestCase):
             "(allow passt_t svirt_t (unix_stream_socket (read write)))",
             self.rules)
 
+    def test_qemus_stdio_reaches_the_journal(self):
+        """Without it QEMU's fds 1 and 2 are SELinux's null device and a
+        QEMU that refuses its command line says so to nobody (tp,
+        2026-10-14: /proc/<qemu>/fd/2 -> /null, a failed start with no
+        QEMU line in the journal)."""
+        self.assertIn(
+            "(allow svirt_t init_t (unix_stream_socket (getattr ioctl read "
+            "write)))", self.rules)
+        self.assertNotIn("connectto", self.rules.split(
+            "(allow svirt_t init_t", 1)[1].split("\n", 1)[0])
+
     def test_qemu_no_longer_signals_passt(self):
         """QEMU is not passt's parent any more."""
         self.assertNotIn("(allow svirt_t passt_t (process (signal)))",

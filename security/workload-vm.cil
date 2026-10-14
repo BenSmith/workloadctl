@@ -311,6 +311,14 @@
 ; the daemon QEMU is supposed to be talking to.
 (allow svirt_t wlvfsd_t (unix_stream_socket (connectto)))
 
+; QEMU's stdout and stderr are the journal's stream sockets, which systemd
+; (init_t) made for the unit. The shipped policy gives them to daemons, not
+; to svirt_t, and dontaudits the refusal: at exec SELinux swaps both for
+; its null device, so every message QEMU writes, a refused option
+; included, is lost without a trace. Only the fds QEMU inherits; connecting
+; to anything is another permission.
+(allow svirt_t init_t (unix_stream_socket (getattr ioctl read write)))
+
 ; passt runs beside QEMU, so QEMU can run its own -sandbox with spawn=deny
 ; (lib/egress_selinux.py, VM_PASST_TYPE). workload-vm-notify, which systemd
 ; runs as unconfined_service_t, starts it with runcon at passt_t: the
