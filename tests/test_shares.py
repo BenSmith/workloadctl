@@ -8,6 +8,7 @@ cannot plant a file. Each piece fails silently when missing: a mount
 without the category, a writer without the group, a reader with write.
 """
 import re
+import shutil
 import subprocess
 import tempfile
 import types
@@ -204,6 +205,10 @@ class HostSetup(unittest.TestCase):
         self.run = run
         self.enterContext(mock.patch.object(
             shares_setup.shutil, "which", return_value="/usr/bin/x"))
+        # Fedora's: /var/mnt is labelled as /mnt.
+        self.enterContext(mock.patch.object(
+            shares_setup, "path_substitutions",
+            return_value=[("/var/mnt", "/mnt")]))
 
     def member(self, name, access):
         return {"workload": {"name": name}, "container": {"image": "x"},
@@ -227,7 +232,7 @@ class HostSetup(unittest.TestCase):
         self.assertEqual(self.has("semanage", "fcontext", "-a")[0],
                          ["semanage", "fcontext", "-a", "-t",
                           "container_file_t", "-r", f"s0:c{category}",
-                          "/var/mnt/downloads(/.*)?"])
+                          "/mnt/downloads(/.*)?"])
         self.assertTrue(self.has("restorecon", "-RF", "/var/mnt/downloads"))
         self.assertTrue(self.has("chgrp", "-R", "wl-share-downloads"))
         self.assertTrue(self.has("chmod", "-R", "g+rwX,o-rwx"))
@@ -254,7 +259,55 @@ class HostSetup(unittest.TestCase):
         self.apply("torrent", "write", "disable", {})
         self.assertEqual(self.has("semanage", "fcontext", "-d"),
                          [["semanage", "fcontext", "-d",
-                           "/var/mnt/downloads(/.*)?"]])
+                           "/mnt/downloads(/.*)?"]])
+
+    def test_a_refused_rule_is_not_reported_registered(self):
+        def run(argv, **kw):
+            self.calls.append(argv)
+            refused = argv[:3] == ["semanage", "fcontext", "-a"]
+            return subprocess.CompletedProcess(argv, 1 if refused else 0, "",
+                                               "ValueError: conflicts")
+        self.run = run
+        with mock.patch.object(shares_setup, "info") as info, \
+             mock.patch.object(shares_setup, "warn"):
+            self.apply("torrent", "write", "enable", {})
+        self.assertFalse(any("Registered" in c.args[0]
+                             for c in info.call_args_list))
+
+
+class Equivalences(unittest.TestCase):
+    """semanage refuses a rule under an equivalence's alias: on the proving
+    host (2026-10-14) a share at /var/mnt/audit-share got no rule, stayed
+    mnt_t, and its writer could not create a file in it."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
+        self.files = self.root / "targeted" / "contexts" / "files"
+        self.files.mkdir(parents=True)
+
+    def test_a_path_under_an_alias_is_labelled_as_under_its_target(self):
+        subs = [("/var/mnt", "/mnt"), ("/var/home", "/home")]
+        self.assertEqual(shares_setup.labelled_as("/var/mnt/dl", subs),
+                         "/mnt/dl")
+        self.assertEqual(shares_setup.labelled_as("/var/mnt", subs), "/mnt")
+        self.assertEqual(shares_setup.labelled_as("/var/mntx/dl", subs),
+                         "/var/mntx/dl")
+        self.assertEqual(shares_setup.labelled_as("/srv/dl", subs), "/srv/dl")
+
+    def test_the_local_file_is_read_before_the_distributions(self):
+        (self.files / "file_contexts.subs_dist").write_text(
+            "# comment\n/var/mnt /mnt\n/var/home   /home\n")
+        (self.files / "file_contexts.subs").write_text("/var/mnt/x /srv/x\n")
+        subs = shares_setup.path_substitutions("targeted", root=self.root)
+        self.assertEqual(subs, [("/var/mnt/x", "/srv/x"),
+                                ("/var/mnt", "/mnt"), ("/var/home", "/home")])
+        self.assertEqual(shares_setup.labelled_as("/var/mnt/x/y", subs),
+                         "/srv/x/y")
+
+    def test_no_files_no_substitutions(self):
+        self.assertEqual(
+            shares_setup.path_substitutions("targeted", root=self.root), [])
 
 
 class Diagnosed(unittest.TestCase):

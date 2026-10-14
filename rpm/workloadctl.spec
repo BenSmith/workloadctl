@@ -18,6 +18,8 @@ Requires:       python3 >= 3.14
 Requires:       podman >= 5.3
 Requires:       systemd
 Requires:       shadow-utils
+# setfacl: a share's readers get a read ACL (lib/shares_setup.py).
+Requires:       acl
 Suggests:       bash-completion
 # SELinux: enable registers an fcontext rule for /var/lib/workloads so the
 # transferred image storage is labeled container_file_t. semanage

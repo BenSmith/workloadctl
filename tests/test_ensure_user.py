@@ -3402,6 +3402,29 @@ class TestProvision(unittest.TestCase):
         mocks["generate_ssh_keypair"].assert_not_called()
         mocks["build_cloud_init_iso"].assert_not_called()
 
+    def test_a_writers_share_groups_reach_the_subgid_step_alone(self):
+        """The unit maps a writer's share group like an extra group; with
+        no subgid entry for it podman refused the start ("parent ID GID 980
+        is not mapped/delegated", proving host, 2026-10-14)."""
+        import shares as shares_mod
+        mocks = self._patch_common("container")
+        config = {"workload": {"name": "test"}, "container": {"image": "x"},
+                  "shares": [{"name": "dl", "target": "/dl",
+                              "access": "write"}]}
+        mocks["load_workload_config"].return_value = config
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "shares.toml"
+            path.write_text('[shares.dl]\npath = "/srv/dl"\n')
+            declared = shares_mod.load_shares(path)
+        with mock.patch.object(self.mod, "load_shares",
+                               return_value=declared):
+            rc = self.mod.provision("myapp")
+        self.assertEqual(rc, 0)
+        subid_config = mocks["configure_subuid_subgid"].call_args.args[1]
+        self.assertIn("wl-share-dl", subid_config["security"]["extra_groups"])
+        volume_config = mocks["setup_volume_directories"].call_args.args[1]
+        self.assertNotIn("security", volume_config)
+
     # The container provisioning steps split into two contracts: must-succeed
     # steps (a failure leaves the workload running-but-wrong, so provision()
     # aborts nonzero) and best-effort steps (a failure is logged but provisioning

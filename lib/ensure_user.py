@@ -39,6 +39,7 @@ from ensure_container import (
     configure_subuid_subgid, setup_required_file_ownership,
     setup_volume_directories, enable_linger, ensure_manager_slice,
 )
+from shares import load_shares, resolve as resolve_shares
 
 
 # Per-workload provisioning lock. A module constant so tests can redirect it.
@@ -260,8 +261,13 @@ def provision(name: str) -> int:
 
     else:
         # Container workloads: full existing setup
+        # A writer's share groups are extra groups in its units
+        # (shares.resolve), so each needs its subgid entry as theirs do. Only
+        # this step reads the resolved config: the share's path is no volume
+        # of the workload's to create or own.
         try:
-            configure_subuid_subgid(pw, config)
+            shares, _ = load_shares()
+            configure_subuid_subgid(pw, resolve_shares(config, shares))
         except Exception as e:
             ensure_common.log(f"  ERROR: Failed to configure subuid/subgid for {username}: {e}")
             return 1

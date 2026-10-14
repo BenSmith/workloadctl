@@ -17,6 +17,7 @@ Installed to /usr/libexec/workloadctl/shares_setup.py.
 import shutil
 import subprocess
 import tomllib
+from pathlib import Path
 
 from cli_log import info, warn
 from shares import (
@@ -28,6 +29,13 @@ from workload_lib import (
 )
 
 SHARE_SELINUX_TYPE = "container_file_t"
+
+# libselinux's path equivalences: a path under an alias is labelled as the
+# same path under its target, and semanage refuses a rule under the alias
+# (/var/mnt is /mnt's on Fedora). The local file's are read before the
+# distribution's, and the first that matches applies, as libselinux does.
+SELINUX_CONFIG = Path("/etc/selinux/config")
+SUBS_FILES = ("file_contexts.subs", "file_contexts.subs_dist")
 
 
 def _run(argv, run=subprocess.run):
@@ -52,8 +60,45 @@ def enabled_configs(skip=None) -> dict[str, dict]:
     return configs
 
 
-def fcontext_pattern(path: str) -> str:
-    return f"{path}(/.*)?"
+def _policy_name(config=SELINUX_CONFIG) -> str:
+    try:
+        for line in config.read_text().splitlines():
+            key, _, value = line.strip().partition("=")
+            if key == "SELINUXTYPE" and value:
+                return value
+    except OSError:
+        pass
+    return "targeted"
+
+
+def path_substitutions(policy=None, root=Path("/etc/selinux")):
+    """(alias, target) pairs, in the order libselinux tries them."""
+    files = root / (policy or _policy_name()) / "contexts" / "files"
+    subs = []
+    for name in SUBS_FILES:
+        try:
+            text = (files / name).read_text()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            words = line.split()
+            if len(words) == 2 and not words[0].startswith("#"):
+                subs.append((words[0].rstrip("/"), words[1].rstrip("/")))
+    return subs
+
+
+def labelled_as(path: str, subs) -> str:
+    """The path SELinux labels `path` as."""
+    for alias, target in subs:
+        if path == alias or path.startswith(alias + "/"):
+            return target + path[len(alias):]
+    return path
+
+
+def fcontext_pattern(path: str, subs=None) -> str:
+    if subs is None:
+        subs = path_substitutions()
+    return f"{labelled_as(path, subs)}(/.*)?"
 
 
 def _label(share, run):
@@ -67,10 +112,11 @@ def _label(share, run):
                     if line.split()[:1] == [pattern]), None)
     if context != f"system_u:object_r:{SHARE_SELINUX_TYPE}:{level}":
         verb = "-m" if context else "-a"
-        _run(["semanage", "fcontext", verb, "-t", SHARE_SELINUX_TYPE,
-              "-r", level, pattern], run)
-        info(f"  Registered SELinux fcontext: {pattern} -> "
-             f"{SHARE_SELINUX_TYPE}:{level}")
+        result = _run(["semanage", "fcontext", verb, "-t", SHARE_SELINUX_TYPE,
+                       "-r", level, pattern], run)
+        if result.returncode == 0:
+            info(f"  Registered SELinux fcontext: {pattern} -> "
+                 f"{SHARE_SELINUX_TYPE}:{level}")
     _run(["restorecon", "-RF", share.path], run)
 
 
