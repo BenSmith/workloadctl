@@ -1,10 +1,12 @@
-"""The VM service's main process: QEMU, readiness, and the guest's exit.
+"""The VM service's main process: passt, QEMU, readiness, and the guest's exit.
 
-Starts QEMU as a child and stays alive as the unit's MainPID, connects to its
-QMP socket, sends READY=1 once the guest's vCPUs run, watches the guest's
-cloud-init from a daemon thread, and exits with QEMU's status -- or, in
-[vm].restart = "on-reboot" mode, with a status that tells a reboot from a
-poweroff.
+Starts passt and QEMU as children, on the two ends of one socket pair, and
+stays alive as the unit's MainPID, connects to QEMU's QMP socket, sends
+READY=1 once the guest's vCPUs run, watches the guest's cloud-init from a
+daemon thread, and exits with QEMU's status -- or, in [vm].restart =
+"on-reboot" mode, with a status that tells a reboot from a poweroff. A passt
+that exits takes QEMU down with it, and the unit fails: a guest with no
+network looks healthy from everywhere else.
 """
 import os
 import signal
@@ -14,11 +16,12 @@ import sys
 import threading
 import time
 
-from egress_selinux import qemu_launch_argv
+from egress_selinux import passt_launch_argv, qemu_launch_argv, vm_socketpair
 from config_parser import SOCKET_DIR
 from qmp import QMPClient
 from vm_provision import (marker_reports_failure, marker_vouches_for,
                           read_provision_marker, record_guest_provision_result)
+from vm_defs import PASST_ARGS_END, PASST_ARGS_FLAG, PASST_FD_TOKEN
 from workload_lib import workload_state_dir
 
 # How long to keep asking the guest whether cloud-init finished, and how often.
@@ -28,6 +31,71 @@ from workload_lib import workload_state_dir
 # per poll, and the watch exits the moment the guest answers.
 PROVISION_WATCH_TIMEOUT = 1800.0
 PROVISION_POLL_INTERVAL = 15.0
+
+# How long passt has to exit once QEMU has, before it is killed.
+PASST_STOP_TIMEOUT = 5.0
+
+
+def split_argv(args: list[str]) -> tuple[list[str], list[str]]:
+    """The unit's words after the name: (passt's argv, QEMU's argv).
+
+    passt's is empty for a bridged VM, whose ExecStart carries no
+    PASST_ARGS_FLAG.
+    """
+    if not args or args[0] != PASST_ARGS_FLAG:
+        return [], list(args)
+    try:
+        end = args.index(PASST_ARGS_END, 1)
+    except ValueError:
+        raise ValueError(f"{PASST_ARGS_FLAG} without {PASST_ARGS_END}")
+    return list(args[1:end]), list(args[end + 1:])
+
+
+def start_passt(passt_cmd: list[str], qemu_cmd: list[str], uid: int):
+    """Start passt on one end of a socket pair; QEMU's argv for the other.
+
+    Returns passt's Popen, QEMU's argv with PASST_FD_TOKEN replaced, and
+    QEMU's end, which the caller passes to QEMU and then closes.
+    """
+    passt_end, qemu_end = vm_socketpair(uid)
+    try:
+        passt_fd = passt_end.fileno()
+        passt = subprocess.Popen(
+            passt_launch_argv([*passt_cmd, "--fd", str(passt_fd)], uid),
+            stdin=subprocess.DEVNULL, pass_fds=(passt_fd,))
+    except BaseException:
+        qemu_end.close()
+        raise
+    finally:
+        passt_end.close()
+    qemu_cmd = [arg.replace(PASST_FD_TOKEN, str(qemu_end.fileno()))
+                for arg in qemu_cmd]
+    return passt, qemu_cmd, qemu_end
+
+
+def stop_passt(passt) -> None:
+    """Stop passt once QEMU has gone."""
+    if passt.poll() is not None:
+        return
+    passt.terminate()
+    try:
+        passt.wait(timeout=PASST_STOP_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        passt.kill()
+        passt.wait()
+
+
+def watch_passt(passt, proc, lost: threading.Event) -> None:
+    """Take QEMU down if passt exits under it."""
+    rc = passt.wait()
+    if proc.poll() is None:
+        lost.set()
+        print(f"workload-vm-notify: passt exited ({rc}) under a running "
+              f"guest; stopping QEMU", file=sys.stderr)
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
 
 
 def sd_notify(msg: str):
@@ -153,13 +221,29 @@ def monitor_shutdown_reason(name: str, proc) -> str | None:
         qmp.close()
 
 
-def supervise(name: str, qemu_cmd: list[str]) -> int:
-    """Run QEMU for one VM and hold the unit's main PID; the exit status.
+def supervise(name: str, qemu_cmd: list[str],
+              passt_cmd: list[str] | None = None) -> int:
+    """Run passt and QEMU for one VM and hold the unit's main PID.
 
     READY=1 goes out when the guest's vCPUs run, the cloud-init watch runs
     beside QEMU for its whole lifetime, and the status is QEMU's own unless
-    on-reboot mode translates the guest's shutdown reason into one.
+    on-reboot mode translates the guest's shutdown reason into one, or passt
+    exited under it.
     """
+    uid = os.getuid()
+    passt = qemu_end = None
+    if passt_cmd:
+        passt, qemu_cmd, qemu_end = start_passt(passt_cmd, qemu_cmd, uid)
+    try:
+        return run_qemu(name, qemu_cmd, uid, passt, qemu_end)
+    finally:
+        if passt is not None:
+            stop_passt(passt)
+
+
+def run_qemu(name: str, qemu_cmd: list[str], uid: int, passt=None,
+             qemu_end=None) -> int:
+    """QEMU's part of supervise: start, readiness, exit status."""
     qmp_sock = str(SOCKET_DIR / name / "qmp.sock")
 
     # Start QEMU as a child process. We stay alive to hold the service's
@@ -170,8 +254,17 @@ def supervise(name: str, qemu_cmd: list[str]) -> int:
     # still QEMU itself — the pid we signal below and the pid systemd sees are
     # unchanged by confinement.
     # The unit runs as the workload user, whose uid gives the VM its level.
-    proc = subprocess.Popen(qemu_launch_argv(qemu_cmd, os.getuid()),
-                            stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.Popen(
+            qemu_launch_argv(qemu_cmd, uid), stdin=subprocess.DEVNULL,
+            pass_fds=(qemu_end.fileno(),) if qemu_end is not None else ())
+    finally:
+        if qemu_end is not None:
+            qemu_end.close()
+    lost, stopping = threading.Event(), threading.Event()
+    if passt is not None:
+        threading.Thread(target=watch_passt, args=(passt, proc, lost),
+                         name="passt-watch", daemon=True).start()
 
     # Forward SIGTERM/SIGINT to QEMU. In a normal stop the graceful ExecStop
     # (workload-vm-shutdown) has already powered the guest off and QEMU has
@@ -179,6 +272,8 @@ def supervise(name: str, qemu_cmd: list[str]) -> int:
     # last-resort hard kill if the guest ignored ACPI and ExecStop timed out;
     # if QEMU is already dead these are no-ops.
     def _forward(sig, _frame):
+        # systemd's stop signals passt as well: its exit then is the stop's.
+        stopping.set()
         try:
             proc.send_signal(sig)
         except ProcessLookupError:
@@ -230,6 +325,8 @@ def supervise(name: str, qemu_cmd: list[str]) -> int:
     if reboot_exit:
         reason = monitor_shutdown_reason(name, proc)
         rc = proc.wait()
+        if lost.is_set() and not stopping.is_set():
+            return 1
         if reason == "guest-reset":
             return int(reboot_exit)
         if reason == "guest-shutdown":
@@ -237,4 +334,5 @@ def supervise(name: str, qemu_cmd: list[str]) -> int:
         return rc
 
     # Wait for QEMU to exit and propagate its exit code
-    return proc.wait()
+    rc = proc.wait()
+    return 1 if lost.is_set() and not stopping.is_set() else rc

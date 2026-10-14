@@ -8,11 +8,15 @@ namespace with the whole filesystem writable wherever its uid and label
 allowed. A container workload's unit has had ProtectSystem=strict, a private
 /tmp and a socket-family deny-list all along.
 
-Two settings are absent on purpose, and asserted absent: NoNewPrivileges
-(QEMU reaches svirt_t by a type transition at exec, which no_new_privs
-refuses) and QEMU's own -sandbox (the passt that `-netdev passt` launches
-inherits its seccomp filter and fails under it, even `-sandbox on` alone;
-measured with QEMU 10.2.2 on the proving host).
+NoNewPrivileges is absent on purpose, and asserted absent: QEMU reaches
+svirt_t by a type transition at exec, which no_new_privs refuses.
+
+QEMU's own -sandbox (audit F21) was absent too while QEMU launched passt
+itself (`-netdev passt`): passt inherits the filter and fails under it,
+even `-sandbox on` alone (measured with QEMU 10.2.2 on the proving host).
+passt now runs beside QEMU, so a passt VM's QEMU runs the full sandbox. A
+bridged VM's does not: qemu-bridge-helper is a spawn, and the filter's
+no_new_privs keeps it from its privilege.
 """
 
 import unittest
@@ -54,12 +58,16 @@ class TestTheVmUnitIsHardened(unittest.TestCase):
         text, _ = _service_lines(PASST)
         self.assertNotIn("NoNewPrivileges", text)
 
-    def test_qemu_runs_without_its_own_sandbox(self):
-        """Its filter is inherited by the passt it launches, which then
-        fails. Pinned so that adding it is a decision made with that in
-        view, not a hardening pass that breaks every passt VM."""
+    def test_a_passt_vms_qemu_runs_its_own_sandbox(self):
         text, _ = _service_lines(PASST)
+        self.assertIn("-sandbox on,obsolete=deny,elevateprivileges=deny,"
+                      "spawn=deny,resourcecontrol=deny", text)
+
+    def test_a_bridged_vms_qemu_does_not(self):
+        """Its netdev spawns qemu-bridge-helper."""
+        text, _ = _service_lines(BRIDGED)
         self.assertNotIn("-sandbox", text)
+        self.assertIn("-netdev bridge", text)
 
 
 if __name__ == "__main__":

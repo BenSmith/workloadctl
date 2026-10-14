@@ -2447,7 +2447,8 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         self._write_vm_config()
         self._run()
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn("-netdev passt,id=net0,", svc)
+        self.assertIn("-netdev stream,id=net0,", svc)
+        self.assertIn("--passt /usr/bin/passt ", svc)
         self.assertNotIn("-netdev bridge", svc)
         self.assertNotIn("workload-bridge.service", svc)
         self.assertFalse(
@@ -2468,17 +2469,17 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         self.assertIn("User=_wl-fedora-vm", svc)
         self.assertNotIn("User=root", svc)
 
-    def test_passt_netdev_closes_the_host_loopback_and_search_leaks(self):
+    def test_passt_closes_the_host_loopback_and_search_leaks(self):
         self._write_vm_config()
         self._run()
         svc = self._read("workload-fedora-vm.service")
         # passt's default maps the host's loopback onto the gateway address,
         # which exposes exactly the services that skip auth because they are
         # not reachable off-box.
-        self.assertIn("map-host-loopback=none", svc)
+        self.assertIn(" --map-host-loopback none ", svc)
         # The resolv.conf search list is otherwise advertised over DHCP and
         # NDP, leaking internal domain names.
-        self.assertIn("search=none", svc)
+        self.assertIn(" --search none ", svc)
 
     def test_management_address_is_derived_from_the_uid(self):
         self._write_vm_config()
@@ -2494,22 +2495,20 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         expected = ".".join(str((octets >> shift) & 0xFF)
                             for shift in (24, 16, 8, 0))
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn(f"param=-t,param={expected}/2222:22", svc)
+        self.assertIn(f" -t {expected}/2222:22 ", svc)
 
     def test_published_ports_are_separate_passt_arguments(self):
-        # net/passt.c joins the tcp-ports/udp-ports list with commas into ONE
-        # `--tcp-ports` value, and passt allows only one leading `[ADDR/]` for
-        # the whole comma list. So each forward has to be its own `-t`/`-u`,
-        # through QEMU's repeatable `param=` hatch — the list properties cannot
-        # express a per-entry bind address alongside the management forward.
+        # passt allows only one leading `[ADDR/]` for a whole comma list, so
+        # each forward has to be its own `-t`/`-u`: a list cannot express a
+        # per-entry bind address alongside the management forward.
         self._write_vm_config(
             network='ports = ["8080:80", "5353:53/udp"]\negress = "open"')
         self._run()
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn("param=-t,param=8080:80", svc)
-        self.assertIn("param=-u,param=5353:53", svc)
-        self.assertNotIn("tcp-ports=", svc)
-        self.assertNotIn("udp-ports=", svc)
+        self.assertIn(" -t 8080:80 ", svc)
+        self.assertIn(" -u 5353:53 ", svc)
+        self.assertNotIn("--tcp-ports", svc)
+        self.assertNotIn("--udp-ports", svc)
 
     def test_a_bound_published_port_keeps_its_own_passt_argument(self):
         # The regression this fix was written for: QEMU joined the management
@@ -2521,17 +2520,17 @@ class TestGeneratorVmWorkload(unittest.TestCase):
             network='ports = ["192.168.0.10:2222:22"]\negress = "open"')
         self._run()
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn("param=-t,param=192.168.0.10/2222:22", svc)
-        self.assertNotIn("tcp-ports=", svc)
+        self.assertIn(" -t 192.168.0.10/2222:22 ", svc)
+        self.assertNotIn("--tcp-ports", svc)
 
     def test_passt_dns_is_deferred_to_a_prestart(self):
         # The generator runs Before=basic.target, where there is no default
         # route to derive a DNS address from, so the host-dependent half of the
-        # netdev is written at unit start and spliced in by expansion.
+        # options is written at unit start and spliced in by expansion.
         self._write_vm_config()
         self._run()
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn("${WL_PASST_DNS}", svc)
+        self.assertIn(" $WL_PASST_DNS -- ", svc)
         self.assertIn("ExecStartPre=+/usr/libexec/workloadctl/workload-vm-netdev", svc)
         self.assertIn("EnvironmentFile=-/run/workload-env/workload-fedora-vm.passt", svc)
         # passt takes the guest's address from a configured host interface, an
@@ -2546,9 +2545,10 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         self._run()
         svc = self._read("workload-fedora-vm.service")
         self.assertIn("-netdev bridge,id=net0,br=br0", svc)
-        self.assertNotIn("-netdev passt", svc)
+        self.assertNotIn("-netdev stream", svc)
         # None of the passt-only wiring should appear for a bridged VM.
-        self.assertNotIn("${WL_PASST_DNS}", svc)
+        self.assertNotIn("--passt", svc)
+        self.assertNotIn("WL_PASST_DNS", svc)
         self.assertNotIn("workload-vm-netdev", svc)
         self.assertNotIn("workload-bridge.service", svc)
 

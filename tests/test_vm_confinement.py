@@ -253,17 +253,29 @@ class TestCilModule(unittest.TestCase):
                   "systemd_userdbd_runtime_t", "passwd_file_t"):
             self.assertNotIn(t, self.rules)
 
-    def test_grants_what_qemus_native_passt_netdev_needs(self):
-        """Both rules exist only because QEMU spawns passt, where libvirt does.
+    def test_grants_what_passt_beside_qemu_needs(self):
+        """workload-vm-notify starts passt at passt_t on a pair it made at
+        QEMU's context, where libvirt starts passt on a socket path.
 
-        The socketpair one is invisible to an ordinary audit harvest: the
-        shipped policy dontaudits it, so the symptom is passt looping on
+        The socketpair rule is invisible to an ordinary audit harvest: the
+        shipped policy dontaudits it, so the symptom is passt failing on
         "Failed to add fd to epoll" with an empty audit log.
         """
-        self.assertIn("(allow svirt_t passt_t (process (signal)))", self.rules)
+        self.assertIn(
+            "(allow unconfined_service_t passt_t (process (transition)))",
+            self.rules)
+        self.assertIn("(allow passt_t unconfined_service_t (fd (use)))",
+                      self.rules)
+        self.assertIn("(allow svirt_t unconfined_service_t (fd (use)))",
+                      self.rules)
         self.assertIn(
             "(allow passt_t svirt_t (unix_stream_socket (read write)))",
             self.rules)
+
+    def test_qemu_no_longer_signals_passt(self):
+        """QEMU is not passt's parent any more."""
+        self.assertNotIn("(allow svirt_t passt_t (process (signal)))",
+                         self.rules)
 
     def test_its_own_filecon_would_not_be_shadowed(self):
         """Dogfoods the validate rule: /usr/libexec is not in .local."""
@@ -483,8 +495,8 @@ class TestNotifyWrapperUsesTheTransition(unittest.TestCase):
         every VM unconfined with no test failing anywhere else."""
         text = (ROOT / "lib" / "vm_notify.py").read_text()
         self.assertIn("qemu_launch_argv", text)
-        self.assertRegex(text,
-                         r"Popen\(\s*qemu_launch_argv\(qemu_cmd, os\.getuid\(\)\)")
+        self.assertRegex(text, r"Popen\(\s*qemu_launch_argv\(qemu_cmd, uid\)")
+        self.assertRegex(text, r"uid = os\.getuid\(\)")
         self.assertNotRegex(text, r"Popen\(qemu_cmd,")
 
 

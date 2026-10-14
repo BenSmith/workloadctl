@@ -265,23 +265,22 @@ class TestNetdevDnsDerivation(unittest.TestCase):
         path.write_text(text)
         return mock.patch.object(passt_dns_host, "RESOLV_CONF", path)
 
-    def test_single_family_uses_the_native_properties(self):
+    def test_single_family_is_three_options(self):
         fragment, _ = passt_dns_fragment.build_dns_fragment(
             {4: "192.168.0.1"}, {4: "127.0.0.53"})
         self.assertEqual(
-            fragment,
-            "dns-forward=192.168.0.1,dns=192.168.0.1,dns-host=127.0.0.53")
+            fragment, "--dns-forward 192.168.0.1 --dns 192.168.0.1 "
+                      "--dns-host 127.0.0.53")
 
-    def test_second_family_goes_through_param(self):
-        # The QEMU netdev's dns-forward/dns/dns-host properties are
-        # single-valued, so only one family can use them; the other has to go
-        # through the repeatable param= escape hatch.
+    def test_the_second_family_is_three_more(self):
+        # passt takes each option once per family.
         fragment, _ = passt_dns_fragment.build_dns_fragment(
             {4: "192.168.0.1", 6: "fd00::1"},
             {4: "127.0.0.53", 6: "fd00::53"})
-        self.assertIn("dns-forward=192.168.0.1", fragment)
-        self.assertIn("param=--dns-forward,param=fd00::1", fragment)
-        self.assertIn("param=--dns-host,param=fd00::53", fragment)
+        self.assertEqual(
+            fragment, "--dns-forward 192.168.0.1 --dns 192.168.0.1 "
+                      "--dns-host 127.0.0.53 --dns-forward fd00::1 "
+                      "--dns fd00::1 --dns-host fd00::53")
 
     def test_a_family_without_a_resolver_is_omitted_entirely(self):
         # THE leak case. Emitting --dns for v6 without --dns-host suppresses
@@ -291,7 +290,7 @@ class TestNetdevDnsDerivation(unittest.TestCase):
         fragment, _ = passt_dns_fragment.build_dns_fragment(
             {4: "192.168.0.1", 6: "fd00::1"}, {4: "127.0.0.53"})
         self.assertNotIn("fd00::1", fragment)
-        self.assertNotIn("param=", fragment)
+        self.assertEqual(fragment.count("--dns-forward"), 1)
 
     def test_a_family_without_a_gateway_is_omitted_entirely(self):
         fragment, _ = passt_dns_fragment.build_dns_fragment(
@@ -313,11 +312,10 @@ class TestNetdevDnsDerivation(unittest.TestCase):
             self.assertEqual(forwards, hosts, fragment)
 
     def test_no_resolver_at_all_yields_a_non_empty_fallback(self):
-        # An empty expansion would leave a dangling comma in the netdev
-        # argument and QEMU would refuse to start, so "no DNS" has to be
-        # spelled explicitly rather than as the empty string.
+        # With no option at all passt would advertise what its own
+        # resolv.conf scan finds, so "no DNS" is spelled explicitly.
         fragment, notes = passt_dns_fragment.build_dns_fragment({}, {})
-        self.assertEqual(fragment, "dhcp-dns=off")
+        self.assertEqual(fragment, "--no-dhcp-dns")
         self.assertTrue(fragment)
         self.assertTrue(any("no usable resolver" in n for n in notes))
 
@@ -391,21 +389,21 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
     def test_row_one_points_dns_host_at_the_responder(self):
         fragment, _ = passt_dns_fragment.build_synthesis_fragment(
             {4: "192.168.0.1"}, "127.130.0.5")
-        self.assertIn("dns-forward=192.168.0.1", fragment)
-        self.assertIn("dns=192.168.0.1", fragment)
-        self.assertIn("dns-host=127.130.0.5", fragment)
+        self.assertIn("--dns-forward 192.168.0.1", fragment)
+        self.assertIn("--dns 192.168.0.1", fragment)
+        self.assertIn("--dns-host 127.130.0.5", fragment)
 
     def test_row_one_carries_the_v6_black_hole(self):
         fragment, _ = passt_dns_fragment.build_synthesis_fragment(
             {4: "192.168.0.1"}, "127.130.0.5")
-        self.assertIn("param=--dns,param=::1", fragment)
+        self.assertIn("--dns ::1", fragment)
 
     def test_row_two_is_dhcp_dns_off_with_no_black_hole(self):
         # --no-dhcp-dns is global (dhcp.c:437, dhcpv6.c:427, ndp.c:284), so
-        # under dhcp-dns=off nothing is advertised on either family and a dead
-        # ::1 would be a guest-visible artifact of a switched-off mechanism.
+        # under it nothing is advertised on either family and a dead ::1
+        # would be a guest-visible artifact of a switched-off mechanism.
         fragment, notes = passt_dns_fragment.build_synthesis_fragment({}, "127.130.0.5")
-        self.assertEqual(fragment, "dhcp-dns=off")
+        self.assertEqual(fragment, "--no-dhcp-dns")
         self.assertNotIn("::1", fragment)
         self.assertTrue(any("no IPv4 default route" in n for n in notes))
 
@@ -416,9 +414,9 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         fragment, _ = passt_dns_fragment.build_synthesis_fragment(
             {4: "192.168.0.1", 6: "fd00::1"}, "127.130.0.5")
         self.assertNotIn("fd00::1", fragment)
-        self.assertEqual(fragment.count("param=--dns"), 1)
-        self.assertNotIn("param=--dns-forward", fragment)
-        self.assertNotIn("param=--dns-host", fragment)
+        self.assertEqual(fragment.split().count("--dns"), 2)
+        self.assertEqual(fragment.split().count("--dns-forward"), 1)
+        self.assertEqual(fragment.split().count("--dns-host"), 1)
 
     def test_a_v6_only_host_gets_nothing(self):
         # Neither --dns nor --dns-forward can be 127.130.x.y -- that is the
@@ -426,7 +424,7 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         # advertise and intercept, whatever v6 the host has.
         fragment, _ = passt_dns_fragment.build_synthesis_fragment(
             {6: "fd00::1"}, "127.130.0.5")
-        self.assertEqual(fragment, "dhcp-dns=off")
+        self.assertEqual(fragment, "--no-dhcp-dns")
 
     def test_the_note_no_longer_claims_queries_go_to_a_host_resolver(self):
         # The old string read "queries go to <resolver>", which is now false in
@@ -446,8 +444,8 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         # exists, so the resolver half of the gate is obsolete.
         fragment, _ = passt_dns_fragment.build_synthesis_fragment(
             {4: "192.168.0.1"}, "127.130.0.5")
-        self.assertIn("dns-host=127.130.0.5", fragment)
-        self.assertNotEqual(fragment, "dhcp-dns=off")
+        self.assertIn("--dns-host 127.130.0.5", fragment)
+        self.assertNotEqual(fragment, "--no-dhcp-dns")
 
     # --- and the dispatch, which decides which of the two paths runs -----
 
@@ -485,8 +483,8 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         fragment, _ = self._run_main(self.FILTERED)
         # uid 10005 -> 127.130.0.5, by the same offset arithmetic as
         # management and the broker. Spelled out rather than re-derived.
-        self.assertIn("dns-host=127.130.0.5", fragment)
-        self.assertIn("param=--dns,param=::1", fragment)
+        self.assertIn("--dns-host 127.130.0.5", fragment)
+        self.assertIn("--dns ::1", fragment)
 
     def test_a_filtered_vm_never_reads_resolv_conf(self):
         # The headline property, asserted as a negative: the host's resolver
@@ -498,24 +496,24 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         fragment, _ = self._run_main(
             '[workload]\nname = "vm1"\n[vm]\nmemory = "2G"\n'
             '[vm.network]\negress = "open"\n')
-        self.assertIn("dns-host=9.9.9.9", fragment)
+        self.assertIn("--dns-host 9.9.9.9", fragment)
         self.assertNotIn("127.130.", fragment)
         self.assertNotIn("::1", fragment)
 
     def test_a_bridged_vm_still_takes_the_host_resolver_path(self):
-        # Belt and braces: the generator does not even emit the netdev prestart
+        # Belt and braces: the generator does not even emit the DNS prestart
         # for a bridged VM, but the predicate has to be right standing alone.
         fragment, _ = self._run_main(
             '[workload]\nname = "vm1"\n[vm]\nmemory = "2G"\n'
             '[vm.network]\nbridge = "br0"\negress = "filtered"\n')
-        self.assertIn("dns-host=9.9.9.9", fragment)
+        self.assertIn("--dns-host 9.9.9.9", fragment)
         self.assertNotIn("127.130.", fragment)
 
     def test_resolver_none_still_wins_over_everything(self):
         fragment, _ = self._run_main(
             '[workload]\nname = "vm1"\n[vm]\nmemory = "2G"\n'
             '[vm.network]\negress = "filtered"\nresolver = "none"\n')
-        self.assertEqual(fragment, "dhcp-dns=off")
+        self.assertEqual(fragment, "--no-dhcp-dns")
 
     def test_an_underivable_responder_fails_closed_not_back_to_the_host(self):
         # A uid outside the workload range has no responder address. The guest
@@ -523,7 +521,7 @@ class TestNetdevUnderSynthesis(unittest.TestCase):
         # build_dns_fragment here would be a leak of exactly the kind synthesis
         # exists to remove, and it would look like the feature working.
         fragment, _ = self._run_main(self.FILTERED, uid=0)
-        self.assertEqual(fragment, "dhcp-dns=off")
+        self.assertEqual(fragment, "--no-dhcp-dns")
         self.assertNotIn("9.9.9.9", fragment)
 
 

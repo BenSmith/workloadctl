@@ -5,7 +5,7 @@ the host, and a filtered container's pasta sends its queries there, so a
 responder that is not listening is the whole of DNS for that workload while
 every other line in `diagnose` still passes. vm_resolve_check() and
 container_resolve_check() are the verdicts: the socket unit, the static map
-it reads, and for a VM the passt netdev line that tells the guest where to
+it reads, and for a VM the passt options that tell the guest where to
 look, each named when it is the thing that is wrong.
 """
 
@@ -25,7 +25,7 @@ def _netdev_dns_fragment(name: str) -> str | None:
     One line, at a path the VM's own ExecStartPre replaces on every start:
 
         /run/workload-env/workload-<name>.passt
-        WL_PASST_DNS=dns-forward=<gw>,dns=<gw>,dns-host=127.130.x.y,...
+        WL_PASST_DNS=--dns-forward <gw> --dns <gw> --dns-host 127.130.x.y ...
 
     None when the file is unreadable or carries no such assignment, which the
     caller treats as "nothing to say" rather than as a fault -- an absent file
@@ -81,12 +81,12 @@ def vm_resolve_check(config, *, socket_active=PROBE, static_present=PROBE,
     that is bound, loaded and correct, on a guest that was never told to ask
     it. `workload-vm-netdev` decides what passt advertises, and it fails CLOSED
     -- no IPv4 default route, or a uid it could not derive, and the guest is
-    given `dhcp-dns=off` rather than the host's real nameservers. That is the
+    given `--no-dhcp-dns` rather than the host's real nameservers. That is the
     right call (handing a filtered guest the host's resolvers is the leak
     synthesis exists to remove) and it is silent: the explanation goes to the
     journal at VM start and nothing reads it back. So the last arm compares
     what the guest was actually told against this workload's own responder,
-    which also catches a `dns-host=` naming some OTHER address -- a fragment
+    which also catches a `--dns-host` naming some OTHER address -- options
     left by an instance started under different config.
 
     Observations are injectable (PROBE sentinel) so the verdict logic is
@@ -152,7 +152,9 @@ def vm_resolve_check(config, *, socket_active=PROBE, static_present=PROBE,
         # _netdev_dns_fragment.
         return ("vm_resolve", True, told)
 
-    if f"dns-host={address}" not in netdev_dns:
+    words = netdev_dns.split()
+    if not any(a == "--dns-host" and b == address
+               for a, b in zip(words, words[1:])):
         return ("vm_resolve", False,
                 f"the responder is listening and loaded, but this guest was "
                 f"never told to ask it: passt was started with "

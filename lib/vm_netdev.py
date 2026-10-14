@@ -1,10 +1,10 @@
-"""One VM's passt DNS fragment, decided and written.
+"""One VM's passt DNS options, decided and written.
 
 `passt_dns` is the dispatch: which of the three answers a workload gets --
 no resolver at all, its own synthesising responder, or the host's
 nameservers -- from its config and, only on the last path, from
 /etc/resolv.conf. `write_passt_env` drops the result where the VM unit's
-ExecStart reads it back as `${WL_PASST_DNS}`.
+ExecStart splits back into passt's argv as `$WL_PASST_DNS`.
 """
 import os
 import pwd
@@ -84,13 +84,13 @@ def passt_dns(name: str) -> tuple[str, list[str]]:
 
 
 def write_passt_env(name: str, fragment: str) -> Path:
-    """Write the EnvironmentFile the VM unit splices into its netdev."""
+    """Write the EnvironmentFile the VM unit splices into passt's argv."""
     env_dir = workload_env_dir()
     env_dir.mkdir(parents=True, exist_ok=True)
     env_file = env_dir / f"workload-{name}.passt"
     tmp = env_file.with_suffix(".passt.tmp")
     # Write-then-rename: ExecStart reads this file microseconds later, and a
-    # torn read would produce a netdev argument QEMU rejects.
+    # torn read would produce options passt rejects.
     tmp.write_text(f"WL_PASST_DNS={fragment}\n")
     os.replace(tmp, env_file)
     return env_file

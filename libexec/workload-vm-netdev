@@ -1,21 +1,20 @@
 #!/usr/bin/python3
 """
-workload-vm-netdev: derive the host-dependent half of a VM's passt netdev.
+workload-vm-netdev: derive the host-dependent half of a VM's passt options.
 
 Usage: workload-vm-netdev <name>
 
 Writes /run/workload-env/workload-<name>.passt, a systemd EnvironmentFile
 holding one variable:
 
-    WL_PASST_DNS=<comma-separated netdev property fragment>
+    WL_PASST_DNS=<passt's DNS options, space-separated>
 
-which the VM unit's ExecStart splices into its `-netdev passt,...` argument as
-`${WL_PASST_DNS}`. Always exits 0 and always writes a usable value: a VM that
+which the VM unit's ExecStart splits into passt's argv as `$WL_PASST_DNS`. Always exits 0 and always writes a usable value: a VM that
 cannot resolve is bad, a VM that will not boot is worse.
 
 WHY THIS IS A SEPARATE STEP AND NOT PART OF THE GENERATOR
 
-The design calls the netdev "host-derived, computed from /etc/resolv.conf at
+The design calls the DNS options "host-derived, computed from /etc/resolv.conf at
 generate time". Half of that cannot be done at generate time. The Python
 generator runs from workload-generate.service, ordered
 `After=sysinit.target Before=basic.target` — long before network.target — so:

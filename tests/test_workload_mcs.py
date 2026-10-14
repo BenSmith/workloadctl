@@ -206,7 +206,8 @@ class Wiring(unittest.TestCase):
 
     def test_qemu_starts_at_its_uids_level(self):
         text = (REPO_ROOT / "lib" / "vm_notify.py").read_text()
-        self.assertIn("qemu_launch_argv(qemu_cmd, os.getuid())", text)
+        self.assertIn("qemu_launch_argv(qemu_cmd, uid)", text)
+        self.assertIn("uid = os.getuid()", text)
 
 
 if __name__ == "__main__":

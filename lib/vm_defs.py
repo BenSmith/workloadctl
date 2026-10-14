@@ -89,6 +89,21 @@ VM_HOME_SELINUX_CONTEXT = "system_u:object_r:user_home_t:s0"
 # poweroff (exit 0) leaves it down. Nonzero and outside QEMU's own 0/1 range.
 VM_REBOOT_EXIT_CODE = 133
 
+# passt, started beside QEMU by workload-vm-notify (lib/vm_notify.py): the
+# unit's ExecStart carries passt's argv between PASST_ARGS_FLAG and
+# PASST_ARGS_END, and QEMU's stream netdev names its end of the pair as
+# PASST_FD_TOKEN, which the wrapper replaces with the fd it passes.
+PASST_BIN = "/usr/bin/passt"
+PASST_ARGS_FLAG = "--passt"
+PASST_ARGS_END = "--"
+PASST_FD_TOKEN = "@passt-fd@"
+
+# QEMU's own seccomp filter, libvirt's default set. Only with passt beside
+# QEMU: the bridge netdev runs qemu-bridge-helper, which spawn=deny refuses
+# and the filter's no_new_privs stops from gaining its privilege.
+QEMU_SANDBOX = ("-sandbox on,obsolete=deny,elevateprivileges=deny,"
+                "spawn=deny,resourcecontrol=deny")
+
 # OVMF firmware search order (distro paths differ)
 OVMF_CODE_CANDIDATES = [
     "/usr/share/edk2/ovmf/OVMF_CODE.fd",

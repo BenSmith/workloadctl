@@ -2,10 +2,12 @@
 """
 workload-vm-notify: sd_notify wrapper for QEMU VM workloads.
 
-Usage: workload-vm-notify <name> <qemu-system-x86_64> [qemu-args...]
+Usage: workload-vm-notify <name> [--passt <passt-args...> --]
+                          <qemu-system-x86_64> [qemu-args...]
 
-Starts QEMU, connects to its QMP socket, waits until the guest enters the
-running state, then sends READY=1 to systemd. Exits with QEMU's exit code.
+Starts passt, if given, and QEMU on the two ends of one socket pair, connects
+to QEMU's QMP socket, waits until the guest enters the running state, then
+sends READY=1 to systemd. Exits with QEMU's exit code.
 
 The program is lib/vm_notify.py. This file is main().
 """
@@ -13,15 +15,24 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from vm_notify import supervise
+from vm_notify import split_argv, supervise
 
 
 def main(argv):
+    usage = (f"Usage: {argv[0]} <name> [--passt <passt-args...> --] "
+             f"<qemu-binary> [qemu-args...]")
     if len(argv) < 3:
-        print(f"Usage: {argv[0]} <name> <qemu-binary> [qemu-args...]",
-              file=sys.stderr)
+        print(usage, file=sys.stderr)
         return 1
-    return supervise(argv[1], argv[2:])
+    try:
+        passt_cmd, qemu_cmd = split_argv(argv[2:])
+    except ValueError as e:
+        print(f"{usage}\n{e}", file=sys.stderr)
+        return 1
+    if not qemu_cmd:
+        print(usage, file=sys.stderr)
+        return 1
+    return supervise(argv[1], qemu_cmd, passt_cmd)
 
 
 if __name__ == "__main__":

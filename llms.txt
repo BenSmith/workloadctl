@@ -326,15 +326,15 @@ Authoring is done with **udica** against a running container; it emits the CIL b
 
 **All of the above is the container path. VM workloads confine differently** (ADR 006 step 3), and the difference is easy to get wrong:
 
-- **QEMU runs as `svirt_t`, unconditionally and without the flag.** Not a per-workload type: `svirt_t` is the distro's own domain for a hypervisor process hosting an untrusted guest, and re-deriving it would be the mistake the per-workload argument above is *not* making — there is fifteen years of encoded knowledge to inherit, where a container workload has none. The transition is a `runcon` prefix in `lib/vm_notify.py` (`qemu_launch_argv`), because systemd execs from `init_t` and the policy has no `init_t → svirt_t` transition; `unconfined_service_t → virt_domain` is what makes it work.
+- **QEMU runs as `svirt_t`, unconditionally and without the flag.** Not a per-workload type: `svirt_t` is the distro's own domain for a hypervisor process hosting an untrusted guest, and re-deriving it would be the mistake the per-workload argument above is *not* making — there is fifteen years of encoded knowledge to inherit, where a container workload has none. The transition is a `runcon` prefix in `lib/vm_notify.py` (`qemu_launch_argv`), because systemd execs from `init_t` and the policy has no `init_t → svirt_t` transition; `unconfined_service_t → virt_domain` is what makes it work. passt is started beside QEMU the same way, at `passt_t` (`passt_launch_argv`), on a socketpair labelled at QEMU's context, so QEMU runs its own `-sandbox` (audit F21).
 - **MCS categories are deliberately unused.** libvirt needs them because all its VMs share one uid; ours each run as their own `_wl-<name>`, so DAC already separates them.
 - **So `[security].selinux_policy` means something different on a VM.** The `wl_<name>.process` type it declares has exactly one consumer — the generator passing it to podman — and a VM makes no podman call. A VM's `policy.cil` is a *delta against `svirt_t`*.
-- **Host-global pieces ship outside that flag:** the `svirt_image_t` fcontext rule per VM workload (semanage at enable, gated on `is_vm`, because labelling is a precondition for booting rather than optional hardening), and `security/workload-vm.cil` (a virtiofsd domain plus the two grants QEMU's native passt netdev needs), `security/workload-inspect.cil` and `security/workload-resolve.cil` — all loaded once by the RPM.
+- **Host-global pieces ship outside that flag:** the `svirt_image_t` fcontext rule per VM workload (semanage at enable, gated on `is_vm`, because labelling is a precondition for booting rather than optional hardening), and `security/workload-vm.cil` (a virtiofsd domain plus what passt, started beside QEMU by workload-vm-notify, needs), `security/workload-inspect.cil` and `security/workload-resolve.cil` — all loaded once by the RPM.
 
 Traps worth carrying forward if you touch this:
 
 - A `filecon` in a bundle's `policy.cil` under a path workloadctl registers with `semanage` is **silently ignored**, because `file_contexts.local` outranks the base `file_contexts` wholesale (`validate` warns).
-- The shipped policy **dontaudits** the rule passt needs under a QEMU-native netdev, so an ordinary AVC harvest will not show it — run `semodule -DB` before concluding a harvest is complete.
+- The shipped policy **dontaudits** the rule passt needs on its socketpair end, so an ordinary AVC harvest will not show it — run `semodule -DB` before concluding a harvest is complete.
 - **No unit that transitions into one of our domains may set `NoNewPrivileges=`** (nor `DynamicUser=`, which implies it): NNP makes the kernel refuse any transition not *bounded* by the calling domain, and none of ours are bounded by `init_t`. The symptom is a bare `203/EXEC` "Permission denied" on a mode-0755 binary, with `op=security_bounded_transition` in the audit log and nothing else pointing at the cause. The seccomp-implying options (`PrivateDevices=`, `ProtectKernel*=`, `SystemCallFilter=`, ...) are fine despite the documentation's phrasing — systemd only forces NNP for those when the *manager* lacks `CAP_SYS_ADMIN`, which never holds for a system service.
 - An RPM reinstall silently drops the `semanage` fcontext rules, and a VM then fails with "QMP socket not ready"; a restart alone cannot fix it.
 
@@ -479,7 +479,7 @@ lib/egress_record_query.py         # The per-request record read back: time pars
 lib/nft_elements.py                # A workload's egress filter (both substrates): which nft set elements exist, and the argv that arm them
 lib/vm_provision.py                # VM disk/seed provisioning
 lib/gen_run.py                     # workload-generate's program: discover bundles, validate, pin UIDs, emit per substrate (gen_vm/gen_container), enqueue starts
-lib/vm_notify.py                   # workload-vm-notify's program: QEMU as a child, READY=1 on running vCPUs, the cloud-init watch, the exit status
+lib/vm_notify.py                   # workload-vm-notify's program: passt and QEMU as children on one socketpair, READY=1 on running vCPUs, the cloud-init watch, the exit status
 lib/ensure_user.py                 # workload-ensure-user's program: the per-workload lock, and every provisioning step in order (ensure_common/ensure_vm/vm_ssh_keys/ensure_container)
 lib/vm_ssh_keys.py                 # The SSH material a VM is reached with: the per-workload keypair, the host keypair and its known_hosts pin, the home-share authorized_keys seed
 lib/vm_default_seed.py             # The built-in cloud-init user-data a VM gets when its bundle ships none, and the virtiofs mount options a custom seed gets too
@@ -489,12 +489,12 @@ lib/exporter_collect.py            # The exporter's discovery and its three pass
 lib/exporter_render.py             # Prometheus exposition text for the fast and disk textfiles
 lib/exporter_textfile.py           # The exporter's drop: DROP_DIR, parse_args, atomic write, the two producers
 lib/vm_clock.py                    # Host-side guest clock check + resync (the keeper's tick; backup after its unpause)
-lib/vm_netdev.py                   # One VM's passt DNS fragment: the three-way decision (none / responder / host) and the EnvironmentFile write
+lib/vm_netdev.py                   # One VM's passt DNS options: the three-way decision (none / responder / host) and the EnvironmentFile write
 lib/vm_disk_generations.py         # system.qcow2 generations: rotate the live disk out, prune beyond rollback_keep
 lib/vm_image_fetch.py              # A cloud image fetched and sha256-verified into the workload's .image-cache (any urllib scheme, file:// included)
 lib/vm_disk_build.py               # A VM's disks built: system.qcow2 from cloud/local/bootc image with rotate-and-restore on update, data.qcow2 if sized
 lib/passt_dns_host.py              # What the host has: default gateway and first nameserver per family
-lib/passt_dns_fragment.py          # What the guest is told: the netdev DNS fragment builders and the per-family rule
+lib/passt_dns_fragment.py          # What the guest is told: passt's DNS option builders and the per-family rule
 lib/filter_arm.py                  # One workload's uid-keyed egress filter armed and retired (both substrates): the skeleton, the stale purge, the allow elements, and the responder's static map where the workload has one; VM and CONTAINER are the Substrate each helper binds
 lib/secrets_env.py                 # One container's decrypted-secret EnvironmentFile: container selection, ${SECRET:name} resolution against CREDENTIALS_DIRECTORY, the 0600 write, and the stale-file removal
 lib/inspect_arm.py                 # One workload's inspection armed and retired (both substrates): both skeletons, the eight redirect elements, the internal exemptions, the broker's own; VM and CONTAINER are the Substrate each helper binds

@@ -15,6 +15,7 @@ Installed to /usr/libexec/workloadctl/egress_selinux.py.
 """
 
 import os
+import socket
 
 from config_parser import SOCKET_DIR
 from workload_mcs import mcs_level
@@ -27,8 +28,8 @@ from workload_mcs import mcs_level
 #   allow svirt_t qemu_exec_t:file entrypoint;
 #   allow svirt_t passt_exec_t:file { entrypoint execute ... };
 #   allow svirt_t swtpm_exec_t:file { entrypoint execute ... };
-# so passt and swtpm transition to passt_t/swtpm_t automatically the moment QEMU
-# is svirt_t, with no rules of ours.
+# so swtpm would transition to swtpm_t the moment QEMU is svirt_t, with no
+# rules of ours. passt is not QEMU's child (see VM_PASST_TYPE).
 #
 # At the workload's own level (workload_mcs), as libvirt's sVirt gives each VM
 # a category pair: the VM's disks and state carry it, so a QEMU escape is held
@@ -40,8 +41,9 @@ def vm_qemu_context(uid: int) -> str:
     """The context QEMU runs in for the workload with this uid."""
     return f"system_u:system_r:{VM_QEMU_TYPE}:{mcs_level(uid)}"
 
+
 # The host-global policy delta VM confinement needs: a domain for the virtiofsd
-# sidecar, and one grant to svirt_t that only a QEMU-native passt netdev needs.
+# sidecar, and passt's start beside QEMU.
 # Installed by the RPM rather than shipped through the per-workload
 # [security].selinux_policy bundle: nothing in it is per-workload, and N
 # identical copies would race semodule while gated on a flag that has nothing to
@@ -126,3 +128,56 @@ def qemu_launch_argv(qemu_cmd: list[str], uid: int, *,
     if not enabled or not os.path.exists(runcon):
         return list(qemu_cmd)
     return [runcon, vm_qemu_context(uid), *qemu_cmd]
+
+
+# passt runs beside QEMU rather than under it, so QEMU can run its own
+# -sandbox with spawn=deny: a filter QEMU installs is inherited by anything
+# it starts, and passt fails under it. workload-vm-notify starts passt in
+# passt_t directly, at the VM's level; workload-vm.cil allows the one
+# transition (unconfined_service_t to passt_t) the shipped policy leaves to
+# svirt_t. Not by way of svirt_t: runcon's context overrides the policy's
+# type_transition, and svirt_t may enter passt_exec_t itself, so passt would
+# run as svirt_t, which cannot create the user namespace passt isolates
+# itself in.
+VM_PASST_TYPE = "passt_t"
+
+# The kernel labels a socket with its creator's sockcreate context, so a
+# pair made at QEMU's context is the pair QEMU's own passt netdev made: one
+# QEMU may use, and one workload-vm.cil lets passt_t read and write.
+SOCKCREATE_ATTR = "/proc/thread-self/attr/sockcreate"
+
+
+def vm_passt_context(uid: int) -> str:
+    """The context passt runs in for the workload with this uid."""
+    return f"system_u:system_r:{VM_PASST_TYPE}:{mcs_level(uid)}"
+
+
+def passt_launch_argv(passt_cmd: list[str], uid: int, *,
+                      enabled: bool | None = None,
+                      runcon: str = VM_RUNCON_BIN) -> list[str]:
+    """`passt_cmd`, prefixed with runcon so passt enters passt_t."""
+    if enabled is None:
+        enabled = selinux_enabled()
+    if not enabled or not os.path.exists(runcon):
+        return list(passt_cmd)
+    return [runcon, vm_passt_context(uid), *passt_cmd]
+
+
+def vm_socketpair(uid: int, *, enabled: bool | None = None,
+                  attr: str = SOCKCREATE_ATTR):
+    """A connected unix stream pair labelled with QEMU's context."""
+    if enabled is None:
+        enabled = selinux_enabled()
+    if not enabled:
+        return socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    fd = os.open(attr, os.O_WRONLY)
+    try:
+        os.write(fd, vm_qemu_context(uid).encode())
+        try:
+            return socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        finally:
+            # An empty write resets it, so this process's own later sockets
+            # (QMP's) are labelled as before.
+            os.write(fd, b"")
+    finally:
+        os.close(fd)

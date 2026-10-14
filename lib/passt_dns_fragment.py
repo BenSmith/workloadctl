@@ -1,10 +1,10 @@
-"""The passt netdev DNS fragment: what a guest is told, per address family.
+"""passt's DNS options: what a guest is told, per address family.
 
 Two pure builders, one per kind of workload. `build_dns_fragment` is for a
 guest that really is handed the host's own nameservers; `build_synthesis_fragment`
 for one whose queries are answered by its own synthesising responder. Each
-returns the comma-separated netdev property fragment and the notes to log
-about it. Nothing here reads the host; the inputs come from
+returns passt's options, space-separated words the VM unit splits into
+passt's argv, and the notes to log about it. Nothing here reads the host; the inputs come from
 lib/passt_dns_host.py.
 
 THE PER-FAMILY RULE (design "DNS", ADR 006)
@@ -59,12 +59,12 @@ change, and the middle one is the one that looks unchanged and is not.
 The three fragments that produces, since the shape is what a reviewer checks
 and only one of the three carries the v6 flag:
 
-    | host                     | fragment                                    |
+    | host                     | options                                     |
     |--------------------------|---------------------------------------------|
-    | v4 default route present | dns-forward=<gw4>,dns=<gw4>,dns-host=<resp> |
-    |                          |   plus param=--dns param=::1                |
-    | no v4 default route      | dhcp-dns=off                                |
-    | resolver = "none"        | dhcp-dns=off                                |
+    | v4 default route present | --dns-forward <gw4> --dns <gw4>             |
+    |                          |   --dns-host <resp> --dns ::1               |
+    | no v4 default route      | --no-dhcp-dns                               |
+    | resolver = "none"        | --no-dhcp-dns                               |
 
 WHY `--dns ::1`, ARGUED AS WHAT IT IS
 
@@ -91,7 +91,7 @@ dns/dns_match/dns_host on both families (conf.c:1785-1797), and order-sensitive
 in the option parse (conf.c:1801).
 
 That globality is also why `--dns ::1` belongs to the first row only: under
-`dhcp-dns=off` nothing is advertised on either family, so a dead `::1` there
+`--no-dhcp-dns` nothing is advertised on either family, so a dead `::1` there
 would be a guest-visible artifact of a mechanism that is switched off.
 
 RESIDUAL, STATED RATHER THAN SOLVED
@@ -104,12 +104,12 @@ of the mechanism, unchanged from before synthesis.
 # What a guest is told when it gets no resolver: passt advertises nothing on
 # either family. Also the helper's fallback, so ExecStart always has a defined
 # expansion.
-NO_RESOLVER = "dhcp-dns=off"
+NO_RESOLVER = "--no-dhcp-dns"
 
 
 def build_synthesis_fragment(gateways: dict[int, str],
                              responder: str) -> tuple[str, list[str]]:
-    """The fragment for a workload whose queries are answered by its responder.
+    """passt's DNS options for a workload whose responder answers it.
 
     IPv4 only, gated on the default-route gateway alone, with `--dns-host`
     pointing at 127.130.x.y instead of at anything from /etc/resolv.conf —
@@ -121,48 +121,41 @@ def build_synthesis_fragment(gateways: dict[int, str],
     gateway = gateways.get(4)
     if not gateway:
         # No address to advertise that passt would then intercept. The stated
-        # residual, and the reason this row carries no `--dns ::1`: dhcp-dns=off
+        # residual, and the reason this row carries no `--dns ::1`: --no-dhcp-dns
         # suppresses the advertisement on BOTH families, so a dead ::1 here
         # would be a guest-visible artifact of a switched-off mechanism.
         return (NO_RESOLVER,
                 ["host has no IPv4 default route, so there is no address to "
                  "advertise and intercept; the guest gets no resolver"])
 
-    props = [f"dns-forward={gateway}", f"dns={gateway}",
-             f"dns-host={responder}"]
-    # The v6 black hole. `param=` is QEMU's repeatable escape hatch, appended to
-    # passt's command line verbatim; `--dns ::1` sets ip6.dns[0], which makes
+    # Then the v6 black hole: `--dns ::1` sets ip6.dns[0], which makes
     # dns6_set true and stops the resolv.conf scan before it reaches the v6
     # branch. Not a leak fix -- see the module docstring.
-    params = ["param=--dns", "param=::1"]
+    options = ["--dns-forward", gateway, "--dns", gateway,
+               "--dns-host", responder, "--dns", "::1"]
     notes = [
         f"IPv4: guest is told {gateway}, intercepted to this workload's "
         f"responder at {responder}; nothing is forwarded",
         "IPv6: guest is told ::1, its own loopback with nothing listening, so "
         "a v6 lookup fails immediately instead of timing out",
     ]
-    return (",".join(props + params), notes)
+    return (" ".join(options), notes)
 
 
 def build_dns_fragment(gateways: dict[int, str],
                        resolvers: dict[int, str]) -> tuple[str, list[str]]:
-    """Build the netdev fragment for a workload with NO responder.
+    """passt's DNS options for a workload with NO responder.
 
     An unfiltered or bridged VM: its guest really is being handed the host's own
     nameservers, so the symmetric all-three-or-none loop still governs it. A
     filtered one goes through build_synthesis_fragment instead.
 
-    The QEMU netdev's dns-forward/dns/dns-host properties are single-valued
-    (qapi/net.json:203-216), so only one family can use them; the second goes
-    through the repeatable `param=` escape hatch, which net/passt.c appends to
-    passt's command line verbatim. passt itself accepts each option once per
-    family — conf.c's case 9 tries inet_pton(AF_INET6) then AF_INET and sets
-    the matching dns_match — so the two spellings compose.
+    passt accepts each option once per family -- conf.c's case 9 tries
+    inet_pton(AF_INET6) then AF_INET and sets the matching dns_match -- so
+    both families' options go on one command line.
     """
     notes: list[str] = []
-    props: list[str] = []
-    params: list[str] = []
-    native_used = False
+    options: list[str] = []
 
     for family in (4, 6):
         gateway = gateways.get(family)
@@ -175,23 +168,15 @@ def build_dns_fragment(gateways: dict[int, str],
                     f"IPv{family}: host has a resolver but no default route, "
                     f"so no IPv{family} DNS is offered to the guest")
             continue
-        if not native_used:
-            props += [f"dns-forward={gateway}",
-                      f"dns={gateway}",
-                      f"dns-host={resolver}"]
-            native_used = True
-        else:
-            params += ["param=--dns-forward", f"param={gateway}",
-                       "param=--dns", f"param={gateway}",
-                       "param=--dns-host", f"param={resolver}"]
+        options += ["--dns-forward", gateway, "--dns", gateway,
+                    "--dns-host", resolver]
         notes.append(
             f"IPv{family}: guest is told {gateway}, queries go to {resolver}")
 
-    if not props:
-        # No family is fully configured. Say so explicitly rather than leaving
-        # the fragment empty: an empty expansion would leave a dangling comma
-        # in the netdev argument and QEMU would refuse to start.
+    if not options:
+        # No family is fully configured. Say so explicitly: with no option at
+        # all, passt would advertise what its own resolv.conf scan finds.
         notes.append("no usable resolver on any family; the guest gets none")
         return (NO_RESOLVER, notes)
 
-    return (",".join(props + params), notes)
+    return (" ".join(options), notes)

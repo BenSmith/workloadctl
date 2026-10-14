@@ -280,7 +280,23 @@ class NotifyShimTest(unittest.TestCase):
         with mock.patch.object(notify_script, "supervise", return_value=0) as sup:
             rc = notify_script.main(["notify", "vm1", "qemu", "-nographic", "-m", "2G"])
         self.assertEqual(rc, 0)
-        sup.assert_called_once_with("vm1", ["qemu", "-nographic", "-m", "2G"])
+        sup.assert_called_once_with("vm1", ["qemu", "-nographic", "-m", "2G"],
+                                    [])
+
+    def test_hands_passts_argv_apart_from_qemus(self):
+        with mock.patch.object(notify_script, "supervise", return_value=0) as sup:
+            notify_script.main(["notify", "vm1", "--passt", "/usr/bin/passt",
+                                "--quiet", "--", "qemu", "-m", "2G"])
+        sup.assert_called_once_with("vm1", ["qemu", "-m", "2G"],
+                                    ["/usr/bin/passt", "--quiet"])
+
+    def test_passt_without_its_end_is_a_usage_error(self):
+        with mock.patch.object(notify_script, "supervise") as sup, \
+             redirect_stderr(io.StringIO()):
+            rc = notify_script.main(["notify", "vm1", "--passt", "passt",
+                                     "qemu"])
+        self.assertEqual(rc, 1)
+        sup.assert_not_called()
 
     def test_the_run_status_is_the_exit_status(self):
         with mock.patch.object(notify_script, "supervise", return_value=133):

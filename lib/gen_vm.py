@@ -35,6 +35,11 @@ from nft_constants import SIDECAR_SLICE
 from vm_clock import CLOCK_KEEPER_PERIOD_SECONDS, VM_CLOCK_KEEPER_BIN
 from vm_defs import (
     VM_REBOOT_EXIT_CODE,
+    PASST_ARGS_END,
+    PASST_ARGS_FLAG,
+    PASST_BIN,
+    PASST_FD_TOKEN,
+    QEMU_SANDBOX,
     VM_GUEST_UID,
     VM_GUEST_AGENT_PORT,
     vm_guest_agent_socket,
@@ -322,21 +327,27 @@ def generate_virtiofs_service(name: str, tag: str, host_path: str, user_name: st
     return unit.render()
 
 
-def build_passt_netdev(name: str, uid: int, net_cfg: dict, mac: str) -> str:
-    """Build the `-netdev passt,...` argument for a VM workload (ADR 006).
+def build_passt_argv(uid: int, net_cfg: dict, mac: str) -> str:
+    """passt's argv for a VM workload (ADR 006), as ExecStart words.
 
     passt terminates the guest's stack in userspace and re-originates its
     traffic as ordinary host sockets owned by this workload's own uid, which is
-    what makes `meta skuid` per-VM egress policy possible. QEMU 10.2 has a
-    native passt netdev, so there is no separate process to launch and no
-    socket to wire.
+    what makes `meta skuid` per-VM egress policy possible. It runs beside QEMU,
+    started by workload-vm-notify on one end of a socket pair that QEMU's
+    stream netdev holds the other end of (build_passt_netdev), so that QEMU can
+    run its own -sandbox.
+
+    The options are the ones QEMU's own passt netdev passed (net/passt.c,
+    QEMU 10.2.2): `--quiet`, and `--mac-addr` from its `mac`. `--foreground`
+    because the wrapper supervises passt as its child; `--fd` is the
+    wrapper's, which knows the number.
 
     The host-derived half — the per-family DNS options — is NOT here. It is
-    `${WL_PASST_DNS}`, written at unit start by libexec/workload-vm-netdev,
+    `$WL_PASST_DNS`, written at unit start by libexec/workload-vm-netdev,
     because this generator runs Before=basic.target where there is no default
     route to derive an address from. See that script's module docstring.
     """
-    props = [f"passt,id=net0,mac={mac}"]
+    words = [PASST_BIN, "--quiet", "--foreground", "--mac-addr", mac]
 
     # Two classes of inbound, and they are genuinely different.
     #
@@ -345,8 +356,7 @@ def build_passt_netdev(name: str, uid: int, net_cfg: dict, mac: str) -> str:
     #    configurable. Derived from the uid, so there is no registry and no
     #    collision.
     # 2. PUBLISHED — declared by the operator, bound where they say, following
-    #    the container convention ports = ["8080:80"]. Managed-bridge VMs had no
-    #    port publishing at all, so this is new capability, not a migration.
+    #    the container convention ports = ["8080:80"].
     mgmt_addr = management_address(uid)
     tcp_ports = [f"{mgmt_addr}/{MGMT_SSH_PORT}:22"]
     udp_ports = []
@@ -356,23 +366,14 @@ def build_passt_netdev(name: str, uid: int, net_cfg: dict, mac: str) -> str:
         forward = f"{bind_addr}/" if bind_addr else ""
         forward += f"{host_port}:{guest_port}"
         (udp_ports if proto == "udp" else tcp_ports).append(forward)
-    # Each forward is its OWN `-t`/`-u` argument, through QEMU's repeatable
-    # `param=` escape hatch — NOT the `tcp-ports`/`udp-ports` list properties.
-    # Those are list-typed and repeated keys do build a list, but net/passt.c
-    # then joins the list with commas and passes ONE `--tcp-ports` value (QEMU
-    # 10.1 through 11.0: `g_string_append(tcp_ports, ",")`), and passt's grammar
-    # allows at most one leading `[ADDR/]` for the whole comma list. The
-    # management forward always carries a bind address, so a joined list either
-    # inherits that address for every published port (an entry with no bind
-    # address silently binds the management address) or is refused outright:
-    # `Invalid port specifier '<addr>/<port>,<addr>/<port>'`. `param=` is
-    # appended to passt's argv verbatim, so each forward keeps its own address.
-    # The DNS fragment takes the same hatch for the same reason
-    # (passt_dns_fragment); see test_vm_passt.
+    # Each forward is its OWN `-t`/`-u`: passt's grammar allows at most one
+    # leading `[ADDR/]` for a whole comma list, and the management forward
+    # always carries one, so a joined list either gives every published port
+    # the management address or is refused outright.
     for spec in tcp_ports:
-        props += ["param=-t", f"param={spec}"]
+        words += ["-t", spec]
     for spec in udp_ports:
-        props += ["param=-u", f"param={spec}"]
+        words += ["-u", spec]
 
     # What the guest can reach on the host. `--map-host-loopback none` closes
     # the one that bites: passt's default maps the host's loopback onto the
@@ -381,14 +382,14 @@ def build_passt_netdev(name: str, uid: int, net_cfg: dict, mac: str) -> str:
     # default-route address is unreachable structurally — the guest is assigned
     # that same address, so traffic to it never leaves the guest's own stack —
     # and --map-guest-addr, which would undo that shadowing, has no default.
-    props.append("map-host-loopback=none")
+    words += ["--map-host-loopback", "none"]
 
     # Suppress the resolv.conf search list, which is otherwise advertised over
     # both DHCP and NDP and leaks internal domain names. Host-independent, so
     # unlike the DNS options it belongs here rather than in the prestart. This
     # is passt-mode-specific: pasta forces no_dhcp_dns_search on, passt does
     # not, so the container side of this project has never been exposed to it.
-    props.append("search=none")
+    words += ["--search", "none"]
 
     # Pin egress to one host interface, if asked. Per-VM egress scoping with no
     # nftables at all: a VM can be made structurally unable to originate on a
@@ -396,16 +397,20 @@ def build_passt_netdev(name: str, uid: int, net_cfg: dict, mac: str) -> str:
     # it. Both families, since the key names an interface, not an address.
     outbound_if = net_cfg.get("outbound_if")
     if outbound_if:
-        props.append(f"outbound-if4={outbound_if}")
-        props.append(f"outbound-if6={outbound_if}")
+        words += ["--outbound-if4", outbound_if, "--outbound-if6", outbound_if]
 
-    # Host-derived DNS, spliced in at start time. ${VAR} interpolates without
-    # word-splitting, which is what this needs — the whole netdev is one argv
-    # element. The helper always writes a non-empty value, so this never
-    # expands to a dangling comma.
-    props.append("${WL_PASST_DNS}")
+    # Host-derived DNS, spliced in at start time. `$VAR` without braces is
+    # split into words, one per option and value. The helper always writes a
+    # non-empty value.
+    words.append("$WL_PASST_DNS")
 
-    return "-netdev " + ",".join(props)
+    return " ".join(words)
+
+
+def build_passt_netdev() -> str:
+    """QEMU's end of passt's socket pair, an fd workload-vm-notify passes."""
+    return (f"-netdev stream,id=net0,server=off,addr.type=fd,"
+            f"addr.str={PASST_FD_TOKEN}")
 
 
 def generate_vm_clock_timer(config) -> str:
@@ -609,10 +614,11 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
     ]
 
     # Memory: use shared memfd backend when virtiofs is in use. QEMU's
-    # passt netdev closes one fd twice, and a GLib thread can then close
-    # whatever took that number next: the first memory backend, which
-    # QEMU creates right after the netdevs, in command-line order. Guest
-    # RAM's fd is what virtiofsd maps, so a spare backend comes first.
+    # passt netdev closes one fd twice (net/passt.c: the launcher's
+    # take_fd, then close(sv[1])), and a GLib thread can then close
+    # whatever took that number next: the first memory backend. The stream
+    # netdev has no such close, but the spare stays first until a start
+    # loop shows guest RAM's fd, which virtiofsd maps, keeps under it.
     if vfs_tags:
         qemu_args += [
             "-object memory-backend-memfd,id=spare,size=1M",
@@ -657,7 +663,7 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         # VM here, and `diagnose` says so plainly.
         qemu_args.append(f"-netdev bridge,id=net0,br={bridge_name}")
     else:
-        qemu_args.append(build_passt_netdev(name, uid, net_cfg, mac))
+        qemu_args.append(build_passt_netdev())
     qemu_args.append(f"-device virtio-net-pci,netdev=net0,mac={mac}")
 
     # virtiofs chardev + device per volume
@@ -721,6 +727,8 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         "-no-reboot",
         f"-name {name}",
     ]
+    if not bridge_name:
+        qemu_args.append(QEMU_SANDBOX)
 
     resources = config.get("resources", {})
 
@@ -861,9 +869,12 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         svc.add("ExecStopPost",
                 f"-+/usr/libexec/workloadctl/workload-vm-svcaddr down {dq(name)}")
 
+    passt = ("" if bridge_name else
+             f"{PASST_ARGS_FLAG} {build_passt_argv(uid, net_cfg, mac)} "
+             f"{PASST_ARGS_END} \\\n    ")
     svc.add("ExecStart",
             f"/usr/libexec/workloadctl/workload-vm-notify {dq(name)} \\\n"
-            f"    {qemu_cmd}")
+            f"    {passt}{qemu_cmd}")
     svc.blank()
     # Graceful shutdown: ACPI power-off, then *block* until the guest is
     # gone (workload-vm-shutdown waits up to 80s). ExecStop must block —
@@ -880,15 +891,13 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
     # has: a guest that escapes into QEMU otherwise keeps the host's whole
     # filesystem writable wherever the uid and label allow. QEMU writes its
     # disks and nvram under the state and data dirs and its sockets in the
-    # RuntimeDirectory; the passt it launches writes a pid file in /tmp.
-    # The `+` prestarts run outside all of this.
+    # RuntimeDirectory. The `+` prestarts run outside all of this.
     #
     # NOT NoNewPrivileges: QEMU reaches svirt_t by a type transition when the
     # notify wrapper executes it, and no_new_privs refuses the transition --
-    # the same constraint the virtiofs sidecar's unit is under. And not
-    # QEMU's own -sandbox: its seccomp filter is inherited by the passt that
-    # `-netdev passt` launches, and passt fails under it (even `-sandbox on`
-    # alone; measured with QEMU 10.2.2).
+    # the same constraint the virtiofs sidecar's unit is under. QEMU's own
+    # -sandbox is on its command line (QEMU_SANDBOX), for a VM whose passt
+    # runs beside it.
     svc.add("ProtectSystem", "strict")
     # The data dir may not exist (no data disk), hence `-`, inside the quotes:
     # systemd unquotes a word before it reads the prefix.

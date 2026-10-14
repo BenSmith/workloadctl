@@ -167,7 +167,7 @@ upgrade does not deliver a changed module to a host that has ever loaded a local
 one. `diagnose` reports whether it is loaded.
 
 **One module, two rules that look unrelated.** `workload-vm.cil` was named for
-virtiofsd and also grants `svirt_t` what QEMU's native passt netdev needs. Both
+virtiofsd and also grants what passt, started beside QEMU, needs. Both
 exist for one reason — workloadctl runs QEMU as `svirt_t` *outside libvirt*, and
 the shipped policy is written around libvirt's arrangement — so they are one
 module rather than two that would always be installed together.
@@ -199,15 +199,25 @@ ISO — and `/run` is a tmpfs, so it recurs every boot.
 anything is written into it. (It was `setup_vm_socket_dir` when this ADR was
 written; the directory serves filtered containers too now.)
 
-**passt needs a grant no audit harvest will show you.** QEMU's native netdev forks
-passt with one end of a socketpair already open, where libvirt starts it
-separately and connects by path — so `passt_t` must read and write a
-`unix_stream_socket` labelled `svirt_t`, which the shipped policy does not grant
-and *dontaudits*. What is observed is passt failing with `Failed to add fd to
-epoll: Operation not permitted`, QEMU respawning it in a tight loop, an
-unreachable guest, and an empty audit log; the denials appear only under
-`semodule -DB`. QEMU also needs `signal` on `passt_t`, or every stop leaks a passt
-process.
+**passt needs a grant no audit harvest will show you.** passt is given one end
+of a socketpair already open, where libvirt starts it separately and connects
+by path — so `passt_t` must read and write a `unix_stream_socket` labelled
+`svirt_t`, which the shipped policy does not grant and *dontaudits*. What is
+observed is passt failing with `Failed to add fd to epoll: Operation not
+permitted`, an unreachable guest, and an empty audit log; the denials appear
+only under `semodule -DB`.
+
+**passt runs beside QEMU, not under it** (audit F21). QEMU's native `passt`
+netdev forked passt itself, so QEMU could not run its own `-sandbox`: passt
+inherits the filter and fails under even `-sandbox on`. `workload-vm-notify`
+now does what the netdev did — a socketpair, passt on one end with `--fd` —
+before QEMU starts, and QEMU takes the other end as `-netdev stream`, so a
+passt VM's QEMU runs libvirt's default sandbox (`spawn=deny` included). The
+wrapper makes the pair at QEMU's context, starts passt with `runcon` at
+`passt_t` (one transition rule; passt run as `svirt_t` cannot create the user
+namespace it isolates itself in), and fails the unit if passt exits under a
+running guest. A bridged VM's QEMU runs no sandbox: its netdev spawns
+`qemu-bridge-helper`.
 
 **A permissive harvest is not the whole module.** The FUSE-serving permissions did
 close for free, but they are the entire write surface on `svirt_image_t`, a
