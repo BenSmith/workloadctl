@@ -519,6 +519,16 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
         sc = _libseccomp()
         ops = {f"SCMP_CMP_{op}": getattr(sc, op) for op in self.OPS}
         flt = sc.SyscallFilter(sc.ERRNO(profile["defaultErrnoRet"]))
+        # And x86_64's sub-architectures, as podman hands crun them: on x86,
+        # libseccomp folds a socket rule onto socketcall, and two folded
+        # rules with different actions fail the load with EEXIST, which a
+        # native-only filter never sees (tp, 2026-10-14: every container
+        # workload failed to start).
+        for entry in profile["archMap"]:
+            if entry["architecture"] == "SCMP_ARCH_X86_64":
+                for sub in entry["subArchitectures"]:
+                    flt.add_arch(getattr(sc.Arch, sub.removeprefix(
+                        "SCMP_ARCH_")))
         for e in profile["syscalls"]:
             if not _applies(e, "amd64", PODMAN_CAPS):
                 continue
@@ -559,6 +569,28 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
         data = os.read(read, 65536)
         os.waitpid(pid, 0)
         return json.loads(data)
+
+    def test_it_builds_for_every_architecture_crun_adds(self):
+        self._build(json.loads(PROFILE.read_text()))
+
+    def test_x86s_socketcall_socket_is_only_the_allows_fold(self):
+        """What a 32-bit socketcall(SYS_SOCKET) gets: one rule, the allows'
+        fold (the family is behind a pointer there), so no other action
+        was folded beside it."""
+        import tempfile
+        flt = self._build(json.loads(PROFILE.read_text()))
+        with tempfile.TemporaryFile("w+") as f:
+            flt.export_pfc(f)
+            f.seek(0)
+            pfc = f.read()
+        x86 = pfc.split("# filter for arch x86 (")[1]
+        socketcall = x86.split('"socketcall"')[1].split(
+            "# filter for syscall")[0].splitlines()
+        sys_socket = [i for i, line in enumerate(socketcall)
+                      if line.strip() == "if ($a0 == 1)"]
+        self.assertEqual(len(sys_socket), 1, socketcall)
+        self.assertEqual(socketcall[sys_socket[0] + 1].strip(),
+                         "action ALLOW;")
 
     def test_it_loads_and_the_tiers_hold(self):
         calls = {(1, 1, 0): ALLOW, (2, 1, 0): ALLOW, (10, 2, 0): ALLOW,

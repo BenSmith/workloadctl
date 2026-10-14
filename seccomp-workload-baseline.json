@@ -1546,9 +1546,15 @@
           "value": 18446744073709551615,
           "valueTwo": 0,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1563,9 +1569,15 @@
           "value": 18446744073709551614,
           "valueTwo": 4,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1580,9 +1592,15 @@
           "value": 18446744073709551615,
           "valueTwo": 7,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1597,9 +1615,15 @@
           "value": 18446744073709551612,
           "valueTwo": 12,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1614,9 +1638,15 @@
           "value": 18446744073709551615,
           "valueTwo": 17,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1631,9 +1661,15 @@
           "value": 18446744073709551614,
           "valueTwo": 18,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1648,9 +1684,15 @@
           "value": 18446744073709551614,
           "valueTwo": 22,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1665,9 +1707,15 @@
           "value": 18446744073709551615,
           "valueTwo": 25,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1682,9 +1730,15 @@
           "value": 18446744073709551615,
           "valueTwo": 27,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1699,9 +1753,15 @@
           "value": 18446744073709551614,
           "valueTwo": 28,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1716,9 +1776,15 @@
           "value": 18446744073709551615,
           "valueTwo": 31,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1733,9 +1799,15 @@
           "value": 18446744073709551615,
           "valueTwo": 32,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1750,9 +1822,15 @@
           "value": 18446744073709551615,
           "valueTwo": 44,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1767,9 +1845,15 @@
           "value": 18446744073709551614,
           "valueTwo": 46,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
@@ -1784,9 +1868,15 @@
           "value": 18446744073709551600,
           "valueTwo": 48,
           "op": "SCMP_CMP_MASKED_EQ"
+        },
+        {
+          "index": 2,
+          "value": 0,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_GE"
         }
       ],
-      "comment": "the uncommon families, allowed and logged",
+      "comment": "the uncommon families, allowed and logged; the always-true protocol condition keeps x86 from folding the rule onto socketcall, where it would collide with the allows",
       "includes": {},
       "excludes": {}
     },
