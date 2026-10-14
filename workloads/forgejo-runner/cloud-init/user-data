@@ -179,13 +179,15 @@ write_files:
       # already-installed package; --skip-* tolerates both.
       # qemu-kvm/qemu-img/swtpm/edk2-ovmf back the runtime-test gate (B1b): this
       # native runner boots a real bootc image under nested KVM with a
-      # swtpm-backed vTPM and OVMF firmware.
+      # swtpm-backed vTPM and OVMF firmware. grype scans each image the
+      # workload image build pushes, which refuses to push without it, and
+      # reports on the OS images.
       dnf install -y --skip-broken --skip-unavailable \
         podman skopeo curl jq yq just git rpm-build \
         python3 policycoreutils-python-utils checkpolicy udica \
         qemu-guest-agent nodejs fuse3 \
         qemu-kvm qemu-img swtpm swtpm-tools edk2-ovmf \
-        dnf-utils
+        dnf-utils grype
 
       # 1a. Pull in updates published since the cloud image was cut — primarily
       # CVE coverage on a long-lived always-on VM. If a new kernel lands we
