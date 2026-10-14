@@ -43,7 +43,7 @@ from gen_container_heads import (
 )
 from unit_file import Unit
 from workload_seccomp import (
-    baseline_source, render_derived_profile, seccomp_allow,
+    baseline_source, render_derived_profile, seccomp_32bit, seccomp_allow,
 )
 
 
@@ -652,17 +652,20 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
     # workload whose profile cannot be rendered gets no main unit rather
     # than one naming a missing or stale file.
     allowed = seccomp_allow(config)
-    if allowed:
+    allow_32bit = seccomp_32bit(config)
+    if allowed or allow_32bit:
         profile_file = paths[("seccomp", "seccomp")][0]
         try:
-            profile_file.write_text(render_derived_profile(allowed))
+            profile_file.write_text(
+                render_derived_profile(allowed, allow_32bit=allow_32bit))
         except (OSError, ValueError) as e:
             profile_file.unlink(missing_ok=True)
             log_msg(f"  Skipping {name}: cannot render its seccomp profile "
                     f"from {baseline_source()}: {e}", level="err")
             return False
+        extras = allowed + (["32-bit"] if allow_32bit else [])
         log_msg(f"  Created seccomp profile (baseline + "
-                f"{', '.join(allowed)})")
+                f"{', '.join(extras)})")
 
     if mode == "single":
         service_content = generate_system_service(config, containers[0], user_name, uid)

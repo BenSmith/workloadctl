@@ -1,5 +1,6 @@
 """A workload's seccomp profile: the baseline, or the baseline plus the
-syscalls its `[security] seccomp_allow` names.
+syscalls its `[security] seccomp_allow` names and the 32-bit compat its
+`[security] seccomp_32bit` opts back in.
 
 The derived profile is rendered by the generator beside the units, from the
 baseline installed at that moment, so it is rebuilt whenever the units are
@@ -8,6 +9,16 @@ taken out of every entry of the baseline, denials, capability gates and
 argument filters alike, and allowed in one entry of its own: a name both
 allowed and denied leaves the outcome to libseccomp's rule ordering, and an
 ungated allow beside a gated deny undoes the gate.
+
+The baseline drops x86_64's 32-bit sub-architectures (x86, x32): on x86
+libseccomp folds every `socket` rule onto `socketcall` with the family
+behind a pointer, so socketcall(SYS_SOCKET) reaches any family, vsock
+included, past the family refusals — and no rule can refuse it without
+colliding with the fold the allows need. With no sub-arch there is no
+socketcall and a 32-bit syscall hits the filter's bad-architecture KILL. A
+workload that runs 32-bit code sets seccomp_32bit, which puts the
+sub-architectures back on its derived profile (and with them the folded,
+family-blind socketcall, scoped to that workload).
 
 Installed to /usr/libexec/workloadctl/workload_seccomp.py.
 """
@@ -23,6 +34,11 @@ SECCOMP_BASELINE = "/usr/share/containers/seccomp-workload-baseline.json"
 
 SYSCALL_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
+# The x86_64 entry whose 32-bit compat sub-architectures the baseline drops,
+# and seccomp_32bit puts back on a derived profile.
+ARCH_X86_64 = "SCMP_ARCH_X86_64"
+SUBARCHES_32BIT = ["SCMP_ARCH_X86", "SCMP_ARCH_X32"]
+
 
 def baseline_source() -> Path:
     """Where the generator reads the baseline. Honors
@@ -37,14 +53,29 @@ def seccomp_allow(config: dict) -> list[str]:
     return sorted(set(names))
 
 
+def seccomp_32bit(config: dict) -> bool:
+    """Whether the workload's top-level [security] opts its containers back
+    into the 32-bit sub-architectures the baseline drops."""
+    return bool(config.get("security", {}).get("seccomp_32bit"))
+
+
+def needs_derived_profile(config: dict) -> bool:
+    """Whether the workload runs under a profile derived from the baseline
+    rather than the baseline itself: it adds syscalls, opts into 32-bit, or
+    both. The generator writes the file exactly when this holds, and the run
+    args point at it exactly then, so the two cannot drift apart."""
+    return bool(seccomp_allow(config)) or seccomp_32bit(config)
+
+
 def derived_profile_name(name: str) -> str:
     """The derived profile's file name, beside the workload's units."""
     return f"workload-{name}.seccomp.json"
 
 
-def derived_profile(baseline: dict, names) -> dict:
+def derived_profile(baseline: dict, names, *, allow_32bit=False) -> dict:
     """`baseline` with each of `names` taken out of every entry and allowed
-    unconditionally. An entry left with no names is dropped."""
+    unconditionally, and — when allow_32bit — x86_64's 32-bit sub-arches put
+    back. An entry left with no names is dropped."""
     names = set(names)
     profile = copy.deepcopy(baseline)
     syscalls = []
@@ -56,42 +87,55 @@ def derived_profile(baseline: dict, names) -> dict:
     if names:
         syscalls.append({"names": sorted(names), "action": "SCMP_ACT_ALLOW"})
     profile["syscalls"] = syscalls
+    if allow_32bit:
+        for entry in profile.get("archMap", []):
+            if entry.get("architecture") == ARCH_X86_64:
+                entry["subArchitectures"] = list(SUBARCHES_32BIT)
     return profile
 
 
-def render_derived_profile(names) -> str:
+def render_derived_profile(names, *, allow_32bit=False) -> str:
     """The derived profile's text, from the baseline installed now. Raises
     OSError or ValueError when the baseline cannot be read."""
     baseline = json.loads(baseline_source().read_text())
-    return json.dumps(derived_profile(baseline, names), indent=1) + "\n"
+    return json.dumps(
+        derived_profile(baseline, names, allow_32bit=allow_32bit),
+        indent=1) + "\n"
 
 
-def validate_seccomp_allow(config: dict, kind: str) -> list[str]:
-    """Errors for [security] seccomp_allow: a list of syscall names, on a
-    container that is not privileged and names no profile of its own, and
-    only in the top-level [security]."""
+def validate_seccomp(config: dict, kind: str) -> list[str]:
+    """Errors for [security] seccomp_allow and seccomp_32bit: a list of
+    syscall names and a boolean, on a container that is not privileged and
+    names no profile of its own, and only in the top-level [security]. Both
+    adjust the baseline, so both are refused where it does not apply."""
     errors = []
     security = config.get("security", {})
     names = security.get("seccomp_allow")
+    want_32bit = security.get("seccomp_32bit")
     for i, c in enumerate(config.get("containers") or []):
-        if isinstance(c, dict) and \
-                "seccomp_allow" in c.get("security", {}):
-            errors.append(
-                f"containers[{c.get('name', i)}].security.seccomp_allow: "
-                f"set seccomp_allow in the top-level [security]; one profile "
-                f"serves every container of the workload")
-    if names is None:
+        csec = c.get("security", {}) if isinstance(c, dict) else {}
+        for key in ("seccomp_allow", "seccomp_32bit"):
+            if key in csec:
+                errors.append(
+                    f"containers[{c.get('name', i)}].security.{key}: "
+                    f"set {key} in the top-level [security]; one profile "
+                    f"serves every container of the workload")
+    if names is None and want_32bit is None:
         return errors
+    keys = " and ".join(k for k, v in (("seccomp_allow", names),
+                        ("seccomp_32bit", want_32bit)) if v is not None)
     if kind == "vm":
-        return errors + ["[security].seccomp_allow: a VM runs under no "
-                         "seccomp profile of workloadctl's"]
-    if not isinstance(names, list) or not all(
-            isinstance(n, str) and SYSCALL_NAME.match(n) for n in names):
-        return errors + ["[security].seccomp_allow must be a list of "
-                         "syscall names (lowercase letters, digits and _)"]
+        return errors + [f"[security].{keys}: a VM runs under no seccomp "
+                         f"profile of workloadctl's"]
+    if names is not None and (not isinstance(names, list) or not all(
+            isinstance(n, str) and SYSCALL_NAME.match(n) for n in names)):
+        errors.append("[security].seccomp_allow must be a list of syscall "
+                      "names (lowercase letters, digits and _)")
+    if want_32bit is not None and not isinstance(want_32bit, bool):
+        errors.append("[security].seccomp_32bit must be true or false")
     if security.get("privileged"):
-        errors.append("[security].seccomp_allow: privileged = true runs "
-                      "under no seccomp profile")
+        errors.append(f"[security].{keys}: privileged = true runs under "
+                      f"no seccomp profile")
     for where, sec in [("[security]", security)] + [
             (f"containers[{c.get('name', i)}].security", c.get("security", {}))
             for i, c in enumerate(config.get("containers") or [])
@@ -99,7 +143,7 @@ def validate_seccomp_allow(config: dict, kind: str) -> list[str]:
         if any(isinstance(o, str) and o.startswith("seccomp=")
                for o in sec.get("security_opt", [])):
             errors.append(
-                f"[security].seccomp_allow: {where}.security_opt names a "
-                f"seccomp= profile, which replaces the baseline the names "
-                f"are added to; use one or the other")
+                f"[security].{keys}: {where}.security_opt names a "
+                f"seccomp= profile, which replaces the baseline; use one or "
+                f"the other")
     return errors

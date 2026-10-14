@@ -24,7 +24,7 @@ from container_validate import (
     validate_container_network, validate_publish_ports,
 )
 from vm_validate import validate_vm_config, vm_network_warnings
-from workload_seccomp import validate_seccomp_allow
+from workload_seccomp import validate_seccomp
 from recursive_readonly import rro_volume_errors
 from container_network_config import container_allow_entries
 from egress_policy import container_uses_resolve
@@ -163,7 +163,7 @@ def validate_workload_config(config: dict) -> list[str]:
         # the walker's own path check reports it as such.
         _reject_bad_workload_tokens(_vm_scannable(config), "", errors)
         errors.extend(validate_vm_config(config))
-        errors.extend(validate_seccomp_allow(config, kind))
+        errors.extend(validate_seccomp(config, kind))
         return errors
 
     # --- container validation ---
@@ -229,7 +229,7 @@ def validate_workload_config(config: dict) -> list[str]:
     # topology question (bridge mode ignores the key), and the table alone
     # cannot answer it. See container_runs_on_host_network().
     errors.extend(validate_container_network(config.get("network", {}), config))
-    errors.extend(validate_seccomp_allow(config, kind))
+    errors.extend(validate_seccomp(config, kind))
     for where, volumes in _volume_lists(config):
         errors.extend(rro_volume_errors(volumes, where))
 

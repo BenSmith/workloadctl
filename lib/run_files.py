@@ -16,7 +16,7 @@ from container_network_config import container_uses_inspect
 from egress_policy import (
     container_uses_resolve, vm_uses_resolve, vm_uses_inspect,
 )
-from workload_seccomp import derived_profile_name, seccomp_allow
+from workload_seccomp import derived_profile_name, needs_derived_profile
 from workload_lib import (
     RUN_SYSTEMD_SYSTEM, WORKLOADCTL_VERSION, virtiofs_tags,
     workload_config_path, workload_service_name,
@@ -260,11 +260,12 @@ def workload_run_files(config) -> list[WorkloadRunFile]:
         ))
 
     # The derived seccomp profile, listed for every container workload so
-    # disabling one that dropped seccomp_allow still removes it.
+    # disabling one that dropped seccomp_allow or seccomp_32bit still removes
+    # it. The `present=` is the predicate the generator writes the file on.
     if not config.is_vm:
         files.append(WorkloadRunFile(
             run / derived_profile_name(name), "seccomp", "seccomp",
-            bool(seccomp_allow(config.config)),
+            needs_derived_profile(config.config),
         ))
 
     # Runtime-written env tree — never produced by the generator (emitted False),

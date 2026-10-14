@@ -23,6 +23,7 @@ they regenerate from these TOMLs in ~0.2s, so a refactor diffs two baselines fro
 The generator allocates UIDs by scanning /etc/passwd, so its output is
 host-dependent; nothing here depends on the allocated value.
 """
+import json
 import re
 import subprocess
 import sys
@@ -38,6 +39,9 @@ WORKLOADS_DIR = ROOT / "workloads"
 
 from config_parser import infer_workload_mode
 from workload_lib import normalize_containers  # noqa: E402
+from workload_seccomp import (  # noqa: E402
+    ARCH_X86_64, SUBARCHES_32BIT, derived_profile_name,
+)
 
 
 def expected_units(stem: str, toml_text: str) -> list[str]:
@@ -218,6 +222,39 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
             generate_all(svc)
             unit = (svc / "workload-caddy.service").read_text()
         self.assertRegex(unit, r'CADDY_ADMIN="?unix//')
+
+
+class TestTheSteamBundlesOptOutOfTheBaseline(unittest.TestCase):
+    """Steam's client is a 32-bit program, and its runtime starts games in
+    bwrap. The baseline kills a 32-bit syscall and refuses bwrap's mounts
+    and namespaces, so a Steam bundle that lost either opt-in would generate
+    and start, and then lose Steam at run time, with nothing else in the
+    suite failing. Checked in the rendered profile and unit, where the
+    opt-ins have to arrive."""
+
+    BUNDLES = ("sunshine-streaming", "wolf-game-streaming")
+    BWRAP = {"clone", "mount", "pivot_root", "umount2", "unshare"}
+
+    def test_each_runs_32bit_code_and_bwrap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            for name in self.BUNDLES:
+                with self.subTest(name=name):
+                    profile_name = derived_profile_name(name)
+                    profile = json.loads((svc / profile_name).read_text())
+                    subarches = {a["architecture"]: a["subArchitectures"]
+                                 for a in profile["archMap"]}
+                    self.assertEqual(subarches[ARCH_X86_64], SUBARCHES_32BIT)
+                    allowed = {n for e in profile["syscalls"]
+                               if e["action"] == "SCMP_ACT_ALLOW"
+                               and not e.get("args") and not e.get("includes")
+                               for n in e["names"]}
+                    self.assertLessEqual(self.BWRAP, allowed)
+                    unit = (svc / f"workload-{name}.service").read_text()
+                    self.assertIn("seccomp=", unit)
+                    self.assertIn(profile_name, unit)
 
 
 class TestBaselineIsComparable(unittest.TestCase):

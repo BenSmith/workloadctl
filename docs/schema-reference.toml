@@ -1658,6 +1658,28 @@ audio = true
 #
 # seccomp_allow = []
 
+# Optional: Run 32-bit (x86, x32) code under the seccomp baseline
+# Type: bool
+# Default: false
+#
+# The baseline drops x86_64's 32-bit sub-architectures: on 32-bit, libseccomp
+# folds every socket rule onto the socketcall multiplexer with the address
+# family behind a pointer, so socketcall(SYS_SOCKET) would reach any family
+# (vsock included) past the family refusals, and no rule can refuse it without
+# colliding with the fold the allows need. With no sub-architecture there is
+# no socketcall, and a 32-bit syscall is refused as a bad architecture: the
+# program dies with "Bad system call (core dumped)", exit status 159.
+#
+# Set true for a workload that runs 32-bit code (Steam's client is a 32-bit
+# program): the generator puts the sub-architectures back on its derived
+# profile, so its containers run 32-bit code and carry the family-blind
+# socketcall that comes with it, while every other workload keeps the
+# 64-bit-only surface. Derived and rebuilt like
+# seccomp_allow, and refused in the same places (per-container, beside a
+# seccomp= profile, with privileged, and on a VM).
+#
+# seccomp_32bit = true
+
 # Optional: Ship a per-workload SELinux type
 # Type: bool
 # Default: false

@@ -289,6 +289,15 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
         # pointer.
         self.assertEqual(decide(self.profile, "socketcall", 1), ENOSYS)
 
+    def test_the_baseline_drops_the_32bit_subarchitectures(self):
+        """x86_64 carries no 32-bit sub-arch, so the x86 socketcall fold that
+        bypasses the family refusals never exists and no 32-bit syscall runs.
+        A bundle that runs 32-bit code opts them back with seccomp_32bit; the
+        built filter is measured in TestTheBaselineUnderLibseccomp."""
+        x86_64 = next(e for e in self.profile["archMap"]
+                      if e["architecture"] == "SCMP_ARCH_X86_64")
+        self.assertEqual(x86_64["subArchitectures"], [])
+
     def test_each_family_is_in_its_tier(self):
         for family in range(64):
             if family == AF_NETLINK:
@@ -573,24 +582,47 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
     def test_it_builds_for_every_architecture_crun_adds(self):
         self._build(json.loads(PROFILE.read_text()))
 
-    def test_x86s_socketcall_socket_is_only_the_allows_fold(self):
-        """What a 32-bit socketcall(SYS_SOCKET) gets: one rule, the allows'
-        fold (the family is behind a pointer there), so no other action
-        was folded beside it."""
+    def test_the_baseline_has_no_32bit_arch_and_no_socketcall(self):
+        """The hole closed: with x86 and x32 dropped the built filter is the
+        native arch alone. libseccomp folds every socket rule onto x86's
+        socketcall with the family behind a pointer, so a socketcall(SYS_
+        SOCKET) there reaches any family (vsock included) past the refusals,
+        and no rule can refuse it without colliding with the fold the allows
+        need. Without the sub-arch there is no socketcall at all, and a
+        32-bit syscall hits the filter's bad-architecture KILL."""
+        import re
         import tempfile
         flt = self._build(json.loads(PROFILE.read_text()))
         with tempfile.TemporaryFile("w+") as f:
             flt.export_pfc(f)
             f.seek(0)
             pfc = f.read()
-        x86 = pfc.split("# filter for arch x86 (")[1]
-        socketcall = x86.split('"socketcall"')[1].split(
-            "# filter for syscall")[0].splitlines()
-        sys_socket = [i for i, line in enumerate(socketcall)
-                      if line.strip() == "if ($a0 == 1)"]
-        self.assertEqual(len(sys_socket), 1, socketcall)
-        self.assertEqual(socketcall[sys_socket[0] + 1].strip(),
-                         "action ALLOW;")
+        arches = re.findall(r"# filter for arch (\S+) \(", pfc)
+        self.assertEqual([a for a in arches if a in ("x86", "x32")], [])
+        self.assertNotIn('"socketcall"', pfc)
+
+    def test_a_32bit_bundle_restores_the_arches_and_still_builds(self):
+        """seccomp_32bit puts x86 and x32 back on the derived profile. It
+        builds — the logged families' always-true protocol condition keeps
+        them off socketcall, so the allows' fold has no differing action
+        beside it (two would fail the load with EEXIST) — and socketcall is
+        back: the family-blind multiplexer, the accepted cost for a workload
+        that runs 32-bit code."""
+        import re
+        import tempfile
+        from workload_seccomp import derived_profile
+        profile = derived_profile(
+            json.loads(PROFILE.read_text()),
+            ["clone", "mount", "pivot_root", "umount2", "unshare"],
+            allow_32bit=True)
+        flt = self._build(profile)
+        with tempfile.TemporaryFile("w+") as f:
+            flt.export_pfc(f)
+            f.seek(0)
+            pfc = f.read()
+        arches = re.findall(r"# filter for arch (\S+) \(", pfc)
+        self.assertIn("x86", arches)
+        self.assertIn('"socketcall"', pfc)
 
     def test_it_loads_and_the_tiers_hold(self):
         calls = {(1, 1, 0): ALLOW, (2, 1, 0): ALLOW, (10, 2, 0): ALLOW,

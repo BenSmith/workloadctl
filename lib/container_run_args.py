@@ -42,7 +42,7 @@ from recursive_readonly import (
 from validation import valid_userns_mode
 from workload_mcs import mcs_level
 from workload_seccomp import (
-    SECCOMP_BASELINE, derived_profile_name, seccomp_allow,
+    SECCOMP_BASELINE, derived_profile_name, needs_derived_profile,
 )
 
 
@@ -520,11 +520,11 @@ def _security_args(spec):
 
     # Apply baseline seccomp profile unless the workload overrides it or uses --privileged
     # (--privileged disables seccomp anyway; adding it would just be noise).
-    # [security] seccomp_allow swaps in the derived profile the generator
-    # writes beside the units.
+    # [security] seccomp_allow and seccomp_32bit swap in the derived profile
+    # the generator writes beside the units.
     if not privileged and not any(opt.startswith("seccomp=") for opt in security_opts):
         profile = SECCOMP_BASELINE
-        if seccomp_allow(config):
+        if needs_derived_profile(config):
             profile = RUN_SYSTEMD_SYSTEM / derived_profile_name(name)
         args.append(f"--security-opt=seccomp={profile}")
 

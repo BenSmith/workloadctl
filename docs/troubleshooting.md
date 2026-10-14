@@ -262,17 +262,21 @@ sudo workloadctl enable <workload>
 **Cause:**
 All workloads run with a hardened seccomp profile (`/usr/share/containers/seccomp-workload-baseline.json`) that blocks syscalls commonly used in container escapes and side-channel attacks. Most services never call these syscalls, but some applications (debuggers, eBPF tools, performance profilers, programs that sandbox themselves in namespaces) do.
 
-The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `mount`, `syslog`, `socketcall`.
+The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `mount`, `syslog`.
 
-`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`), `AF_ALG` and the other uncommon families and netlink protocols listed in workloadctl's workloads.md. Families and protocols outside both lists are allowed and logged (`journalctl -k --grep 'type=1326'`).
+`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`), `AF_ALG` and the other uncommon families and netlink protocols listed in workloadctl's workloads.md. Families and protocols outside both lists are allowed and logged (`journalctl _AUDIT_TYPE=1326`).
 
-Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `socketcall`, a vsock and the other refused socket families. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`, the mount calls, `syslog`, and a new namespace. An EPERM from a call the profile allows is SELinux's, not seccomp's.
+The baseline also drops x86_64's 32-bit sub-architectures (x86, x32), so a 32-bit program's syscalls are refused as a bad architecture rather than returning an errno — on 32-bit the filter cannot read a socket's address family, which would let `socketcall(SYS_SOCKET)` reach a vsock past the refusals. SIGSYS kills the calling thread, so a 32-bit program dies at its first syscall: `Bad system call (core dumped)`, exit status 159, and a `SECCOMP` audit record with `sig=31 arch=40000003` (`journalctl _AUDIT_TYPE=1326`). A workload that runs 32-bit code (Steam's client is a 32-bit program) opts them back with `seccomp_32bit = true`; see workloadctl's workloads.md.
+
+Which error a blocked call gives says which rule refused it. A syscall the profile never names falls to its default and fails with `Function not implemented` (ENOSYS), as if the kernel lacked it: `ptrace`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, a vsock and the other refused socket families. One it denies by name, or behind a capability the container lacks, fails with `Operation not permitted` (EPERM): `bpf`, `perf_event_open`, `setns`, the mount calls, `syslog`, and a new namespace. An EPERM from a call the profile allows is SELinux's, not seccomp's.
 
 **Confirm seccomp is the cause:**
 ```bash
 # Test with seccomp disabled - if it starts, seccomp is blocking something
 sudo workloadctl incant <name> -- \
   run --rm --security-opt seccomp=unconfined <image>
+# Logged and killed calls leave an audit record (sig=31: killed)
+sudo journalctl _AUDIT_TYPE=1326 --since -1h
 ```
 
 **Fix — allow just the syscalls it needs:**
@@ -283,6 +287,12 @@ seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]
 seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 ```
 The rest of the baseline still applies; see `seccomp_allow` in the schema reference.
+
+**Fix — run 32-bit code** (a `SECCOMP` record with `arch=40000003`):
+```toml
+[security]
+seccomp_32bit = true
+```
 
 **Fix — use the system default (less strict):**
 ```toml

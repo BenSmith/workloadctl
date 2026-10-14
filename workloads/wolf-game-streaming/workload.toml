@@ -29,6 +29,9 @@ extra_groups = ["video", "render", "uinput"]
 selinux_policy = true
 # Steam's runtime sandboxes a game in namespaces of its own (bwrap).
 seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
+# Steam's client is a 32-bit program, and the baseline kills a 32-bit
+# syscall.
+seccomp_32bit = true
 
 [storage]
 volumes = [
