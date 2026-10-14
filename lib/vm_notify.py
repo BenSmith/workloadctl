@@ -34,6 +34,9 @@ PROVISION_POLL_INTERVAL = 15.0
 
 # How long passt has to exit once QEMU has, before it is killed.
 PASST_STOP_TIMEOUT = 5.0
+# How long QEMU has to exit on its own once passt has: in a stop, systemd
+# signals passt while QEMU is still going down.
+PASST_LOSS_GRACE = 3.0
 
 
 def split_argv(args: list[str]) -> tuple[list[str], list[str]]:
@@ -85,17 +88,25 @@ def stop_passt(passt) -> None:
         passt.wait()
 
 
-def watch_passt(passt, proc, lost: threading.Event) -> None:
-    """Take QEMU down if passt exits under it."""
+def watch_passt(passt, proc, lost: threading.Event,
+                stopping: threading.Event,
+                grace: float = PASST_LOSS_GRACE) -> None:
+    """Take QEMU down if passt exits under it, outside a stop."""
     rc = passt.wait()
-    if proc.poll() is None:
-        lost.set()
-        print(f"workload-vm-notify: passt exited ({rc}) under a running "
-              f"guest; stopping QEMU", file=sys.stderr)
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            pass
+    try:
+        proc.wait(timeout=grace)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    if stopping.is_set():
+        return
+    lost.set()
+    print(f"workload-vm-notify: passt exited ({rc}) under a running "
+          f"guest; stopping QEMU", file=sys.stderr)
+    try:
+        proc.terminate()
+    except ProcessLookupError:
+        pass
 
 
 def sd_notify(msg: str):
@@ -263,7 +274,8 @@ def run_qemu(name: str, qemu_cmd: list[str], uid: int, passt=None,
             qemu_end.close()
     lost, stopping = threading.Event(), threading.Event()
     if passt is not None:
-        threading.Thread(target=watch_passt, args=(passt, proc, lost),
+        threading.Thread(target=watch_passt,
+                         args=(passt, proc, lost, stopping),
                          name="passt-watch", daemon=True).start()
 
     # Forward SIGTERM/SIGINT to QEMU. In a normal stop the graceful ExecStop

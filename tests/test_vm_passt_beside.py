@@ -125,6 +125,7 @@ class TheLaunch(unittest.TestCase):
         self._patch(vm_notify.signal, "signal",
                     lambda sig, handler: self.handlers.update({sig: handler}))
         self._patch(vm_notify.os, "getuid", lambda: 10007)
+        self._patch(vm_notify, "PASST_LOSS_GRACE", 0.2)
 
     def _patch(self, target, name, value):
         patcher = mock.patch.object(target, name, value)
@@ -188,6 +189,8 @@ class TheLaunch(unittest.TestCase):
         self.assertEqual(result["rc"], 1)
 
     def test_passt_exiting_in_a_stop_is_the_stops(self):
+        """systemd's stop signals passt and the wrapper; QEMU is told by
+        the wrapper, not by the watcher, and the status is QEMU's."""
         thread, result = self._supervise_in_thread()
         self._wait_for(2)
         passt, qemu = self.procs
@@ -195,10 +198,25 @@ class TheLaunch(unittest.TestCase):
             if signal.SIGTERM in self.handlers:
                 break
             threading.Event().wait(0.01)
+        qemu.send_signal = lambda sig: qemu.signals.append(sig)
         self.handlers[signal.SIGTERM](signal.SIGTERM, None)
-        passt.exit(-signal.SIGTERM)
+        passt.exit(0)
+        threading.Event().wait(0.4)
+        self.assertEqual(qemu.signals, [signal.SIGTERM])
+        qemu.exit(0)
         thread.join(5)
-        self.assertNotEqual(result["rc"], 1)
+        self.assertEqual(result["rc"], 0)
+
+    def test_passt_leaving_as_qemu_shuts_down_is_not_a_loss(self):
+        """QEMU closes its end as it exits, and passt follows it out."""
+        thread, result = self._supervise_in_thread()
+        self._wait_for(2)
+        passt, qemu = self.procs
+        passt.exit(0)
+        qemu.exit(0)
+        thread.join(5)
+        self.assertEqual(qemu.signals, [])
+        self.assertEqual(result["rc"], 0)
 
     def test_a_bridged_vm_starts_qemu_alone(self):
         thread, result = self._supervise_in_thread(passt_cmd=[])
