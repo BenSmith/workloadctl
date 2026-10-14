@@ -2348,9 +2348,21 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         # not. Both names, because the socket has the same problem.
         sidecar, _uid = self._sidecar_and_uid()
         sock = "/run/workload-vm/fedora-vm/virtiofs-mnt-data.sock"
-        self.assertIn(f'ExecStartPre=/bin/rm -f "{sock}" "{sock}.pid"', sidecar)
+        self.assertIn(f'ExecStartPre=+/bin/rm -f "{sock}" "{sock}.pid"', sidecar)
         # Not `-` prefixed: a removal that genuinely fails is the diagnostic.
         self.assertNotIn("ExecStartPre=-", sidecar)
+
+    def test_virtiofsd_prestart_runs_outside_the_sidecars_context(self):
+        """SELinuxContext= applies to every Exec line, and wlvfsd_t may
+        enter only virtiofsd: an rm in it fails 203/EXEC, `entrypoint`
+        denied on bin_t (tp, 2026-10-14). Every Exec line but ExecStart is
+        `+`."""
+        sidecar, _uid = self._sidecar_and_uid()
+        self.assertIn("SELinuxContext=system_u:system_r:wlvfsd_t:", sidecar)
+        for line in sidecar.splitlines():
+            key, _, value = line.partition("=")
+            if key.startswith("Exec") and key != "ExecStart":
+                self.assertTrue(value.startswith(("+", "-+")), line)
 
     def test_virtiofsd_gets_the_fd_headroom_it_asks_for(self):
         # virtiofsd wants RLIMIT_NOFILE=1_000_000 and holds an fd per open guest

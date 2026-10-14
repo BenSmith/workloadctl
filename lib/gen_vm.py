@@ -312,15 +312,17 @@ def generate_virtiofs_service(name: str, tag: str, host_path: str, user_name: st
     # than a stale file. Removing it here is safe against a live peer: virtiofsd
     # takes an flock and re-checks the inode precisely so a racing unlink is
     # handled. Not prefixed with `-`: if the removal genuinely fails, rm's error
-    # is the diagnostic we want in the journal.
+    # is the diagnostic we want in the journal. `+`: SELinuxContext= applies to
+    # every Exec line, and wlvfsd_t may enter only virtiofsd, not rm (bin_t).
     svc.add("ExecStartPre",
-            f"/bin/rm -f {dq(socket_path)} {dq(socket_path + '.pid')}")
+            f"+/bin/rm -f {dq(socket_path)} {dq(socket_path + '.pid')}")
     svc.set("ExecStart", virtiofsd_cmd)
     # Wait for virtiofsd to create the socket before QEMU starts.
     # virtiofsd creates the socket before blocking on accept(), so this
-    # resolves the ordering dependency without the sd_notify deadlock.
+    # resolves the ordering dependency without the sd_notify deadlock. `+`
+    # for the same reason as the prestart's.
     svc.set("ExecStartPost",
-            f"/bin/sh -c 'until test -S {socket_path}; do sleep 0.1; done'")
+            f"+/bin/sh -c 'until test -S {socket_path}; do sleep 0.1; done'")
     svc.set("StandardOutput", "journal")
     svc.set("StandardError", "journal")
 
