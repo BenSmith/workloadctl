@@ -281,14 +281,20 @@ class NotifyShimTest(unittest.TestCase):
             rc = notify_script.main(["notify", "vm1", "qemu", "-nographic", "-m", "2G"])
         self.assertEqual(rc, 0)
         sup.assert_called_once_with("vm1", ["qemu", "-nographic", "-m", "2G"],
-                                    [])
+                                    [], None)
 
     def test_hands_passts_argv_apart_from_qemus(self):
         with mock.patch.object(notify_script, "supervise", return_value=0) as sup:
             notify_script.main(["notify", "vm1", "--passt", "/usr/bin/passt",
                                 "--quiet", "--", "qemu", "-m", "2G"])
         sup.assert_called_once_with("vm1", ["qemu", "-m", "2G"],
-                                    ["/usr/bin/passt", "--quiet"])
+                                    ["/usr/bin/passt", "--quiet"], None)
+
+    def test_hands_a_bridge_apart_from_qemu(self):
+        with mock.patch.object(notify_script, "supervise", return_value=0) as sup:
+            notify_script.main(["notify", "vm1", "--bridge", "br0", "--",
+                                "qemu", "-m", "2G"])
+        sup.assert_called_once_with("vm1", ["qemu", "-m", "2G"], [], "br0")
 
     def test_passt_without_its_end_is_a_usage_error(self):
         with mock.patch.object(notify_script, "supervise") as sup, \

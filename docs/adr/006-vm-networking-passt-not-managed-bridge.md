@@ -216,8 +216,10 @@ passt VM's QEMU runs libvirt's default sandbox (`spawn=deny` included). The
 wrapper makes the pair at QEMU's context, starts passt with `runcon` at
 `passt_t` (one transition rule; passt run as `svirt_t` cannot create the user
 namespace it isolates itself in), and fails the unit if passt exits under a
-running guest. A bridged VM's QEMU runs no sandbox: its netdev spawns
-`qemu-bridge-helper`.
+running guest. A bridged VM's tap comes the same way: the wrapper runs
+`qemu-bridge-helper` for the bridge, receives the tap's fd as QEMU's bridge
+netdev would, and QEMU takes it as `-netdev tap,fd=`, so its QEMU runs the
+same sandbox.
 
 **A permissive harvest is not the whole module.** The FUSE-serving permissions did
 close for free, but they are the entire write surface on `svirt_image_t`, a

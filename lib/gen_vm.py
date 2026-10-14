@@ -35,11 +35,13 @@ from nft_constants import SIDECAR_SLICE
 from vm_clock import CLOCK_KEEPER_PERIOD_SECONDS, VM_CLOCK_KEEPER_BIN
 from vm_defs import (
     VM_REBOOT_EXIT_CODE,
+    BRIDGE_ARGS_FLAG,
     PASST_ARGS_END,
     PASST_ARGS_FLAG,
     PASST_BIN,
     PASST_FD_TOKEN,
     QEMU_SANDBOX,
+    TAP_FD_TOKEN,
     VM_GUEST_UID,
     VM_GUEST_AGENT_PORT,
     vm_guest_agent_socket,
@@ -662,8 +664,9 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         # The unfiltered escape hatch: a real LAN identity, which passt cannot
         # provide because the guest takes the *host's* address. Supported and
         # deliberate, not a lapse — but nothing in the egress design reaches a
-        # VM here, and `diagnose` says so plainly.
-        qemu_args.append(f"-netdev bridge,id=net0,br={bridge_name}")
+        # VM here, and `diagnose` says so plainly. workload-vm-notify opens the
+        # tap through qemu-bridge-helper and hands QEMU its fd.
+        qemu_args.append(f"-netdev tap,id=net0,fd={TAP_FD_TOKEN}")
     else:
         qemu_args.append(build_passt_netdev())
     qemu_args.append(f"-device virtio-net-pci,netdev=net0,mac={mac}")
@@ -729,8 +732,7 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         "-no-reboot",
         f"-name {name}",
     ]
-    if not bridge_name:
-        qemu_args.append(QEMU_SANDBOX)
+    qemu_args.append(QEMU_SANDBOX)
 
     resources = config.get("resources", {})
 
@@ -871,12 +873,14 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         svc.add("ExecStopPost",
                 f"-+/usr/libexec/workloadctl/workload-vm-svcaddr down {dq(name)}")
 
-    passt = ("" if bridge_name else
-             f"{PASST_ARGS_FLAG} {build_passt_argv(uid, net_cfg, mac)} "
-             f"{PASST_ARGS_END} \\\n    ")
+    if bridge_name:
+        net = f"{BRIDGE_ARGS_FLAG} {dq(bridge_name)} {PASST_ARGS_END} \\\n    "
+    else:
+        net = (f"{PASST_ARGS_FLAG} {build_passt_argv(uid, net_cfg, mac)} "
+               f"{PASST_ARGS_END} \\\n    ")
     svc.add("ExecStart",
             f"/usr/libexec/workloadctl/workload-vm-notify {dq(name)} \\\n"
-            f"    {passt}{qemu_cmd}")
+            f"    {net}{qemu_cmd}")
     svc.blank()
     # Graceful shutdown: ACPI power-off, then *block* until the guest is
     # gone (workload-vm-shutdown waits up to 80s). ExecStop must block —
@@ -898,8 +902,8 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
     # NOT NoNewPrivileges: QEMU reaches svirt_t by a type transition when the
     # notify wrapper executes it, and no_new_privs refuses the transition --
     # the same constraint the virtiofs sidecar's unit is under. QEMU's own
-    # -sandbox is on its command line (QEMU_SANDBOX), for a VM whose passt
-    # runs beside it.
+    # -sandbox is on its command line (QEMU_SANDBOX): passt and the bridge
+    # helper run beside it.
     svc.add("ProtectSystem", "strict")
     # The data dir may not exist (no data disk), hence `-`, inside the quotes:
     # systemd unquotes a word before it reads the prefix.

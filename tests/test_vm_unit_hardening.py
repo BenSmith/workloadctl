@@ -58,16 +58,15 @@ class TestTheVmUnitIsHardened(unittest.TestCase):
         text, _ = _service_lines(PASST)
         self.assertNotIn("NoNewPrivileges", text)
 
-    def test_a_passt_vms_qemu_runs_its_own_sandbox(self):
-        text, _ = _service_lines(PASST)
-        self.assertIn("-sandbox on,obsolete=deny,elevateprivileges=deny,"
-                      "spawn=deny,resourcecontrol=deny", text)
-
-    def test_a_bridged_vms_qemu_does_not(self):
-        """Its netdev spawns qemu-bridge-helper."""
-        text, _ = _service_lines(BRIDGED)
-        self.assertNotIn("-sandbox", text)
-        self.assertIn("-netdev bridge", text)
+    def test_every_vms_qemu_runs_its_own_sandbox(self):
+        """A bridged VM's tap comes from the notify wrapper, so its QEMU
+        spawns nothing either."""
+        for config in (PASST, BRIDGED):
+            text, _ = _service_lines(config)
+            with self.subTest(bridged=config is BRIDGED):
+                self.assertIn("-sandbox on,obsolete=deny,elevateprivileges="
+                              "deny,spawn=deny,resourcecontrol=deny", text)
+                self.assertNotIn("-netdev bridge", text)
 
 
 if __name__ == "__main__":

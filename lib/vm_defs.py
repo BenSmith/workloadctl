@@ -98,9 +98,16 @@ PASST_ARGS_FLAG = "--passt"
 PASST_ARGS_END = "--"
 PASST_FD_TOKEN = "@passt-fd@"
 
-# QEMU's own seccomp filter, libvirt's default set. Only with passt beside
-# QEMU: the bridge netdev runs qemu-bridge-helper, which spawn=deny refuses
-# and the filter's no_new_privs stops from gaining its privilege.
+# A bridged VM's tap: workload-vm-notify runs qemu-bridge-helper for the
+# bridge after BRIDGE_ARGS_FLAG and puts the tap's fd in QEMU's argv at
+# TAP_FD_TOKEN.
+BRIDGE_ARGS_FLAG = "--bridge"
+BRIDGE_HELPER = "/usr/libexec/qemu-bridge-helper"
+TAP_FD_TOKEN = "@tap-fd@"
+
+# QEMU's own seccomp filter, libvirt's default set. QEMU starts nothing:
+# passt and the bridge helper are the notify wrapper's children, so
+# spawn=deny holds for every VM.
 QEMU_SANDBOX = ("-sandbox on,obsolete=deny,elevateprivileges=deny,"
                 "spawn=deny,resourcecontrol=deny")
 

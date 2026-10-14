@@ -2556,7 +2556,8 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         self._write_vm_config(network='bridge = "br0"')
         self._run()
         svc = self._read("workload-fedora-vm.service")
-        self.assertIn("-netdev bridge,id=net0,br=br0", svc)
+        self.assertIn('--bridge "br0" --', svc)
+        self.assertIn("-netdev tap,id=net0,fd=@tap-fd@", svc)
         self.assertNotIn("-netdev stream", svc)
         # None of the passt-only wiring should appear for a bridged VM.
         self.assertNotIn("--passt", svc)

@@ -1,7 +1,7 @@
 """The VM service's main process: passt, QEMU, readiness, and the guest's exit.
 
-Starts passt and QEMU as children, on the two ends of one socket pair, and
-stays alive as the unit's MainPID, connects to QEMU's QMP socket, sends
+Starts passt and QEMU as children, on the two ends of one socket pair (or,
+for a bridged VM, opens its tap and starts QEMU on it), and stays alive as the unit's MainPID, connects to QEMU's QMP socket, sends
 READY=1 once the guest's vCPUs run, watches the guest's cloud-init from a
 daemon thread, and exits with QEMU's status -- or, in [vm].restart =
 "on-reboot" mode, with a status that tells a reboot from a poweroff. A passt
@@ -21,7 +21,8 @@ from config_parser import SOCKET_DIR
 from qmp import QMPClient
 from vm_provision import (marker_reports_failure, marker_vouches_for,
                           read_provision_marker, record_guest_provision_result)
-from vm_defs import PASST_ARGS_END, PASST_ARGS_FLAG, PASST_FD_TOKEN
+from vm_defs import (BRIDGE_ARGS_FLAG, BRIDGE_HELPER, PASST_ARGS_END,
+                     PASST_ARGS_FLAG, PASST_FD_TOKEN, TAP_FD_TOKEN)
 from workload_lib import workload_state_dir
 
 # How long to keep asking the guest whether cloud-init finished, and how often.
@@ -37,21 +38,66 @@ PASST_STOP_TIMEOUT = 5.0
 # How long QEMU has to exit on its own once passt has: in a stop, systemd
 # signals passt while QEMU is still going down.
 PASST_LOSS_GRACE = 3.0
+# How long qemu-bridge-helper has to hand over the tap.
+BRIDGE_HELPER_TIMEOUT = 30.0
 
 
-def split_argv(args: list[str]) -> tuple[list[str], list[str]]:
-    """The unit's words after the name: (passt's argv, QEMU's argv).
+def split_argv(args: list[str]) -> tuple[list[str], str | None, list[str]]:
+    """The unit's words after the name: (passt's argv, the bridge, QEMU's).
 
-    passt's is empty for a bridged VM, whose ExecStart carries no
-    PASST_ARGS_FLAG.
+    A passt VM's ExecStart carries PASST_ARGS_FLAG and passt's words, a
+    bridged VM's BRIDGE_ARGS_FLAG and its bridge, each ended by
+    PASST_ARGS_END.
     """
-    if not args or args[0] != PASST_ARGS_FLAG:
-        return [], list(args)
+    if not args or args[0] not in (PASST_ARGS_FLAG, BRIDGE_ARGS_FLAG):
+        return [], None, list(args)
     try:
         end = args.index(PASST_ARGS_END, 1)
     except ValueError:
-        raise ValueError(f"{PASST_ARGS_FLAG} without {PASST_ARGS_END}")
-    return list(args[1:end]), list(args[end + 1:])
+        raise ValueError(f"{args[0]} without {PASST_ARGS_END}")
+    words, qemu = list(args[1:end]), list(args[end + 1:])
+    if args[0] == PASST_ARGS_FLAG:
+        return words, None, qemu
+    if len(words) != 1:
+        raise ValueError(f"{BRIDGE_ARGS_FLAG} takes one bridge")
+    return [], words[0], qemu
+
+
+def start_bridge(bridge: str, qemu_cmd: list[str]):
+    """Open the VM's tap on `bridge`; QEMU's argv for it.
+
+    qemu-bridge-helper, setuid root, checks /etc/qemu/bridge.conf, makes a
+    tap on the bridge, and sends its fd back over a socket: QEMU's bridge
+    netdev runs it so (net/tap.c), and from here QEMU starts nothing.
+    Returns QEMU's argv with TAP_FD_TOKEN replaced, and the tap's fd, which
+    the caller passes to QEMU and then closes.
+    """
+    ours, helpers = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    fds = []
+    try:
+        helper = subprocess.Popen(
+            [BRIDGE_HELPER, "--use-vnet", f"--fd={helpers.fileno()}",
+             f"--br={bridge}"],
+            stdin=subprocess.DEVNULL, pass_fds=(helpers.fileno(),))
+        helpers.close()
+        try:
+            _, fds, _, _ = socket.recv_fds(ours, 1, 1)
+        finally:
+            try:
+                rc = helper.wait(timeout=BRIDGE_HELPER_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                helper.kill()
+                rc = helper.wait()
+    finally:
+        helpers.close()
+        ours.close()
+    if rc != 0 or len(fds) != 1:
+        for fd in fds:
+            os.close(fd)
+        raise RuntimeError(f"{BRIDGE_HELPER} gave no tap on {bridge} "
+                           f"(exit status {rc})")
+    tap = fds[0]
+    return [arg.replace(TAP_FD_TOKEN, str(tap)) for arg in qemu_cmd], tap
 
 
 def start_passt(passt_cmd: list[str], qemu_cmd: list[str], uid: int):
@@ -233,7 +279,8 @@ def monitor_shutdown_reason(name: str, proc) -> str | None:
 
 
 def supervise(name: str, qemu_cmd: list[str],
-              passt_cmd: list[str] | None = None) -> int:
+              passt_cmd: list[str] | None = None,
+              bridge: str | None = None) -> int:
     """Run passt and QEMU for one VM and hold the unit's main PID.
 
     READY=1 goes out when the guest's vCPUs run, the cloud-init watch runs
@@ -242,18 +289,21 @@ def supervise(name: str, qemu_cmd: list[str],
     exited under it.
     """
     uid = os.getuid()
-    passt = qemu_end = None
+    passt = qemu_fd = None
     if passt_cmd:
         passt, qemu_cmd, qemu_end = start_passt(passt_cmd, qemu_cmd, uid)
+        qemu_fd = qemu_end.detach()
+    elif bridge:
+        qemu_cmd, qemu_fd = start_bridge(bridge, qemu_cmd)
     try:
-        return run_qemu(name, qemu_cmd, uid, passt, qemu_end)
+        return run_qemu(name, qemu_cmd, uid, passt, qemu_fd)
     finally:
         if passt is not None:
             stop_passt(passt)
 
 
 def run_qemu(name: str, qemu_cmd: list[str], uid: int, passt=None,
-             qemu_end=None) -> int:
+             qemu_fd: int | None = None) -> int:
     """QEMU's part of supervise: start, readiness, exit status."""
     qmp_sock = str(SOCKET_DIR / name / "qmp.sock")
 
@@ -268,10 +318,10 @@ def run_qemu(name: str, qemu_cmd: list[str], uid: int, passt=None,
     try:
         proc = subprocess.Popen(
             qemu_launch_argv(qemu_cmd, uid), stdin=subprocess.DEVNULL,
-            pass_fds=(qemu_end.fileno(),) if qemu_end is not None else ())
+            pass_fds=(qemu_fd,) if qemu_fd is not None else ())
     finally:
-        if qemu_end is not None:
-            qemu_end.close()
+        if qemu_fd is not None:
+            os.close(qemu_fd)
     lost, stopping = threading.Event(), threading.Event()
     if passt is not None:
         threading.Thread(target=watch_passt,

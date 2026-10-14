@@ -10,9 +10,13 @@ netdev. passt has to reach passt_t: run as svirt_t it cannot create the user
 namespace it isolates itself in (tp's policy, read 2026-10-14: svirt_t has
 no user_namespace create, passt_t has).
 
+A bridged VM's QEMU ran qemu-bridge-helper itself, so it ran without
+-sandbox; the wrapper now runs the helper and hands QEMU the tap's fd, as
+QEMU's bridge netdev did (net/tap.c).
+
 Tested here: the wrapper's argv split, the pair and both launches, passt's
-death taking QEMU down, the labelled pair, runcon's contexts, and the
-generator's ExecStart parsed by the wrapper's own split.
+death taking QEMU down, the bridge helper's tap, the labelled pair, runcon's
+contexts, and the generator's ExecStart parsed by the wrapper's own split.
 """
 
 import os
@@ -26,24 +30,34 @@ from unittest import mock
 import egress_selinux
 import gen_vm
 import vm_notify
-from vm_defs import PASST_FD_TOKEN, QEMU_SANDBOX
+from vm_defs import BRIDGE_HELPER, PASST_FD_TOKEN, QEMU_SANDBOX, TAP_FD_TOKEN
 from workload_mcs import mcs_level
 
 
 class TheSplit(unittest.TestCase):
-    def test_a_bridged_vm_has_no_passt(self):
+    def test_without_either_flag_it_is_qemu_alone(self):
         self.assertEqual(vm_notify.split_argv(["qemu", "-m", "1G"]),
-                         ([], ["qemu", "-m", "1G"]))
+                         ([], None, ["qemu", "-m", "1G"]))
 
     def test_passts_words_end_at_the_marker(self):
         self.assertEqual(
             vm_notify.split_argv(["--passt", "passt", "-t", "1:2", "--",
                                   "qemu", "--", "x"]),
-            (["passt", "-t", "1:2"], ["qemu", "--", "x"]))
+            (["passt", "-t", "1:2"], None, ["qemu", "--", "x"]))
+
+    def test_a_bridged_vm_names_its_bridge(self):
+        self.assertEqual(
+            vm_notify.split_argv(["--bridge", "br0", "--", "qemu", "--"]),
+            ([], "br0", ["qemu", "--"]))
 
     def test_a_missing_marker_is_refused(self):
+        for flag in ("--passt", "--bridge"):
+            with self.subTest(flag=flag), self.assertRaises(ValueError):
+                vm_notify.split_argv([flag, "x", "qemu"])
+
+    def test_a_bridge_is_one_word(self):
         with self.assertRaises(ValueError):
-            vm_notify.split_argv(["--passt", "passt", "qemu"])
+            vm_notify.split_argv(["--bridge", "br0", "br1", "--", "qemu"])
 
 
 def _is_open(fd):
@@ -92,6 +106,8 @@ PASST_CMD = ["/usr/bin/passt", "--quiet", "--foreground"]
 QEMU_CMD = ["/usr/bin/qemu-system-x86_64",
             f"-netdev stream,id=net0,addr.type=fd,addr.str={PASST_FD_TOKEN}",
             "-nographic"]
+QEMU_TAP_CMD = ["/usr/bin/qemu-system-x86_64",
+                f"-netdev tap,id=net0,fd={TAP_FD_TOKEN}", "-nographic"]
 
 
 class TheLaunch(unittest.TestCase):
@@ -102,9 +118,15 @@ class TheLaunch(unittest.TestCase):
         self.handlers = {}
         self.pairs = []
 
+        self.helper_gives_a_tap = True
+        self.helper_rc = 0
+        self.taps = []
+
         def popen(argv, **kw):
             proc = FakeProc(argv, **kw)
             self.procs.append(proc)
+            if argv[0] == BRIDGE_HELPER:
+                self._helper(proc)
             return proc
 
         def pair(uid):
@@ -131,6 +153,19 @@ class TheLaunch(unittest.TestCase):
         patcher = mock.patch.object(target, name, value)
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def _helper(self, proc):
+        """qemu-bridge-helper: a tap's fd over --fd's socket, then exit."""
+        fd = int(next(a for a in proc.argv
+                      if a.startswith("--fd=")).split("=", 1)[1])
+        if self.helper_gives_a_tap:
+            tap, keep = os.pipe()
+            self.addCleanup(os.close, keep)
+            with socket.socket(fileno=os.dup(fd)) as sock:
+                socket.send_fds(sock, [b"\0"], [tap])
+            os.close(tap)
+            self.taps.append(keep)
+        proc.exit(self.helper_rc if self.helper_gives_a_tap else 1)
 
     def _supervise_in_thread(self, passt_cmd=PASST_CMD):
         result = {}
@@ -218,7 +253,7 @@ class TheLaunch(unittest.TestCase):
         self.assertEqual(qemu.signals, [])
         self.assertEqual(result["rc"], 0)
 
-    def test_a_bridged_vm_starts_qemu_alone(self):
+    def test_without_a_network_qemu_starts_alone(self):
         thread, result = self._supervise_in_thread(passt_cmd=[])
         self._wait_for(1)
         (qemu,) = self.procs
@@ -227,6 +262,55 @@ class TheLaunch(unittest.TestCase):
         qemu.exit(0)
         thread.join(5)
         self.assertEqual(result["rc"], 0)
+
+    def test_a_bridged_vm_gets_its_tap_from_the_helper(self):
+        result = {}
+        thread = threading.Thread(target=lambda: result.update(
+            rc=vm_notify.supervise("vm1", list(QEMU_TAP_CMD), [], "br0")))
+        thread.start()
+        self._wait_for(2)
+        helper, qemu = self.procs
+        helper_fd = helper.kw["pass_fds"][0]
+        self.assertEqual(helper.argv, [BRIDGE_HELPER, "--use-vnet",
+                                       f"--fd={helper_fd}", "--br=br0"])
+        self.assertEqual(qemu.argv[:2], ["runcon", "svirt@10007"])
+        tap = qemu.kw["pass_fds"][0]
+        self.assertEqual(qemu.argv[3], f"-netdev tap,id=net0,fd={tap}")
+        self.assertEqual(qemu.fds_open, [True])
+        self.assertEqual(self.pairs, [])
+        qemu.exit(0)
+        thread.join(5)
+        self.assertEqual(result["rc"], 0)
+        # The wrapper's copy of the tap is closed once QEMU has it.
+        self.assertFalse(_is_open(tap))
+
+    def _refused_start(self):
+        """supervise on a bridge, bounded: a QEMU started anyway is a
+        failure here, not a hang."""
+        raised = []
+
+        def run():
+            try:
+                vm_notify.supervise("vm1", list(QEMU_TAP_CMD), [], "br0")
+            except RuntimeError as e:
+                raised.append(e)
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(5)
+        started = [p.argv[0] for p in self.procs]
+        for proc in self.procs:
+            proc.exit(0)
+        thread.join(5)
+        self.assertEqual(started, [BRIDGE_HELPER])
+        self.assertEqual(len(raised), 1)
+
+    def test_a_helper_giving_no_tap_stops_the_start(self):
+        self.helper_gives_a_tap = False
+        self._refused_start()
+
+    def test_a_helper_failing_after_the_tap_stops_the_start(self):
+        self.helper_rc = 1
+        self._refused_start()
 
 
 class TheContexts(unittest.TestCase):
@@ -280,7 +364,8 @@ class TheUnit(unittest.TestCase):
         return vm_notify.split_argv(words[2:])
 
     def test_a_passt_vm_hands_the_wrapper_both_commands(self):
-        passt, qemu = self._exec_start({"egress": "open"})
+        passt, bridge, qemu = self._exec_start({"egress": "open"})
+        self.assertIsNone(bridge)
         self.assertEqual(passt[:3], ["/usr/bin/passt", "--quiet",
                                      "--foreground"])
         self.assertEqual(passt[-1], "$WL_PASST_DNS")
@@ -292,11 +377,14 @@ class TheUnit(unittest.TestCase):
         self.assertEqual(" ".join(qemu).count("-sandbox"), 1)
         self.assertIn(QEMU_SANDBOX.split(" ", 1)[1], qemu)
 
-    def test_a_bridged_vm_hands_it_qemu_alone(self):
-        passt, qemu = self._exec_start({"bridge": "br0"})
+    def test_a_bridged_vm_hands_the_wrapper_its_bridge(self):
+        passt, bridge, qemu = self._exec_start({"bridge": "br0"})
         self.assertEqual(passt, [])
-        self.assertIn("bridge,id=net0,br=br0", qemu)
-        self.assertNotIn("-sandbox", qemu)
+        self.assertEqual(bridge, "br0")
+        netdev = qemu[qemu.index("-netdev") + 1]
+        self.assertEqual(netdev, f"tap,id=net0,fd={TAP_FD_TOKEN}")
+        self.assertEqual(" ".join(qemu).count("-sandbox"), 1)
+        self.assertIn(QEMU_SANDBOX.split(" ", 1)[1], qemu)
 
 
 if __name__ == "__main__":
