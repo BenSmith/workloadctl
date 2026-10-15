@@ -382,6 +382,7 @@ should use them.
 - [Schema reference](docs/schema-reference.toml) — the annotated full TOML schema
 - [Secrets](docs/secrets.md) — TPM2-encrypted credentials end to end
 - [Security model](docs/security-model.md) — what each layer confines, and where it stops
+- [Troubleshooting](docs/troubleshooting.md) — common workload failures, their causes and fixes
 - [Filtered VM walkthrough](docs/vm-egress-walkthrough.md) — one request, TOML to packet
 - [Credential broker](docs/agent-broker.md) — design, threat model, operation
 - [VM virtiofs](docs/vm-virtiofs.md) — how guest volumes are shared and confined

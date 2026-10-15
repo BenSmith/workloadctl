@@ -283,7 +283,10 @@ sudo journalctl _AUDIT_TYPE=1326 --since -1h
 ```toml
 [security]
 seccomp_allow = ["ptrace", "process_vm_readv", "process_vm_writev"]
-# Or, for bwrap (Steam's runtime, Flatpak):
+```
+Or, for bwrap (Steam's runtime, Flatpak):
+```toml
+[security]
 seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 ```
 The rest of the baseline still applies; see `seccomp_allow` in the schema reference.
@@ -664,7 +667,7 @@ If it fails:
 
 `host` is **gated**: a workload that sets it without `unsafe_host_userns = true`
 fails validation and is skipped by the boot generator, so it never starts.
-Full semantics in `workloadctl/docs/schema-reference.toml`.
+Full semantics in `docs/schema-reference.toml`.
 
 ### Exit codes
 

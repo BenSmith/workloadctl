@@ -3378,7 +3378,7 @@ All workloads run with a hardened seccomp profile that restricts which kernel sy
 
 Sockets are allowed by family: unix, inet and inet6 (but for the three protocols above), and netlink's route, netfilter and uevent protocols, silently. Any other family or netlink protocol not refused above is allowed and logged: each `socket()` writes a seccomp audit record (`journalctl _AUDIT_TYPE=1326`), so the ones workloads really use are known before the rest are refused as well.
 
-A syscall the profile never mentions falls to its default, ENOSYS, as if the kernel lacked it: gdb prints `ptrace: Function not implemented`. One it names in a deny entry, or behind a capability the container lacks, gets EPERM. Most service containers (web servers, databases, media servers) never call these syscalls. If yours does, see the [troubleshooting guide](../../docs/TROUBLESHOOTING.md) for diagnosis steps.
+A syscall the profile never mentions falls to its default, ENOSYS, as if the kernel lacked it: gdb prints `ptrace: Function not implemented`. One it names in a deny entry, or behind a capability the container lacks, gets EPERM. Most service containers (web servers, databases, media servers) never call these syscalls. If yours does, see the [troubleshooting guide](troubleshooting.md) for diagnosis steps.
 
 **Allow a blocked syscall, and keep the rest of the baseline:**
 ```toml

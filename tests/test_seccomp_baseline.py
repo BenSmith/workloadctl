@@ -17,7 +17,7 @@ from workload_seccomp import NETLINK_PROTOCOLS, derived_profile
 
 PROFILE = REPO_ROOT / "seccomp-workload-baseline.json"
 SPEC = REPO_ROOT / "rpm" / "workloadctl.spec"
-TROUBLESHOOTING = REPO_ROOT.parent / "docs" / "TROUBLESHOOTING.md"
+TROUBLESHOOTING = REPO_ROOT / "docs" / "troubleshooting.md"
 WORKLOADS = REPO_ROOT / "docs" / "workloads.md"
 
 ENOSYS_TEXT = "Function not implemented"
@@ -398,9 +398,6 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
         self.assertIn(installed, spec,
                       f"{installed} is not installed by the spec")
 
-    @unittest.skipUnless(
-        TROUBLESHOOTING.is_file(),
-        "image half not present (standalone workloadctl checkout)")
     def test_the_docs_name_the_error_each_blocked_syscall_gives(self):
         """A syscall the baseline never names falls to defaultErrnoRet, 38:
         gdb in a stock workload prints 'ptrace: Function not implemented',
@@ -419,7 +416,7 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
                        "### 9. Syscall blocked by seccomp profile")
         listed = re.search(r"The blocked syscalls are: (.*)", doc).group(1)
         names = re.findall(r"`([a-z0-9_]+)`", listed)
-        self.assertTrue(names, "TROUBLESHOOTING.md §9 lists no syscalls")
+        self.assertTrue(names, "troubleshooting.md §9 lists no syscalls")
         guide = _section(WORKLOADS.read_text(), "### Seccomp Filtering")
         for n in names:
             errno = _errno_for_an_uncapable_container(self.profile, n)
