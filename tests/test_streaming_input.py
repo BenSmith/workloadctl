@@ -6,15 +6,14 @@ The image gives /dev/uinput and the nodes under /devices/virtual/input to a
 grants /dev/uinput joins `uinput`. One that joined `input` again would read
 every key typed at the host (audit F16), and nothing would fail.
 
-The image half is skipped in a standalone workloadctl checkout.
+The image's half -- the udev rules and the group -- is held by the image's
+own suite.
 """
-import re
 import tomllib
 import unittest
 
 from tests import REPO_ROOT
 
-CONTAINERFILE = REPO_ROOT.parent / "hypervisor.Containerfile"
 WORKLOADS = REPO_ROOT / "workloads"
 
 
@@ -36,35 +35,6 @@ class Bundles(unittest.TestCase):
             with self.subTest(bundle=name):
                 self.assertIn("uinput", groups)
                 self.assertNotIn("input", groups)
-
-
-@unittest.skipUnless(CONTAINERFILE.exists(), "image half absent")
-class Image(unittest.TestCase):
-
-    def setUp(self):
-        self.text = CONTAINERFILE.read_text()
-
-    def _rules(self):
-        return re.findall(
-            r"printf '([^']*)\\n' \\\s*>>? /usr/lib/udev/rules\.d/"
-            r"72-uinput-input\.rules", self.text)
-
-    def test_uinput_and_its_nodes_go_to_the_uinput_group(self):
-        rules = self._rules()
-        self.assertIn('KERNEL=="uinput", GROUP="uinput", MODE="0660"', rules)
-        virtual = [r for r in rules if "/devices/virtual/input/" in r]
-        self.assertEqual(len(virtual), 1, rules)
-        self.assertIn('SUBSYSTEM=="input"', virtual[0])
-        self.assertIn('GROUP="uinput"', virtual[0])
-
-    def test_no_rule_hands_a_node_to_input(self):
-        rules = self._rules()
-        self.assertTrue(rules)
-        self.assertFalse([r for r in rules if 'GROUP="input"' in r])
-
-    def test_the_group_exists(self):
-        self.assertRegex(self.text,
-                         r"printf 'g uinput - -\\n' > /usr/lib/sysusers\.d/")
 
 
 if __name__ == "__main__":
