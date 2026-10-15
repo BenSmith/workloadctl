@@ -65,6 +65,8 @@ class ZotConfigTests(unittest.TestCase):
         self.assertNotIn("adminPolicy", self.http["accessControl"])
 
 
+@unittest.skipUnless(WORKFLOWS.is_dir(),
+                     "workflows absent (the image build copies workloadctl/ alone)")
 class WorkflowLoginTests(unittest.TestCase):
     WRITE = re.compile(r"^\s*(sudo\s+)?(podman push|skopeo copy)\b")
 
