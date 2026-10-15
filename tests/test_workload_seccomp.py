@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""[security] seccomp_allow: what validate accepts, and the profile every
-container of a pod runs under.
+"""[security] seccomp_allow, seccomp_netlink and seccomp_32bit: what
+validate accepts, and the profile every container of a pod runs under.
 
 The derived profile itself is held to the baseline's checks in
 test_seccomp_baseline; the generator's writing of it is in test_generator.
@@ -11,10 +11,12 @@ import unittest
 from pathlib import Path
 
 from tests.test_generator import run_generator, write_config
+from tests.test_seccomp_baseline import ALLOW, decide
 from validation import validate_workload_config
 from workload_seccomp import (
-    ARCH_X86_64, SUBARCHES_32BIT, derived_profile, needs_derived_profile,
-    seccomp_32bit, seccomp_allow,
+    AF_NETLINK, ARCH_X86_64, NETLINK_PROTOCOLS, SUBARCHES_32BIT,
+    derived_profile, needs_derived_profile, seccomp_32bit, seccomp_allow,
+    seccomp_netlink,
 )
 
 SINGLE = {"workload": {"name": "app"}, "container": {"image": "myapp"}}
@@ -43,6 +45,11 @@ def _seccomp_errors(config):
 def _32bit_errors(config):
     return [e for e in validate_workload_config(config)
             if "seccomp_32bit" in e]
+
+
+def _netlink_errors(config):
+    return [e for e in validate_workload_config(config)
+            if "seccomp_netlink" in e]
 
 
 class TestValidate(unittest.TestCase):
@@ -138,6 +145,47 @@ class TestValidate32bit(unittest.TestCase):
         self.assertIs(seccomp_32bit(SINGLE), False)
 
 
+class TestValidateNetlink(unittest.TestCase):
+    def test_a_list_of_known_protocols_is_accepted(self):
+        self.assertEqual(_netlink_errors(_with(
+            SINGLE, seccomp_netlink=["generic"])), [])
+        self.assertEqual(_netlink_errors(_with(
+            POD, seccomp_netlink=["generic", "sock_diag"])), [])
+
+    def test_anything_but_a_list_of_known_protocols_is_refused(self):
+        """route and the rest are the baseline's already; xfrm and the
+        other refused protocols are not offered."""
+        for bad in ("generic", ["Generic"], ["route"], ["xfrm"], [16],
+                    [["generic"]], {}):
+            with self.subTest(bad=bad):
+                self.assertTrue(_netlink_errors(
+                    _with(SINGLE, seccomp_netlink=bad)))
+
+    def test_where_the_baseline_does_not_apply_it_is_refused(self):
+        for refused in ({"privileged": True},
+                        {"security_opt": ["seccomp=unconfined"]}):
+            with self.subTest(refused=refused):
+                config = _with(SINGLE, seccomp_netlink=["generic"], **refused)
+                self.assertTrue(_netlink_errors(config))
+                self.assertEqual(_seccomp_errors(config), [])
+                self.assertEqual(_32bit_errors(config), [])
+        self.assertTrue(_netlink_errors(
+            _with(VM, seccomp_netlink=["generic"])))
+
+    def test_in_a_containers_own_security_it_is_refused(self):
+        pod = dict(POD, containers=[
+            dict(POD["containers"][0],
+                 security={"seccomp_netlink": ["generic"]}),
+            POD["containers"][1]])
+        self.assertTrue(_netlink_errors(pod))
+
+    def test_the_protocols_are_sorted_once_each(self):
+        self.assertEqual(seccomp_netlink(_with(
+            SINGLE, seccomp_netlink=["sock_diag", "generic", "generic"])),
+            ["generic", "sock_diag"])
+        self.assertEqual(seccomp_netlink(SINGLE), [])
+
+
 class TestNeedsADerivedProfile(unittest.TestCase):
     """The one predicate the generator and the run args both read, so the
     written file and the --security-opt that names it cannot drift apart."""
@@ -150,6 +198,8 @@ class TestNeedsADerivedProfile(unittest.TestCase):
             _with(SINGLE, seccomp_allow=["ptrace"])))
         self.assertTrue(needs_derived_profile(
             _with(SINGLE, seccomp_32bit=True)))
+        self.assertTrue(needs_derived_profile(
+            _with(SINGLE, seccomp_netlink=["generic"])))
 
 
 class TestDerive32bit(unittest.TestCase):
@@ -243,6 +293,32 @@ class TestAPod(unittest.TestCase):
                       if e["architecture"] == "SCMP_ARCH_X86_64")
         self.assertEqual(x86_64["subArchitectures"],
                          ["SCMP_ARCH_X86", "SCMP_ARCH_X32"])
+
+    def test_seccomp_netlink_alone_derives_and_names_the_profile(self):
+        """No seccomp_allow, only seccomp_netlink: the generator writes the
+        derived profile, the unit names it, and the profile carries the
+        protocol's socket() allow."""
+        import json
+        config_dir, services_dir, sysusers_dir = self.dirs
+        write_config(config_dir, "vpn", """\
+            [workload]
+            name = "vpn"
+
+            [security]
+            seccomp_netlink = ["generic"]
+
+            [container]
+            image = "vpn"
+        """)
+        result = run_generator(config_dir, services_dir, sysusers_dir)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        unit = (Path(services_dir) / "workload-vpn.service").read_text()
+        self.assertIn("--security-opt=seccomp=/run/systemd/system/"
+                      "workload-vpn.seccomp.json", unit)
+        profile = json.loads((Path(services_dir)
+                              / "workload-vpn.seccomp.json").read_text())
+        self.assertEqual(decide(profile, "socket", AF_NETLINK, 3,
+                                NETLINK_PROTOCOLS["generic"]), ALLOW)
 
 
 if __name__ == "__main__":

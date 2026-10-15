@@ -40,8 +40,10 @@ WORKLOADS_DIR = ROOT / "workloads"
 from config_parser import infer_workload_mode
 from workload_lib import normalize_containers  # noqa: E402
 from workload_seccomp import (  # noqa: E402
-    ARCH_X86_64, SUBARCHES_32BIT, derived_profile_name,
+    AF_NETLINK, ARCH_X86_64, NETLINK_PROTOCOLS, SUBARCHES_32BIT,
+    derived_profile_name,
 )
+from tests.test_seccomp_baseline import ALLOW, decide  # noqa: E402
 
 
 def expected_units(stem: str, toml_text: str) -> list[str]:
@@ -323,6 +325,47 @@ class TestTheSteamBundlesOptOutOfTheBaseline(unittest.TestCase):
                     unit = (svc / f"workload-{name}.service").read_text()
                     self.assertIn("seccomp=", unit)
                     self.assertIn(profile_name, unit)
+
+
+class TestTheWireGuardBundlesTakeBackGenericNetlink(unittest.TestCase):
+    """wg-quick configures the tunnel through generic netlink, which the
+    baseline refuses. A bundle running wg-quick without the opt-in would
+    generate and start, then fail to bring its tunnel up; one with it and
+    no wg-quick holds a socket it has no use for. Checked in the rendered
+    profile and units, where the opt-in has to arrive."""
+
+    def _runs_wg_quick(self, bundle):
+        return any("wg-quick" in p.read_text()
+                   for p in bundle.iterdir()
+                   if p.is_file() and p.name not in ("README.md",
+                                                     "workload.toml"))
+
+    def test_a_bundle_has_generic_netlink_exactly_when_it_runs_wg_quick(self):
+        generic = NETLINK_PROTOCOLS["generic"]
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            wg = [b.name for b in sorted(WORKLOADS_DIR.iterdir())
+                  if (b / "workload.toml").exists()
+                  and self._runs_wg_quick(b)]
+            self.assertTrue(wg)
+            for toml in sorted(WORKLOADS_DIR.glob("*/workload.toml")):
+                name = toml.parent.name
+                profile_file = svc / derived_profile_name(name)
+                with self.subTest(name=name):
+                    if not profile_file.exists():
+                        self.assertNotIn(name, wg)
+                        continue
+                    profile = json.loads(profile_file.read_text())
+                    allowed = decide(profile, "socket", AF_NETLINK, 3,
+                                     generic) == ALLOW
+                    self.assertEqual(allowed, name in wg)
+                    if allowed:
+                        units = [u.read_text() for u in
+                                 svc.glob(f"workload-{name}*.service")]
+                        self.assertTrue(any(profile_file.name in u
+                                            for u in units))
 
 
 class TestBaselineIsComparable(unittest.TestCase):

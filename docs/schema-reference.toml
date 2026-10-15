@@ -1658,6 +1658,24 @@ audio = true
 #
 # seccomp_allow = []
 
+# Optional: Netlink protocols to take back from the seccomp baseline
+# Type: list of strings: "generic", "sock_diag"
+# Default: []
+#
+# The baseline refuses generic netlink and sock_diag: a generic netlink
+# family lookup and a sock_diag request make the kernel load the module they
+# name, and the name is in the message, where no filter reads it. `wg` (and
+# so wg-quick) configures a WireGuard link through generic netlink; `ss`
+# lists sockets through sock_diag. Each named protocol is allowed in the
+# workload's derived profile. Derived and rebuilt like seccomp_allow, and
+# refused in the same places (per-container, beside a seccomp= profile, with
+# privileged, and on a VM).
+#
+# Example: a WireGuard tunnel
+#   seccomp_netlink = ["generic"]
+#
+# seccomp_netlink = []
+
 # Optional: Run 32-bit (x86, x32) code under the seccomp baseline
 # Type: bool
 # Default: false

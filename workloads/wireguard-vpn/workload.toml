@@ -50,6 +50,9 @@ userns = "keep-id:uid=0,gid=0"
 
 # NET_ADMIN required for creating WireGuard interface and managing routes
 capabilities = ["NET_ADMIN"]
+# wg-quick configures the tunnel through generic netlink, which the
+# baseline refuses.
+seccomp_netlink = ["generic"]
 
 [resources]
 memory_max = "128M"

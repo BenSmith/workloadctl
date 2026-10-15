@@ -3335,9 +3335,10 @@ All workloads run with a hardened seccomp profile that restricts which kernel sy
 | `syslog` | Read the kernel's log, whatever the host's `kernel.dmesg_restrict` | `Operation not permitted` (EPERM) |
 | `socket` with `AF_VSOCK` | A vsock reaches the host, or a VM on it, around the network namespace and whatever filters it | `Function not implemented` (ENOSYS) |
 | `socket` with `AF_ALG` and other uncommon families (X.25, AX.25, NET/ROM, ROSE, ATM, PPPoX, IEEE 802.15.4, NFC, CAIF, Phonet, ISDN, RDS, TIPC, LLC, KCM, RxRPC, Qualcomm IPC, SMC, MCTP), or netlink's xfrm, crypto, RDMA, iSCSI and SCSI transport protocols | Rarely used, and a record of kernel bugs; AF_ALG and xfrm are built into the kernel, where no module blocklist reaches | `Function not implemented` (ENOSYS) |
+| `socket` with netlink's generic or sock_diag protocol | A generic netlink family lookup or a sock_diag request makes the kernel load the module it names, and the name is in the message, where the filter cannot read it | `Function not implemented` (ENOSYS) |
 | any 32-bit (x86, x32) syscall | The baseline drops x86_64's 32-bit sub-architectures — see **32-bit code** below | killed: `Bad system call`, exit status 159 |
 
-Sockets are allowed by family: unix, inet and inet6, and netlink's route, sock_diag, netfilter, uevent and generic protocols, silently. Any other family or netlink protocol not refused above is allowed and logged: each `socket()` writes a seccomp audit record (`journalctl _AUDIT_TYPE=1326`), so the ones workloads really use are known before the rest are refused as well.
+Sockets are allowed by family: unix, inet and inet6, and netlink's route, netfilter and uevent protocols, silently. Any other family or netlink protocol not refused above is allowed and logged: each `socket()` writes a seccomp audit record (`journalctl _AUDIT_TYPE=1326`), so the ones workloads really use are known before the rest are refused as well.
 
 A syscall the profile never mentions falls to its default, ENOSYS, as if the kernel lacked it: gdb prints `ptrace: Function not implemented`. One it names in a deny entry, or behind a capability the container lacks, gets EPERM. Most service containers (web servers, databases, media servers) never call these syscalls. If yours does, see the [troubleshooting guide](../../docs/TROUBLESHOOTING.md) for diagnosis steps.
 
@@ -3355,6 +3356,13 @@ seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 ```
 Others go on without that layer of their sandbox: GTK's image loaders (glycin) say `Glycin running without sandbox`, and Firefox's sandbox keeps its seccomp filter.
 
+**Generic netlink and sock_diag:** `wg`, and so `wg-quick`, configures a WireGuard link through generic netlink, and `ss` lists sockets through sock_diag; under the baseline both fail with `Function not implemented`. A workload that needs one takes it back, by name (`generic`, `sock_diag`):
+```toml
+[security]
+seccomp_netlink = ["generic"]
+```
+The WireGuard bundles set it.
+
 **32-bit code:** the baseline drops x86_64's 32-bit sub-architectures (x86, x32). On 32-bit, libseccomp folds every `socket` rule onto the `socketcall` multiplexer with the address family behind a pointer, so a `socketcall(SYS_SOCKET)` there reaches any family — vsock included — past the refusals above, and no rule can refuse it without colliding with the fold the allows need. With no sub-architecture there is no `socketcall`, and a 32-bit syscall is refused as a bad architecture: SIGSYS kills the calling thread, so a 32-bit program dies at its first syscall: `Bad system call (core dumped)`, exit status 159, and a `SECCOMP` audit record with `sig=31 arch=40000003` (`journalctl _AUDIT_TYPE=1326`). A workload that runs 32-bit code — Steam's client is a 32-bit program — opts the sub-architectures back onto its own derived profile:
 ```toml
 [security]
@@ -3362,7 +3370,7 @@ seccomp_32bit = true
 ```
 Its containers then run 32-bit code, carrying the family-blind `socketcall` that comes with it; every other workload keeps the smaller, 64-bit-only surface. Steam bundles set it alongside the bwrap `seccomp_allow` above.
 
-The generator writes `/run/systemd/system/workload-<name>.seccomp.json` beside the units — the baseline installed at that moment, with those names allowed and, under `seccomp_32bit`, the 32-bit sub-architectures put back — and rebuilds it with them, so a baseline an RPM update ships reaches the workload at the next boot or `enable`, and `drift`/`doctor` report the profile until then. One profile serves every container of the workload.
+The generator writes `/run/systemd/system/workload-<name>.seccomp.json` beside the units — the baseline installed at that moment, with those names allowed, the `seccomp_netlink` protocols taken back and, under `seccomp_32bit`, the 32-bit sub-architectures put back — and rebuilds it with them, so a baseline an RPM update ships reaches the workload at the next boot or `enable`, and `drift`/`doctor` report the profile until then. One profile serves every container of the workload.
 
 **Replace the baseline:**
 ```toml

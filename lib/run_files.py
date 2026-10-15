@@ -260,8 +260,9 @@ def workload_run_files(config) -> list[WorkloadRunFile]:
         ))
 
     # The derived seccomp profile, listed for every container workload so
-    # disabling one that dropped seccomp_allow or seccomp_32bit still removes
-    # it. The `present=` is the predicate the generator writes the file on.
+    # disabling one that dropped seccomp_allow, seccomp_netlink or
+    # seccomp_32bit still removes it. The `present=` is the predicate the
+    # generator writes the file on.
     if not config.is_vm:
         files.append(WorkloadRunFile(
             run / derived_profile_name(name), "seccomp", "seccomp",

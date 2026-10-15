@@ -288,6 +288,12 @@ seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
 ```
 The rest of the baseline still applies; see `seccomp_allow` in the schema reference.
 
+**Fix — WireGuard (`wg`, `wg-quick`) or `ss`:** generic netlink and sock_diag are refused; take back the one it uses:
+```toml
+[security]
+seccomp_netlink = ["generic"]   # wg, wg-quick; "sock_diag" for ss
+```
+
 **Fix — run 32-bit code** (a `SECCOMP` record with `arch=40000003`):
 ```toml
 [security]

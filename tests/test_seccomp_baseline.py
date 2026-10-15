@@ -12,7 +12,7 @@ import re
 import unittest
 
 from tests import REPO_ROOT
-from workload_seccomp import derived_profile
+from workload_seccomp import NETLINK_PROTOCOLS, derived_profile
 
 PROFILE = REPO_ROOT / "seccomp-workload-baseline.json"
 SPEC = REPO_ROOT / "rpm" / "workloadctl.spec"
@@ -52,10 +52,11 @@ REFUSED_FAMILIES = {
     21, 30, 26, 41, 33, 42, 43, 45,               # RDS .. MCTP
     AF_VSOCK,
 }
-# netlink: route, sock_diag, netfilter, uevent, generic.
-ALLOWED_NETLINK = {0, 4, 12, 15, 16}
-# xfrm, crypto, rdma, iscsi, scsitransport; audit is its own rule.
-REFUSED_NETLINK = {6, 21, 20, 8, 18}
+# netlink: route, netfilter, uevent.
+ALLOWED_NETLINK = {0, 12, 15}
+# xfrm, crypto, rdma, iscsi, scsitransport; sock_diag and generic, whose
+# requests load the module they name; audit is its own rule.
+REFUSED_NETLINK = {6, 21, 20, 8, 18, 4, 16}
 MOUNTS = ("fsconfig", "fsmount", "fsopen", "fspick", "mount",
           "mount_setattr", "move_mount", "open_tree", "open_tree_attr",
           "pivot_root", "umount", "umount2")
@@ -472,10 +473,45 @@ class TestAProfileAllowingTheDebuggersCalls(ProfileChecks,
             baseline, ["process_vm_readv", "process_vm_writev", "ptrace"])
 
 
+class TestAProfileTakingBackEveryNetlinkProtocol(ProfileChecks,
+                                                  unittest.TestCase):
+    """Every protocol seccomp_netlink names, beside a seccomp_allow: the
+    added socket() rules must agree with every baseline entry they meet."""
+
+    @classmethod
+    def setUpClass(cls):
+        baseline = json.loads(PROFILE.read_text())
+        cls.profile = derived_profile(baseline, ["ptrace"],
+                                      netlink=list(NETLINK_PROTOCOLS))
+
+
 class TestDerivedProfile(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.baseline = json.loads(PROFILE.read_text())
+
+    def test_the_netlink_protocols_offered_are_ones_the_baseline_refuses(self):
+        """A protocol the baseline already allows or logs needs no taking
+        back, and an allow beside its log entry would disagree."""
+        for name, protocol in NETLINK_PROTOCOLS.items():
+            with self.subTest(name=name):
+                self.assertEqual(decide(self.baseline, "socket", AF_NETLINK,
+                                        3, protocol), ENOSYS)
+
+    def test_a_netlink_protocol_taken_back_is_allowed_and_no_other(self):
+        for name, protocol in NETLINK_PROTOCOLS.items():
+            with self.subTest(name=name):
+                profile = derived_profile(self.baseline, [], netlink=[name])
+                for p in range(34):
+                    want = (ALLOW if p == protocol
+                            else decide(self.baseline, "socket", AF_NETLINK,
+                                        3, p))
+                    self.assertEqual(decide(profile, "socket", AF_NETLINK,
+                                            3, p), want, p)
+                self.assertEqual(decide(profile, "socket", AF_NETLINK, 3,
+                                        (1 << 32) | protocol), ENOSYS)
+                self.assertEqual(decide(profile, "socket", 2, 1, protocol),
+                                 ALLOW)
 
     def test_each_restricted_name_is_allowed_by_one_entry_alone(self):
         """One name at a time: it appears in exactly one entry, an
@@ -554,10 +590,10 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                 flt.add_rule(action, name, *args)
         return flt
 
-    def _sockets(self, calls):
+    def _sockets(self, calls, profile=None):
         import ctypes
         import os
-        flt = self._build(json.loads(PROFILE.read_text()))
+        flt = self._build(profile or json.loads(PROFILE.read_text()))
         read, write = os.pipe()
         pid = os.fork()
         if pid == 0:
@@ -629,10 +665,24 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                  (38, 5, 0): ENOSYS, (AF_VSOCK, 1, 0): ENOSYS,
                  ((1 << 32) | AF_VSOCK, 1, 0): ENOSYS,
                  ((1 << 32) | 1, 1, 0): ENOSYS,
-                 (AF_NETLINK, 3, 0): ALLOW, (AF_NETLINK, 3, 16): ALLOW,
+                 (AF_NETLINK, 3, 0): ALLOW, (AF_NETLINK, 3, 16): ENOSYS,
+                 (AF_NETLINK, 3, 4): ENOSYS,
                  (AF_NETLINK, 3, 6): ENOSYS, (AF_NETLINK, 3, 21): ENOSYS,
                  (AF_NETLINK, 3, NETLINK_AUDIT): EINVAL}
         got = self._sockets(list(calls))
+        self.assertEqual(dict(zip(calls, got)), calls)
+
+    def test_generic_netlink_taken_back_loads_and_holds(self):
+        """A WireGuard bundle's profile: generic netlink allowed, sock_diag
+        still refused, and with the 32-bit sub-architectures back it still
+        builds (the rule's protocol condition keeps it off socketcall)."""
+        baseline = json.loads(PROFILE.read_text())
+        self._build(derived_profile(baseline, [], netlink=["generic"],
+                                    allow_32bit=True))
+        calls = {(AF_NETLINK, 3, 16): ALLOW, (AF_NETLINK, 3, 4): ENOSYS,
+                 (AF_NETLINK, 3, 6): ENOSYS, (AF_VSOCK, 1, 0): ENOSYS}
+        got = self._sockets(list(calls), derived_profile(
+            baseline, [], netlink=["generic"]))
         self.assertEqual(dict(zip(calls, got)), calls)
 
 if __name__ == "__main__":

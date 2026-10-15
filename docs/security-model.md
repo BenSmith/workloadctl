@@ -33,14 +33,18 @@ workload is `privileged`. `[security].capabilities` names a smaller set.
 
 Every container runs under the baseline, `seccomp-workload-baseline.json`,
 or the profile derived from it for one workload (`[security].seccomp_allow`,
-`seccomp_32bit`). It refuses new user namespaces, the mount API, vsock, the
-kernel log, and the socket families no workload uses; families nothing
-names either way are allowed and logged. A 32-bit x86 syscall kills the
+`seccomp_netlink`, `seccomp_32bit`). It refuses new user namespaces, the
+mount API, vsock, the kernel log, the socket families no workload uses, and
+generic netlink and sock_diag (whose requests load the module they name);
+families nothing names either way are allowed and logged. A 32-bit x86 syscall kills the
 thread: there `socket()` is `socketcall`, whose family the filter cannot
 read. [Seccomp Filtering](workloads.md#seccomp-filtering) has the lists.
 
 **Where it stops:** a workload with `seccomp_32bit` (the Steam bundles) runs
-32-bit code, whose sockets the family rules do not see. `privileged`, and a
+32-bit code, whose sockets the family rules do not see. One with
+`seccomp_netlink = ["generic"]` (the WireGuard bundles) can still make the
+kernel load a module by its generic netlink family name; the image's
+module refusals are what stop that. `privileged`, and a
 `seccomp=` profile of the workload's own, replace the baseline.
 
 ## SELinux

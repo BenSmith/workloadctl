@@ -520,8 +520,8 @@ def _security_args(spec):
 
     # Apply baseline seccomp profile unless the workload overrides it or uses --privileged
     # (--privileged disables seccomp anyway; adding it would just be noise).
-    # [security] seccomp_allow and seccomp_32bit swap in the derived profile
-    # the generator writes beside the units.
+    # [security] seccomp_allow, seccomp_netlink and seccomp_32bit swap in
+    # the derived profile the generator writes beside the units.
     if not privileged and not any(opt.startswith("seccomp=") for opt in security_opts):
         profile = SECCOMP_BASELINE
         if needs_derived_profile(config):

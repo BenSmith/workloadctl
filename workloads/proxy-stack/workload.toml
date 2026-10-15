@@ -90,6 +90,9 @@ ports = ["3128:3128/tcp", "1080:1080/tcp", "53:53/udp", "53:53/tcp", "80:80/tcp"
 # grants the tunnel capability separately.
 userns = "keep-id:uid=0,gid=0"
 capabilities = ["NET_ADMIN"]
+# wg-quick configures the tunnel through generic netlink, which the
+# baseline refuses.
+seccomp_netlink = ["generic"]
 
 [resources]
 memory_max = "512M"
