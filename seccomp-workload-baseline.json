@@ -1494,7 +1494,7 @@
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "unix, inet and inet6",
+      "comment": "unix",
       "includes": {},
       "excludes": {}
     },
@@ -1506,12 +1506,18 @@
       "args": [
         {
           "index": 0,
-          "value": 18446744073709551615,
-          "valueTwo": 2,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551552,
+          "valueTwo": 0,
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "unix, inet and inet6",
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
       "includes": {},
       "excludes": {}
     },
@@ -1523,12 +1529,800 @@
       "args": [
         {
           "index": 0,
-          "value": 18446744073709551615,
-          "valueTwo": 10,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551584,
+          "valueTwo": 64,
           "op": "SCMP_CMP_MASKED_EQ"
         }
       ],
-      "comment": "unix, inet and inet6",
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551600,
+          "valueTwo": 96,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 112,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 114,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551612,
+          "valueTwo": 116,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 120,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551612,
+          "valueTwo": 128,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 133,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 134,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 136,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551600,
+          "valueTwo": 144,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551584,
+          "valueTwo": 160,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551552,
+          "valueTwo": 192,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 257,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 258,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 260,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 262,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551552,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551584,
+          "valueTwo": 64,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551600,
+          "valueTwo": 96,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 112,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 114,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551612,
+          "valueTwo": 116,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 120,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551612,
+          "valueTwo": 128,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 133,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 134,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551608,
+          "valueTwo": 136,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551600,
+          "valueTwo": 144,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551584,
+          "valueTwo": 160,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551552,
+          "valueTwo": 192,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 257,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 258,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551614,
+          "valueTwo": 260,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
+      "includes": {},
+      "excludes": {}
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_EQ"
+        },
+        {
+          "index": 2,
+          "value": 18446744073709551615,
+          "valueTwo": 262,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "inet and inet6, but L2TP, SCTP and SMC, which load a module of their own",
       "includes": {},
       "excludes": {}
     },

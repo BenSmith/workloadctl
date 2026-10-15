@@ -264,7 +264,7 @@ All workloads run with a hardened seccomp profile (`/usr/share/containers/seccom
 
 The blocked syscalls are: `ptrace`, `bpf`, `perf_event_open`, `process_vm_readv`, `process_vm_writev`, `keyctl`, `pidfd_getfd`, `clone3`, `mount`, `syslog`.
 
-`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`), `AF_ALG` and the other uncommon families and netlink protocols listed in workloadctl's workloads.md. Families and protocols outside both lists are allowed and logged (`journalctl _AUDIT_TYPE=1326`).
+`mount` stands for every mount call (umount2, pivot_root, fsopen, move_mount and the rest). `clone` and `unshare` are refused with a namespace flag, and `socket` with the vsock family (`AF_VSOCK`), `AF_ALG` and the other uncommon families, inet protocols (SCTP, L2TP, SMC) and netlink protocols listed in workloadctl's workloads.md. Families and protocols outside both lists are allowed and logged (`journalctl _AUDIT_TYPE=1326`).
 
 The baseline also drops x86_64's 32-bit sub-architectures (x86, x32), so a 32-bit program's syscalls are refused as a bad architecture rather than returning an errno — on 32-bit the filter cannot read a socket's address family, which would let `socketcall(SYS_SOCKET)` reach a vsock past the refusals. SIGSYS kills the calling thread, so a 32-bit program dies at its first syscall: `Bad system call (core dumped)`, exit status 159, and a `SECCOMP` audit record with `sig=31 arch=40000003` (`journalctl _AUDIT_TYPE=1326`). A workload that runs 32-bit code (Steam's client is a 32-bit program) opts them back with `seccomp_32bit = true`; see workloadctl's workloads.md.
 

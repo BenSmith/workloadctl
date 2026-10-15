@@ -52,6 +52,10 @@ REFUSED_FAMILIES = {
     21, 30, 26, 41, 33, 42, 43, 45,               # RDS .. MCTP
     AF_VSOCK,
 }
+# inet's and inet6's L2TP, SCTP and SMC, each a module of its own; the
+# kernel refuses a protocol from IPPROTO_MAX.
+REFUSED_IPPROTOS = {115, 132, 256}
+IPPROTO_MAX = 263
 # netlink: route, netfilter, uevent.
 ALLOWED_NETLINK = {0, 12, 15}
 # xfrm, crypto, rdma, iscsi, scsitransport; sock_diag and generic, whose
@@ -106,7 +110,8 @@ CLONE_FLAGS = [0, SIGCHLD, CLONE_THREAD, *CLONE_NEW, CLONE_NEWTIME,
                (1 << 32) | CLONE_NEW[6], (1 << 32) | SIGCHLD]
 FAMILIES = [*range(70), (1 << 32) | AF_VSOCK, (1 << 32) | 2,
             (1 << 63) | 1, MASK64]
-PROTOCOLS = [*range(34), (1 << 32) | NETLINK_AUDIT, MASK64]
+PROTOCOLS = [*range(34), 115, 132, 255, 256, 262, 263,
+             (1 << 32) | NETLINK_AUDIT, (1 << 32) | 6, MASK64]
 
 
 class ProfileChecks:
@@ -314,6 +319,19 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
                 self.assertEqual(
                     decide(self.profile, "socket", high | family, 1, 0),
                     ENOSYS, family)
+
+    def test_each_inet_protocol_is_in_its_tier(self):
+        """MPTCP, the last protocol the kernel takes, is built in."""
+        for family in (2, 10):
+            for protocol in range(IPPROTO_MAX + 3):
+                want = (ENOSYS if protocol in REFUSED_IPPROTOS
+                        or protocol >= IPPROTO_MAX else ALLOW)
+                self.assertEqual(
+                    decide(self.profile, "socket", family, 1, protocol),
+                    want, (family, protocol))
+                self.assertEqual(
+                    decide(self.profile, "socket", family, 1,
+                           (1 << 32) | protocol), ENOSYS, (family, protocol))
 
     def test_each_netlink_protocol_is_in_its_tier(self):
         for caps in (PODMAN_CAPS, PODMAN_CAPS | {"CAP_AUDIT_WRITE"}):
@@ -668,7 +686,9 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                  (AF_NETLINK, 3, 0): ALLOW, (AF_NETLINK, 3, 16): ENOSYS,
                  (AF_NETLINK, 3, 4): ENOSYS,
                  (AF_NETLINK, 3, 6): ENOSYS, (AF_NETLINK, 3, 21): ENOSYS,
-                 (AF_NETLINK, 3, NETLINK_AUDIT): EINVAL}
+                 (AF_NETLINK, 3, NETLINK_AUDIT): EINVAL,
+                 (2, 1, 6): ALLOW, (2, 1, 132): ENOSYS, (10, 2, 115): ENOSYS,
+                 (2, 1, 256): ENOSYS}
         got = self._sockets(list(calls))
         self.assertEqual(dict(zip(calls, got)), calls)
 

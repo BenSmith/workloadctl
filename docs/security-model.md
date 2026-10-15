@@ -32,13 +32,15 @@ workload is `privileged`. `[security].capabilities` names a smaller set.
 ## Seccomp
 
 Every container runs under the baseline, `seccomp-workload-baseline.json`,
-or the profile derived from it for one workload (`[security].seccomp_allow`,
-`seccomp_netlink`, `seccomp_32bit`). It refuses new user namespaces, the
-mount API, vsock, the kernel log, the socket families no workload uses, and
+or the profile derived from it for one workload
+(`[security].seccomp_allow`, `seccomp_netlink`, `seccomp_32bit`). It
+refuses new user namespaces, the mount API, vsock, the kernel log, the
+socket families and inet protocols (SCTP, L2TP, SMC) no workload uses, and
 generic netlink and sock_diag (whose requests load the module they name);
-families nothing names either way are allowed and logged. A 32-bit x86 syscall kills the
-thread: there `socket()` is `socketcall`, whose family the filter cannot
-read. [Seccomp Filtering](workloads.md#seccomp-filtering) has the lists.
+families nothing names either way are allowed and logged. A 32-bit x86
+syscall kills the thread: there `socket()` is `socketcall`, whose family
+the filter cannot read. [Seccomp Filtering](workloads.md#seccomp-filtering)
+has the lists.
 
 **Where it stops:** a workload with `seccomp_32bit` (the Steam bundles) runs
 32-bit code, whose sockets the family rules do not see. One with
