@@ -133,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     backup_parser.set_defaults(func=cmd_backup)
     backup_parser.add_argument("--all", action="store_true", help="Backup all workloads")
     backup_parser.add_argument("--json", action="store_true", help="Output in JSON format")
-    # 'app' is the deferred ideas.md slot (guest fsfreeze / guest-agent channel);
+    # 'app' is a deferred slot (guest fsfreeze / guest-agent channel);
     # do NOT add it to choices until the vm-bootc-guest gate lands.
     backup_parser.add_argument("--consistency", choices=["cold", "crash"], default="cold",
                                help="Backup consistency level: cold (stop/backup/restart, default) "

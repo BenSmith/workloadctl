@@ -1,10 +1,9 @@
-name: workloadctl
+name: test
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['workloadctl/**']
 
 jobs:
   test:
@@ -26,11 +25,9 @@ jobs:
           python3 --version
           just --version
 
-      # workloadctl requires moatery, and the unit suite imports it. The
-      # version is the one hypervisor.Containerfile pins, from moatery's Copr
-      # repository with its signature checked.
+      # workloadctl requires moatery, and the unit suite imports it: its
+      # newest release, from its Copr repository with its signature checked.
       - name: Install moatery
-        working-directory: workloadctl
         run: |
           sudo just moatery-rpm /tmp/moatery.rpm
           sudo dnf install -y /tmp/moatery.rpm
@@ -47,15 +44,12 @@ jobs:
         run: chown -R fedora:fedora "$GITHUB_WORKSPACE"
 
       - name: Lint (py_compile)
-        working-directory: workloadctl
         run: runuser -u fedora -- just lint
 
       - name: Unit tests
-        working-directory: workloadctl
         run: runuser -u fedora -- just test
 
       - name: Build RPM
-        working-directory: workloadctl
         run: |
           # This runs on a persistent `native` runner, so the workspace can carry
           # untracked files between runs and `just rpm-build` only ever adds to
@@ -68,6 +62,6 @@ jobs:
         uses: forgejo/upload-artifact@v4
         with:
           name: workloadctl-rpm
-          path: workloadctl/rpmbuild/RPMS/**/*.rpm
+          path: rpmbuild/RPMS/**/*.rpm
           if-no-files-found: error
 

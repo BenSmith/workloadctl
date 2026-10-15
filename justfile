@@ -218,15 +218,20 @@ rpm-install: rpm-build
   echo "Installing ${rpm}"
   sudo dnf install -y --allowerasing "$rpm"
 
-# moatery's RPM, which workloadctl's requires, at the version
-# hypervisor.Containerfile pins, from Copr with its signature checked
-# (../moatery-copr/fetch, which the image build runs too), to DEST.
-moatery-rpm dest="moatery.rpm":
+# moatery's RPM, which workloadctl's requires, from its Copr repository
+# with its signature checked (moatery-copr/fetch), to DEST: VERSION, or the
+# newest release when VERSION is empty.
+moatery-rpm dest="moatery.rpm" version="":
   #!/usr/bin/env bash
   set -euo pipefail
-  version=$(sed -n 's/^ARG MOATERY_VERSION=//p' ../hypervisor.Containerfile)
-  [ -n "$version" ] || { echo "no ARG MOATERY_VERSION in hypervisor.Containerfile" >&2; exit 1; }
-  ../moatery-copr/fetch "$version" "{{dest}}"
+  version="{{version}}"
+  if [ -z "$version" ]; then
+    repo=$(sed -n 's/^repo=//p' moatery-copr/fetch)
+    version=$(dnf repoquery -q --refresh --repofrompath="moatery,$repo" \
+      --repo=moatery --latest-limit=1 --qf '%{version}\n' moatery)
+    [ -n "$version" ] || { echo "no moatery release in $repo" >&2; exit 1; }
+  fi
+  moatery-copr/fetch "$version" "{{dest}}"
   rpm -qp "{{dest}}"
 
 # Remove old build artifacts

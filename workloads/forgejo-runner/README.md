@@ -130,7 +130,7 @@ Both are provision-time: the seed bakes `capacity` into
   `seal-signing-key` workflow once to seal the key into host-key systemd
   credentials — they are bound to this VM's `/var/lib/systemd/credential.secret`,
   which a rebuild regenerates. Until then builds push unsigned with a warning.
-  See `docs/ci-image-signing.md`.
+  See the hypervisor image's [CI image signing notes](https://github.com/BenSmith/bootc-hypervisor/blob/main/docs/ci-image-signing.md).
 - **Jobs run as root in the guest.** The `native:host` executor runs steps on
   the host OS as `root`, which is deliberate — the hypervisor's workflows assume
   `sudo podman`, `/run/credentials/` and privileged image builds. The VM is the

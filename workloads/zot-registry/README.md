@@ -42,7 +42,7 @@ sudo workloadctl recreate zot-registry
 
 Put the same password in the Forgejo secret `REGISTRY_CI_PASSWORD`, run the
 `seal-registry-auth` workflow, and delete the secret once a build has pushed
-(see `docs/ci-image-signing.md`). Rotating it is the same three steps.
+(see the hypervisor image's [CI image signing notes](https://github.com/BenSmith/bootc-hypervisor/blob/main/docs/ci-image-signing.md)). Rotating it is the same three steps.
 
 ## Pinned version
 

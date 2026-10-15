@@ -96,13 +96,12 @@ def fetch(host, dest):
 
 
 def materialise(rev, dest):
-    """git archive a revision's workloadctl/ tree. Leaves the worktree alone."""
+    """git archive a revision's tree as dest/workloadctl. Leaves the
+    worktree alone."""
     dest.mkdir(parents=True, exist_ok=True)
-    # git pathspecs are relative to the cwd, and this rig is normally run from
-    # workloadctl/ -- where "workloadctl" names nothing.
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                          capture_output=True, text=True, check=True).stdout.strip()
-    archive = subprocess.run(["git", "archive", rev, "workloadctl"],
+    archive = subprocess.run(["git", "archive", "--prefix=workloadctl/", rev],
                              cwd=top, capture_output=True, check=True)
     subprocess.run(["tar", "x", "-C", str(dest)], input=archive.stdout, check=True)
     return dest / "workloadctl"

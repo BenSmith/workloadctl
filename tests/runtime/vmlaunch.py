@@ -31,7 +31,6 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _WORKLOADCTL = _HERE.parent.parent          # tests/runtime -> tests -> workloadctl
 _LIB = _WORKLOADCTL / "lib"
-_REPO_ROOT = _WORKLOADCTL.parent
 for _p in (str(_HERE), str(_LIB)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -40,7 +39,6 @@ import vm_defs
 from vmtarget import VMTarget  # noqa: E402
 
 CACHE_DIR = _HERE / ".cache"
-FEDORA_VERSIONS = _REPO_ROOT / "fedora-versions.yml"
 
 # Parent of the per-run scratch dir. Disk-backed on purpose: a run holds the
 # boot disk (and, in gate mode, the whole bootc-image-builder store — a raw
@@ -70,8 +68,7 @@ _BIB_IMAGE = "quay.io/centos-bootc/bootc-image-builder:latest"
 
 # dev mode installs moatery in the guest before workloadctl, which requires
 # it and which no repository the guest knows carries. `just moatery-rpm`
-# fetches the version hypervisor.Containerfile pins; a hypervisor host has it
-# cached at the default.
+# fetches its newest release; a hypervisor host has it cached at the default.
 _MOATERY_RPM = Path(os.environ.get("WLRT_MOATERY_RPM",
                                    "/usr/share/workloadctl/moatery.rpm"))
 
@@ -106,10 +103,21 @@ def missing_prereqs(mode: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def resolve_fedora_version() -> int:
-    """Read `stable:` from fedora-versions.yml (the project's single source)."""
-    m = re.search(r'^stable:\s*(\d+)', FEDORA_VERSIONS.read_text(), re.M)
+    """The guest's Fedora release: WLRT_FEDORA_VERSION, else the host's own.
+
+    The host is the Fedora workloadctl is being tested for, so by default the
+    guest matches it."""
+    override = os.environ.get("WLRT_FEDORA_VERSION")
+    if override:
+        return int(override)
+    os_release = Path("/etc/os-release").read_text()
+    if not re.search(r'^ID="?fedora"?$', os_release, re.M):
+        raise RuntimeError(
+            "not a Fedora host: set WLRT_FEDORA_VERSION to the release to boot")
+    m = re.search(r'^VERSION_ID="?(\d+)"?$', os_release, re.M)
     if not m:
-        raise RuntimeError(f"could not resolve stable Fedora version from {FEDORA_VERSIONS}")
+        raise RuntimeError("no VERSION_ID in /etc/os-release: "
+                           "set WLRT_FEDORA_VERSION")
     return int(m.group(1))
 
 
@@ -455,7 +463,7 @@ THE KEY GOES IN /etc, NOT IN THE USER'S HOME, AND THAT IS NOT A STYLE
 def _build_gate_qcow2(run_dir: Path, image_ref: str, pubkey: str) -> Path:
     """Build a bootable qcow2 from the real bootc image; return disk.qcow2.
 
-    Mirrors the root justfile `_build-qcow2` invocation shape (privileged podman,
+    Mirrors the hypervisor image's justfile `_build-qcow2` invocation shape (privileged podman,
     unconfined label, /store /rpmmd /output mounts, xfs rootfs). BIB reads the
     source image from root's container storage, so that bind is required for both
     modes (the pre-pulled `registry.local` image lives there). The registry

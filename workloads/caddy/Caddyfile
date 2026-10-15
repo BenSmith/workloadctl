@@ -20,7 +20,7 @@
 # automatic 80->443 redirects are DISABLED; the :80 block at the bottom
 # replaces them with a generic redirect that exempts the registry API
 # (/v2*), because a plain-HTTP 308 on /v2 breaks cosign image signing.
-# See docs/cosign-local-redirect-loop.md.
+# See https://github.com/BenSmith/bootc-hypervisor/blob/main/docs/cosign-local-redirect-loop.md
 {
     # The :80 catchall below owns all plain-HTTP behavior (redirects, the
     # /v2* registry-API exemption, CA-cert bootstrap, unknown-host 404s).
@@ -85,7 +85,7 @@ grafana.local, grafana.internal {
         # after 10 redirects") that breaks image signing whenever the host
         # is busy. A hard 404 makes the http probe lose every time, so
         # cosign always lands on https. Full story:
-        # docs/cosign-local-redirect-loop.md.
+        # https://github.com/BenSmith/bootc-hypervisor/blob/main/docs/cosign-local-redirect-loop.md
         handle /v2* {
             respond "registry API is https-only" 404
         }

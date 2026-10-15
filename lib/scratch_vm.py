@@ -284,7 +284,7 @@ def scratch_vm_toml(name: str) -> str:
         f'name = "{name}"\n'
         f'\n'
         f'[vm]\n'
-        f'# Fedora 44 Cloud-Base (bump with fedora-versions.yml `stable:`).\n'
+        f'# Fedora 44 Cloud-Base (bump with each Fedora release).\n'
         f'cloud_image_url = "{SCRATCH_VM_CLOUD_IMAGE_URL}"\n'
         f'cloud_image_checksum = "{SCRATCH_VM_CLOUD_IMAGE_CHECKSUM}"\n'
         f'# --- or copy/reflink a local qcow2 instead: ---\n'

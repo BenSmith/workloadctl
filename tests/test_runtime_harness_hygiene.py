@@ -62,7 +62,7 @@ class TestNoBareShellSyntaxInTargetCommands(unittest.TestCase):
             for path in sorted(directory.rglob("*.py")):
                 for line, command in _offenders(path.read_text()):
                     found.append(
-                        f"{path.relative_to(ROOT.parent)}:{line}: {command[:100]}")
+                        f"{path.relative_to(ROOT)}:{line}: {command[:100]}")
         self.assertEqual(found, [], "\n".join([
             "",
             "Shell syntax in a target command that is not a list and not",

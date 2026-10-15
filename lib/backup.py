@@ -45,8 +45,7 @@ def backup_vm_crash(config, output: Path, *, quiet: bool) -> int:
     The vCPUs are paused for the entire copy duration (simple first cut).
     A future improvement would use QMP 'drive-backup' / 'blockdev-backup' to
     issue a copy-on-write snapshot job so the pause window is just the initial
-    COW setup, not the full copy — see docs/ideas.md for the drive-backup
-    follow-up.
+    COW setup, not the full copy.
 
     RESUME SAFETY: the QMP 'cont' command is issued in a finally block so
     a failed or interrupted copy never leaves the guest permanently paused.

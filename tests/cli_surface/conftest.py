@@ -201,10 +201,8 @@ def _deploy_workloadctl(t: Target):
     """Rsync the local workloadctl tree to ~/clitest-src/workloadctl/ and rpm-install."""
     from pathlib import Path
 
-    # Find repo root relative to this file
     harness_dir = Path(__file__).parent
-    repo_root = harness_dir.parents[2]  # cli_surface -> tests -> workloadctl -> repo
-    workloadctl_src = repo_root / "workloadctl"
+    workloadctl_src = harness_dir.parents[1]  # cli_surface -> tests -> repo
 
     if not workloadctl_src.exists():
         pytest.exit(f"Could not find workloadctl source at {workloadctl_src}", returncode=3)

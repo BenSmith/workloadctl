@@ -5,34 +5,24 @@
 # recipe change.
 #
 # In Fedora, because workloadctl requires moatery and the suite imports it:
-# the version hypervisor.Containerfile pins, from moatery's Copr repository
-# with its signature checked. The suite runs as a user rather than root, as
-# on the forge (.forgejo/workflows/workloadctl.yml): as root it writes real
-# /var/lib/workloads trees that its SELinux label checks then read.
+# moatery's newest release, from its Copr repository with its signature
+# checked. The suite runs as a user rather than root, as on the forge
+# (.forgejo/workflows/test.yml): as root it writes real /var/lib/workloads
+# trees that its SELinux label checks then read.
 #
 # The `github.server_url == 'https://github.com'` guard keeps the mirrored
 # Forgejo runner from also executing this job; Forgejo has its own
-# .forgejo/workflows/workloadctl.yml for the same fast suite.
-name: workloadctl test
+# .forgejo/workflows/test.yml for the same fast suite.
+name: test
 
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'workloadctl/**'
-      - 'hypervisor.Containerfile'
-      - 'moatery-copr/**'
-      - '.github/workflows/workloadctl-test.yml'
   push:
     branches: [main]
-    paths:
-      - 'workloadctl/**'
-      - 'hypervisor.Containerfile'
-      - 'moatery-copr/**'
-      - '.github/workflows/workloadctl-test.yml'
 
 concurrency:
-  group: workloadctl-test-${{ github.ref }}
+  group: test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,7 +43,6 @@ jobs:
           persist-credentials: false
 
       - name: Install moatery
-        working-directory: workloadctl
         run: |
           just moatery-rpm /tmp/moatery.rpm
           dnf install -y /tmp/moatery.rpm
@@ -64,9 +53,7 @@ jobs:
           chown -R ci: "$GITHUB_WORKSPACE"
 
       - name: Lint (py_compile)
-        working-directory: workloadctl
         run: runuser -u ci -- just lint
 
       - name: Unit + integration tests
-        working-directory: workloadctl
         run: runuser -u ci -- just test

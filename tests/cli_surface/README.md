@@ -40,47 +40,47 @@ pip install --user pytest-html
 
 ## Running
 
-`--target` is required. All invocations from the repo root (or workloadctl/).
+`--target` is required. All invocations from the repo root.
 
 ```sh
 # Run everything against a target host
-pytest workloadctl/tests/cli_surface/ --target=user@host
+pytest tests/cli_surface/ --target=user@host
 
 # Or via just (from workloadctl/)
 just test-cli user@host
 
 # Run against controller directly (no SSH)
-pytest workloadctl/tests/cli_surface/ --target=local
+pytest tests/cli_surface/ --target=local
 
 # Deploy current workloadctl tree to target first, then test
-pytest workloadctl/tests/cli_surface/ --target=user@host --deploy
+pytest tests/cli_surface/ --target=user@host --deploy
 
 # Deploy to a VM by IP
-pytest workloadctl/tests/cli_surface/ --target=user@<vm-ip> --deploy
+pytest tests/cli_surface/ --target=user@<vm-ip> --deploy
 
 # Container tests only (skip VM — much faster)
-pytest workloadctl/tests/cli_surface/ --target=user@host -m "not vm and not slow"
+pytest tests/cli_surface/ --target=user@host -m "not vm and not slow"
 
 # VM substrate only
-pytest workloadctl/tests/cli_surface/ --target=user@host -m vm
+pytest tests/cli_surface/ --target=user@host -m vm
 
 # Just the secret area
-pytest workloadctl/tests/cli_surface/test_secret.py --target=user@host
+pytest tests/cli_surface/test_secret.py --target=user@host
 
 # One verb group, one topology
-pytest workloadctl/tests/cli_surface/ --target=user@host -k "lifecycle and single"
+pytest tests/cli_surface/ --target=user@host -k "lifecycle and single"
 
 # One verb, all substrates
-pytest workloadctl/tests/cli_surface/ --target=user@host -k recreate
+pytest tests/cli_surface/ --target=user@host -k recreate
 
 # Introspection verbs only (read-only, fast)
-pytest workloadctl/tests/cli_surface/test_introspect.py --target=user@host
+pytest tests/cli_surface/test_introspect.py --target=user@host
 
 # Skip slow tests (VM boot, image pull)
-pytest workloadctl/tests/cli_surface/ --target=user@host -m "not slow"
+pytest tests/cli_surface/ --target=user@host -m "not slow"
 
 # With HTML report
-pytest workloadctl/tests/cli_surface/ --target=user@host --html=report.html --self-contained-html
+pytest tests/cli_surface/ --target=user@host --html=report.html --self-contained-html
 ```
 
 ### Runtime rung
@@ -113,7 +113,7 @@ inspection.
 ## Layout
 
 ```
-workloadctl/tests/cli_surface/
+tests/cli_surface/
   conftest.py             --target/--deploy options, Target fixture,
                           session purge, matrix-summary hook
   target.py               Target abstraction (run/put/capabilities)

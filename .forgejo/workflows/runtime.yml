@@ -38,8 +38,8 @@
 # registry now.
 #
 # No secrets are used. The dev/gate split and the swtpm requirement are
-# documented in workloadctl/tests/runtime/ (vmlaunch.py, vmtarget.py).
-name: workloadctl runtime
+# documented in tests/runtime/ (vmlaunch.py, vmtarget.py).
+name: runtime
 
 on:
   workflow_dispatch:
@@ -80,7 +80,7 @@ jobs:
       - name: Install runtime dependencies
         if: steps.kvm.outputs.available == 'true'
         run: |
-          # Probe-then-install, matching workloadctl.yml. Host-side binaries the
+          # Probe-then-install, matching test.yml. Host-side binaries the
           # harness needs (vmlaunch.py _DEV_BINARIES + rsync/pytest), plus swtpm
           # for gate mode (B1b — the emulated vTPM the bootc image boots with):
           #   qemu-system-x86_64  <- qemu-system-x86-core
@@ -118,17 +118,15 @@ jobs:
           # that at a per-runner persistent dir (the dev-host wlrt-cache pattern)
           # so runs don't re-download ~500MB or re-run BIB on a fresh workspace.
           mkdir -p "$WLRT_CACHE"
-          rm -rf workloadctl/tests/runtime/.cache
-          ln -s "$WLRT_CACHE" workloadctl/tests/runtime/.cache
+          rm -rf tests/runtime/.cache
+          ln -s "$WLRT_CACHE" tests/runtime/.cache
 
       - name: Fetch moatery RPM
         if: steps.kvm.outputs.available == 'true'
-        working-directory: workloadctl
         run: sudo just moatery-rpm "$WLRT_MOATERY_RPM"
 
       - name: Reap stale harness VMs
         if: steps.kvm.outputs.available == 'true'
-        working-directory: workloadctl
         run: |
           # This runner is long-lived, so a cancelled run's QEMU survives it —
           # still running, still holding its scratch dir. Left alone they pile up
@@ -139,7 +137,6 @@ jobs:
 
       - name: Runtime rung (dev)
         if: steps.kvm.outputs.available == 'true'
-        working-directory: workloadctl
         env:
           WLRT_MODE: dev
         run: just test-runtime
@@ -148,7 +145,6 @@ jobs:
         # !cancelled(), not success(): a dev failure must not hide the gate's
         # verdict on the shipped image.
         if: ${{ !cancelled() && steps.kvm.outputs.available == 'true' }}
-        working-directory: workloadctl
         env:
           WLRT_MODE: gate
         run: just test-runtime

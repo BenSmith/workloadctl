@@ -29,9 +29,8 @@ pre-bundle layout, which has zero tracked files. A `[text](target)` is
 syntactically a promise the reader can follow it; a path in prose or in a code
 line is not.
 
-It covers the whole repository, not just workloadctl/ — the original rot was
-spread across both halves, and the citing side is what this enforces, wherever
-it lives.
+It covers the whole repository: the citing side is what this enforces,
+wherever it lives.
 
 Skipped cleanly when git isn't available or the tree isn't a checkout.
 """
@@ -42,8 +41,7 @@ from pathlib import Path
 
 from tests import REPO_ROOT
 
-# workloadctl/ is nested inside the image repo; the policy is repo-wide.
-GIT_ROOT = REPO_ROOT.parent
+GIT_ROOT = REPO_ROOT
 
 # A leading dot is part of the path, not a boundary: `.github/workflows/x.md`
 # must be matched whole, or it degrades to `github/workflows/x.md` and resolves
@@ -88,6 +86,12 @@ def _scannable(line: str) -> str:
 EXTERNAL = {
     # podman's own docs, read from the gitignored .reference/podman clone.
     "options/cgroups.md",
+    # The hypervisor image repository's docs, named in the comments of two
+    # bundles' cloud-init user-data. Any change to a VM's rendered user-data
+    # rotates its cloud-init instance-id (lib/ensure_vm.py), so rewording
+    # those comments would reprovision every running VM built from them.
+    "docs/cosign-local-redirect-loop.md",
+    "docs/ci-image-signing.md",
 }
 
 
@@ -96,9 +100,9 @@ def _resolves_against(tracked, citing: Path, cite: str) -> bool:
     bare = cite.lstrip("/")
     if "/" in bare:
         # A path is resolved against each ancestor directory of the citing
-        # file, innermost first: `docs/workloads.md` inside workloadctl/
-        # means workloadctl/docs/workloads.md, and the same string at the
-        # repo root means the root docs/. Both are legitimate.
+        # file, innermost first: `cli_surface/README.md` inside tests/
+        # means tests/cli_surface/README.md, and `docs/workloads.md`
+        # anywhere means the root docs/. Both are legitimate.
         for base in citing.parents:
             candidate = (base / bare).resolve()
             try:
@@ -218,7 +222,7 @@ class TestDocCitations(unittest.TestCase):
     def test_the_checker_would_notice_a_regression(self):
         """A green result is only meaningful if the check can fail. Guards
         against a future refactor that quietly stops matching anything."""
-        probe = GIT_ROOT / "workloadctl" / "lib" / "workload_lib.py"
+        probe = GIT_ROOT / "lib" / "workload_lib.py"
         self.assertIn(probe.as_posix().replace(GIT_ROOT.as_posix() + "/", ""),
                       self.tracked, "probe file is not tracked")
         self.assertFalse(self._resolves(probe, "docs/wip/does-not-exist.md"))
@@ -229,7 +233,7 @@ class TestDocCitations(unittest.TestCase):
     def test_link_targets_are_checked_at_any_extension(self):
         """The Q3-9 class: a `.md` → non-`.md` link. The extension filter on
         CITATION means only the link rule can see these."""
-        probe = GIT_ROOT / "workloadctl" / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "workloads.md"
         self.assertFalse(self._link_resolves(probe, "../workloads.d/gone.toml"))
         self.assertFalse(
             self._link_resolves(probe, ".forgejo/workflows/nonesuch.yml"))
@@ -238,12 +242,12 @@ class TestDocCitations(unittest.TestCase):
             self._link_resolves(probe, "../workloads/webproxy-demo/workload.toml"))
 
     def test_link_anchor_is_not_part_of_the_path(self):
-        probe = GIT_ROOT / "workloadctl" / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "workloads.md"
         self.assertTrue(self._link_resolves(probe, "cli.md#logs"))
         self.assertFalse(self._link_resolves(probe, "no-such-doc.md#logs"))
 
     def test_link_may_point_at_a_directory_that_has_tracked_content(self):
-        probe = GIT_ROOT / "workloadctl" / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "workloads.md"
         self.assertTrue(self._link_resolves(probe, "../workloads/webproxy-demo"))
         self.assertFalse(self._link_resolves(probe, "../workloads/no-such-bundle"))
         # docs/wip/ is gitignored: it exists on this machine but has nothing
@@ -271,7 +275,7 @@ class TestDocCitations(unittest.TestCase):
             [m.group(1) for m in CITATION.finditer(_scannable(both))],
             ["docs/workloads.md"])
         # And a link target is skipped by its own guard, not by _scannable.
-        probe = GIT_ROOT / "workloadctl" / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "workloads.md"
         self.assertFalse(self._link_resolves(probe, "~/.claude/CLAUDE.md"))
 
     def test_a_path_inside_a_url_is_not_a_citation(self):
@@ -367,23 +371,7 @@ class TestCodeCitations(unittest.TestCase):
         return found
 
     def _code_resolves(self, citing: Path, cite: str) -> bool:
-        """The ancestor walk, plus one base the doc rule does not need.
-
-        workloadctl/ is a self-contained project nested in the image repo, and
-        files at the ROOT that discuss it write its paths project-relative,
-        because that is how they read to somebody working in it: the root
-        CLAUDE.md says `tests/test_broker.py` and hypervisor.Containerfile
-        names the modules that need the openssl CLI. Those are followable —
-        the reader is told which project — so resolving them only against the
-        citing file's own ancestors would fail three sound citations and the
-        first person to hit it would delete the check rather than the comment.
-
-        One extra base, not "any directory that has a tests/": the repo has
-        exactly one nested project, and a wildcard would let a citation
-        resolve against a tree it was never about.
-        """
-        return (_resolves_against(self.tracked, citing, cite)
-                or _resolves_against(self.tracked, REPO_ROOT / "x", cite))
+        return _resolves_against(self.tracked, citing, cite)
 
     def test_every_cited_test_module_is_tracked(self):
         violations = self._violations()
@@ -406,7 +394,7 @@ class TestCodeCitations(unittest.TestCase):
         breaking, so the next person is told the wrong thing.
         """
         for rel in sorted(self.tracked):
-            if not (rel.startswith("workloadctl/lib/") and rel.endswith(".py")):
+            if not (rel.startswith("lib/") and rel.endswith(".py")):
                 continue
             path = GIT_ROOT / rel
             hits = {m.group(1) for m in CODE_CITATION.finditer(path.read_text())}
@@ -436,22 +424,10 @@ class TestCodeCitations(unittest.TestCase):
         """
         total = 0
         for rel in sorted(self.tracked):
-            if rel.startswith("workloadctl/lib/") and rel.endswith(".py"):
+            if rel.startswith("lib/") and rel.endswith(".py"):
                 text = (GIT_ROOT / rel).read_text()
                 total += len({m.group(1) for m in CODE_CITATION.finditer(text)})
         self.assertGreater(total, 5, "the citation regex matched almost nothing")
-
-    def test_a_root_file_may_write_a_workloadctl_relative_path(self):
-        """The root CLAUDE.md and hypervisor.Containerfile both do. Pinned so
-        the extra base is not quietly dropped as redundant."""
-        root_file = GIT_ROOT / "CLAUDE.md"
-        self.assertFalse(
-            _resolves_against(self.tracked, root_file,
-                              "tests/test_broker.py"))
-        self.assertTrue(
-            self._code_resolves(root_file, "tests/test_broker.py"))
-        self.assertFalse(
-            self._code_resolves(root_file, "tests/test_nonesuch.py"))
 
     def test_a_retired_name_is_exempt_only_by_being_listed(self):
         """RETIRED is an allowlist, not a wildcard: a second deleted module
@@ -459,5 +435,5 @@ class TestCodeCitations(unittest.TestCase):
         self.assertIn("tests/test_vm_proxy.py", RETIRED)
         self.assertFalse(
             _resolves_against(self.tracked,
-                              GIT_ROOT / "workloadctl" / "lib" / "nft_elements.py",
+                              GIT_ROOT / "lib" / "nft_elements.py",
                               "tests/test_vm_proxy.py"))

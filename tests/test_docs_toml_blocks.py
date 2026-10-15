@@ -72,11 +72,11 @@ def _names(text: str) -> tuple[set[str], set[str]]:
     return keys, tables
 
 
-# Beyond docs/: the overview files carry copyable blocks too, and the repo-root
-# README's block is one that had rotted (a flat /etc/workloads.d/<name>.toml,
-# a path nothing globs). Named rather than globbed -- these are the three
-# hand-written overviews, not every README in the tree.
-EXTRA_DOCS = (ROOT / "README.md", ROOT / "llms.txt", ROOT.parent / "README.md")
+# Beyond docs/: the overview files carry copyable blocks too (one had rotted
+# into a flat /etc/workloads.d/<name>.toml, a path nothing globs). Named
+# rather than globbed -- these are the hand-written overviews, not every
+# README in the tree.
+EXTRA_DOCS = (ROOT / "README.md", ROOT / "llms.txt")
 
 
 def _tracked_docs() -> list[pathlib.Path]:
@@ -97,8 +97,7 @@ def _tracked_docs() -> list[pathlib.Path]:
 
 
 def _rel(path: pathlib.Path) -> str:
-    """Repo-relative, since EXTRA_DOCS reaches one level above ROOT."""
-    return path.relative_to(ROOT.parent).as_posix()
+    return path.relative_to(ROOT).as_posix()
 
 
 def _blocks():

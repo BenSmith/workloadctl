@@ -8,7 +8,7 @@
 name = "vm-base"
 
 [vm]
-# Fedora 44 Cloud-Base (bump with fedora-versions.yml `stable:`).
+# Fedora 44 Cloud-Base (bump with each Fedora release).
 cloud_image_url = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
 cloud_image_checksum = "sha256:28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f"
 # --- or copy/reflink a local qcow2 instead: ---

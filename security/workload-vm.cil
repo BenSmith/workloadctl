@@ -63,7 +63,7 @@
 ; because the cost of the alternative was unmeasured. It was then measured: the
 ; domain below is ordinary rules, no user-namespace machinery, because
 ; generate_virtiofs_service passes --sandbox=none and confines the daemon by
-; other means (see the next section). (Contrast ../../security/pasta_sandbox.cil,
+; other means (see the next section). (Contrast the hypervisor image's pasta_sandbox.cil,
 ; which exists precisely because pasta's userns+pivot_root sandbox needs
 ; cap_userns and tmpfs_t:dir mounton. Switching the sidecar to
 ; --sandbox=namespace would reopen that cost.)

@@ -209,8 +209,9 @@ every later request gets pinned to http and loops on the 308 until cosign
 fails with "stopped after 10 redirects". The `:80` block hard-404s `/v2*`
 instead, so the http probe always loses. The rule is path-based on purpose —
 it protects any current or future registry behind this proxy without
-maintaining a hostname list. See the repo root's `docs/cosign-local-redirect-loop.md`
-for the full failure analysis.
+maintaining a hostname list. See the hypervisor image's
+[cosign redirect-loop write-up](https://github.com/BenSmith/bootc-hypervisor/blob/main/docs/cosign-local-redirect-loop.md) for the full
+failure analysis.
 
 To serve plain HTTP *without* any redirect, drop the `@dotlocal` redirect
 from the `:80` block; to drop HTTPS entirely, replace the global block with

@@ -1,0 +1,16 @@
+rpmbuild/
+lib/_version.py
+__pycache__/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.codegraph/
+.codegraph-shim/
+.claude/
+.idea/
+tests/runtime/.cache
+
+# In-progress design proposals, kept local until promoted to tracked docs
+docs/wip/
