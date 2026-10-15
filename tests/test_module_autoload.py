@@ -146,6 +146,9 @@ class Derivation(unittest.TestCase):
         self.assertTrue(names)
         self.assertEqual(len(names), len(set(names)))
 
+    def test_the_shipped_keep_list_keeps_the_virtio_nic(self):
+        self.assertIn("virtio_net", self.m.read_keep(KEEP.read_text()))
+
 
 @unittest.skipUnless(CONTAINERFILE.exists(), "image half absent")
 class Wiring(unittest.TestCase):
