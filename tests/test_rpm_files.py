@@ -43,9 +43,10 @@ SPEC = ROOT / "rpm" / "workloadctl.spec"
 LIBEXEC = ROOT / "libexec"
 GENERATORS = ROOT / "generators"
 
-# `install -Dpm 0755 %{_sourcedir}/<src> \\\n    %{buildroot}<dest>`
+# `install -Dpm 0755 <src> \\\n    %{buildroot}<dest>`, <src> relative to the
+# unpacked source tree %autosetup leaves the build in.
 INSTALL_RE = re.compile(
-    r"install\s+-Dpm\s+\d+\s+%\{_sourcedir\}/(\S+)\s*\\?\s*\n?\s*"
+    r"install\s+-Dpm\s+\d+\s+(?!%)(\S+)\s*\\?\s*\n?\s*"
     r"%\{buildroot\}(\S+)")
 
 
@@ -155,6 +156,16 @@ class TestBundleShebangsSurviveTheBuild(unittest.TestCase):
             self.assertEqual(script.read_text(), "#!/bin/bash\ntrue\n")
             # The control: the rewrite ran, and an unexcluded file got it.
             self.assertEqual(host.read_text(), "#!/usr/bin/bash\ntrue\n")
+
+
+class TestTheVersionIsVERSIONs(unittest.TestCase):
+
+    def test_the_spec_version_is_the_version_file(self):
+        """A release is tagged from VERSION and Packit builds the spec: the
+        two disagreeing builds an RPM whose version is not the tag's."""
+        version = (ROOT / "VERSION").read_text().strip()
+        spec = re.search(r"(?m)^Version:\s+(\S+)$", SPEC.read_text())
+        self.assertEqual(spec.group(1), version)
 
 
 if __name__ == "__main__":

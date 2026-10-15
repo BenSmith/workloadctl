@@ -195,16 +195,30 @@ lint-containerfiles:
         --ignore DL3041 \
         --ignore DL3059
 
-# Build RPM from local checkout (no tarball)
+# the RPM, into rpmbuild/RPMS, from a tarball as Copr's source is: in a
+# checkout, the tracked files as they stand (uncommitted changes too); in a
+# tree that is not one (rsynced to a test host), the files as they are
 rpm-build:
   #!/usr/bin/env bash
   set -euo pipefail
   serial="$(date +%Y%m%d%H%M%S)"
-  mkdir -p rpmbuild/{BUILD,RPMS,SRPMS,SPECS}
+  version="$(cat VERSION)"
+  tarball="rpmbuild/SOURCES/workloadctl-${version}.tar.gz"
+  mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SRPMS,SPECS}
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # A commit of the working tree, made and left unreferenced; HEAD when
+    # there is nothing uncommitted. A copied checkout's index holds the
+    # original's stat data, and `git stash create` fails on that silently
+    # until it is refreshed.
+    git update-index -q --refresh || true
+    tree="$(git stash create)"
+    git archive --prefix="workloadctl-${version}/" -o "$tarball" "${tree:-HEAD}"
+  else
+    tar -czf "$tarball" --exclude=./rpmbuild --exclude=./.git \
+      --transform "s,^\.,workloadctl-${version}," .
+  fi
   rpmbuild -bb \
     --define "_topdir $(pwd)/rpmbuild" \
-    --define "_sourcedir $(pwd)" \
-    --define "_builddir $(pwd)/rpmbuild/BUILD" \
     --define "buildserial ${serial}" \
     rpm/workloadctl.spec
   echo "RPM built:"

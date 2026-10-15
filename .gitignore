@@ -14,3 +14,7 @@ tests/runtime/.cache
 
 # In-progress design proposals, kept local until promoted to tracked docs
 docs/wip/
+
+# packit srpm output
+rpm/*.tar.gz
+*.src.rpm

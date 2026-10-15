@@ -1,0 +1,33 @@
+# Packit builds the RPM in Copr: each pull request into a project of its
+# own, each GitHub release (not a bare tag) into
+# benjamin-coder-smith/workloadctl. A release's version is its tag's, which
+# a unit test holds to VERSION. The build needs moatery (%check runs the
+# CLI, which imports it), from moatery's own Copr project.
+specfile_path: rpm/workloadctl.spec
+upstream_package_name: workloadctl
+downstream_package_name: workloadctl
+upstream_tag_template: v{version}
+
+actions:
+  get-current-version: cat VERSION
+
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    additional_repos:
+      - copr://benjamin-coder-smith/moatery
+    targets:
+      - fedora-43-x86_64
+      - fedora-44-x86_64
+      - fedora-45-x86_64
+
+  - job: copr_build
+    trigger: release
+    owner: benjamin-coder-smith
+    project: workloadctl
+    additional_repos:
+      - copr://benjamin-coder-smith/moatery
+    targets:
+      - fedora-43-x86_64
+      - fedora-44-x86_64
+      - fedora-45-x86_64

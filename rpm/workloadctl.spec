@@ -4,12 +4,14 @@
 %global __brp_mangle_shebangs_exclude_from ^%{_datadir}/workloadctl/workloads/
 
 Name:           workloadctl
-Version:        0.1.0
-Release:        %{?buildserial:1.%{buildserial}}%{!?buildserial:1}
+# VERSION's, which a unit test holds it to.
+Version:        0.2.0
+Release:        1%{?buildserial:.%{buildserial}}%{?dist}
 Summary:        Declarative rootless container workload manager
 
 License:        MIT
-URL:            https://github.com/BenSmith/bootc-hypervisor
+URL:            https://github.com/BenSmith/workloadctl
+Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 
 BuildArch:      noarch
 
@@ -17,6 +19,9 @@ BuildArch:      noarch
 # defined by systemd-rpm-macros. Without it rpmbuild emits the literal
 # "%{_unitdir}/..." and fails with: File must begin with "/".
 BuildRequires:  systemd-rpm-macros
+# %%check runs the CLI from the buildroot, which imports moatery.
+BuildRequires:  python3 >= 3.14
+BuildRequires:  moatery >= 0.6.0
 Requires:       python3 >= 3.14
 Requires:       podman >= 5.3
 Requires:       systemd
@@ -90,8 +95,7 @@ Each workload runs as a dedicated locked-down system user with its own
 UID/subuid namespace, home directory, and rootless podman instance.
 
 %prep
-# Installed directly from a repo checkout; switch to %%autosetup once a
-# tarball Source is added.
+%autosetup
 
 %install
 # The CLI is the one entrypoint users invoke by bare name off PATH, so it cannot
@@ -102,7 +106,7 @@ UID/subuid namespace, home directory, and rootless podman instance.
 # sitewide .pth that would put 21 generic top-level names on every host process's
 # sys.path.
 install -dm 0755 %{buildroot}%{_libexecdir}/workloadctl
-install -pm 0755 %{_sourcedir}/bin/workloadctl \
+install -pm 0755 bin/workloadctl \
     %{buildroot}%{_libexecdir}/workloadctl/workloadctl
 install -dm 0755 %{buildroot}%{_bindir}
 cat > %{buildroot}%{_bindir}/workloadctl << 'EOF'
@@ -114,7 +118,7 @@ chmod 0755 %{buildroot}%{_bindir}/workloadctl
 # Private library modules under %{_libexecdir}/workloadctl/. Every workloadctl
 # entrypoint is installed into this same directory, so each finds the modules via
 # its own sys.path[0] -- no .pth, no sys.path manipulation.
-for _f in %{_sourcedir}/lib/*.py; do
+for _f in lib/*.py; do
     install -pm 0644 "$_f" %{buildroot}%{_libexecdir}/workloadctl/
 done
 
@@ -126,120 +130,120 @@ cat > %{buildroot}%{_libexecdir}/workloadctl/_version.py << 'EOF'
 __version__ = "%{version}-%{release}"
 EOF
 chmod 0644 %{buildroot}%{_libexecdir}/workloadctl/_version.py
-install -Dpm 0755 %{_sourcedir}/generators/workload-generator \
+install -Dpm 0755 generators/workload-generator \
     %{buildroot}%{_prefix}/lib/systemd/system-generators/workload-generator
 
-install -Dpm 0755 %{_sourcedir}/generators/workload-generate \
+install -Dpm 0755 generators/workload-generate \
     %{buildroot}%{_libexecdir}/workloadctl/workload-generate
-install -Dpm 0755 %{_sourcedir}/libexec/workload-ensure-user \
+install -Dpm 0755 libexec/workload-ensure-user \
     %{buildroot}%{_libexecdir}/workloadctl/workload-ensure-user
-install -Dpm 0755 %{_sourcedir}/libexec/workload-write-env \
+install -Dpm 0755 libexec/workload-write-env \
     %{buildroot}%{_libexecdir}/workloadctl/workload-write-env
-install -Dpm 0755 %{_sourcedir}/libexec/workload-exporter \
+install -Dpm 0755 libexec/workload-exporter \
     %{buildroot}%{_libexecdir}/workloadctl/workload-exporter
-install -Dpm 0755 %{_sourcedir}/libexec/workload-pcap \
+install -Dpm 0755 libexec/workload-pcap \
     %{buildroot}%{_libexecdir}/workloadctl/workload-pcap
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-build-disk \
+install -Dpm 0755 libexec/workload-vm-build-disk \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-build-disk
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-filter \
+install -Dpm 0755 libexec/workload-vm-filter \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-filter
-install -Dpm 0755 %{_sourcedir}/libexec/workload-container-filter \
+install -Dpm 0755 libexec/workload-container-filter \
     %{buildroot}%{_libexecdir}/workloadctl/workload-container-filter
-install -Dpm 0755 %{_sourcedir}/libexec/workload-container-inspect \
+install -Dpm 0755 libexec/workload-container-inspect \
     %{buildroot}%{_libexecdir}/workloadctl/workload-container-inspect
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-netdev \
+install -Dpm 0755 libexec/workload-vm-netdev \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-netdev
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-inspect \
+install -Dpm 0755 libexec/workload-vm-inspect \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-inspect
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-svcaddr \
+install -Dpm 0755 libexec/workload-vm-svcaddr \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-svcaddr
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-clock \
+install -Dpm 0755 libexec/workload-vm-clock \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-clock
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-notify \
+install -Dpm 0755 libexec/workload-vm-notify \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-notify
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-qmp \
+install -Dpm 0755 libexec/workload-vm-qmp \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-qmp
-install -Dpm 0755 %{_sourcedir}/libexec/workload-vm-shutdown \
+install -Dpm 0755 libexec/workload-vm-shutdown \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-shutdown
-install -Dpm 0755 %{_sourcedir}/libexec/workload-oci-rro \
+install -Dpm 0755 libexec/workload-oci-rro \
     %{buildroot}%{_libexecdir}/workloadctl/workload-oci-rro
 
 # The precreate hook behind the `rro` volume option. Only a container started
 # with --hooks-dir pointing here runs it: rootless podman reads no hook
 # directory otherwise. See lib/recursive_readonly.py.
-install -Dpm 0644 %{_sourcedir}/oci-hooks/workloadctl-rro.json \
+install -Dpm 0644 oci-hooks/workloadctl-rro.json \
     %{buildroot}%{_datadir}/workloadctl/oci-hooks.d/workloadctl-rro.json
 
-install -Dpm 0644 %{_sourcedir}/systemd/workload-exporter.service \
+install -Dpm 0644 systemd/workload-exporter.service \
     %{buildroot}%{_unitdir}/workload-exporter.service
-install -Dpm 0644 %{_sourcedir}/systemd/workload-exporter.timer \
+install -Dpm 0644 systemd/workload-exporter.timer \
     %{buildroot}%{_unitdir}/workload-exporter.timer
-install -Dpm 0644 %{_sourcedir}/systemd/workload-exporter-disk.service \
+install -Dpm 0644 systemd/workload-exporter-disk.service \
     %{buildroot}%{_unitdir}/workload-exporter-disk.service
-install -Dpm 0644 %{_sourcedir}/systemd/workload-exporter-disk.timer \
+install -Dpm 0644 systemd/workload-exporter-disk.timer \
     %{buildroot}%{_unitdir}/workload-exporter-disk.timer
-install -Dpm 0644 %{_sourcedir}/systemd/workloads.slice \
+install -Dpm 0644 systemd/workloads.slice \
     %{buildroot}%{_unitdir}/workloads.slice
 
-install -Dpm 0644 %{_sourcedir}/systemd/80-workloadctl.preset \
+install -Dpm 0644 systemd/80-workloadctl.preset \
     %{buildroot}%{_presetdir}/80-workloadctl.preset
 
-install -Dpm 0644 %{_sourcedir}/systemd/workloads-dirs.conf \
+install -Dpm 0644 systemd/workloads-dirs.conf \
     %{buildroot}%{_prefix}/lib/tmpfiles.d/workloads-dirs.conf
 
-install -Dpm 0644 %{_sourcedir}/seccomp-workload-baseline.json \
+install -Dpm 0644 seccomp-workload-baseline.json \
     %{buildroot}%{_datadir}/containers/seccomp-workload-baseline.json
 
 # The workload_filter skeleton. Data, not a script: each VM unit applies it
 # with `nft -f` at start (it is idempotent by construction), so it is not
 # installed executable and there is no unit that owns it.
-install -Dpm 0644 %{_sourcedir}/nftables/workload-filter.nft \
+install -Dpm 0644 nftables/workload-filter.nft \
     %{buildroot}%{_datadir}/workloadctl/workload-filter.nft
 
 # The workload_proxy nat skeleton — same rules as workload-filter.nft: data
 # applied with `nft -f` by workload-vm-inspect's prestart, idempotent, unowned.
 # The file name is historical; see the header of the file itself.
-install -Dpm 0644 %{_sourcedir}/nftables/workload-proxy.nft \
+install -Dpm 0644 nftables/workload-proxy.nft \
     %{buildroot}%{_datadir}/workloadctl/workload-proxy.nft
 
 # The virtiofsd domain. Host-global and mandatory, so it ships with the package
 # that spawns the sidecar rather than through the per-workload
 # [security].selinux_policy bundle — see the header of the file itself. Loaded
 # by %%post, not by any unit.
-install -Dpm 0644 %{_sourcedir}/security/workload-vm.cil \
+install -Dpm 0644 security/workload-vm.cil \
     %{buildroot}%{_datadir}/workloadctl/workload-vm.cil
 
-install -Dpm 0644 %{_sourcedir}/security/workload-inspect.cil \
+install -Dpm 0644 security/workload-inspect.cil \
     %{buildroot}%{_datadir}/workloadctl/workload-inspect.cil
 
 # The per-request record's rotation. A plain drop-in with no scriptlet: the
 # snippet is inert until a workload's inspector creates a file matching its
 # glob, and `missingok` is what makes a host with no inspected VM a no-op
 # rather than a nightly error.
-install -Dpm 0644 %{_sourcedir}/logrotate/workloadctl-inspect \
+install -Dpm 0644 logrotate/workloadctl-inspect \
     %{buildroot}%{_sysconfdir}/logrotate.d/workloadctl-inspect
 
 # Host drop-ins against what a workload can reach outside its tree: no
 # wall broadcast of its log entries, and no sshd login as its user. See the
 # header of each file. Read at journald's and sshd's next start.
-install -Dpm 0644 %{_sourcedir}/systemd/60-workloadctl-journald.conf \
+install -Dpm 0644 systemd/60-workloadctl-journald.conf \
     %{buildroot}%{_prefix}/lib/systemd/journald.conf.d/60-workloadctl.conf
-install -Dpm 0644 %{_sourcedir}/security/40-workloadctl-sshd.conf \
+install -Dpm 0644 security/40-workloadctl-sshd.conf \
     %{buildroot}%{_sysconfdir}/ssh/sshd_config.d/40-workloadctl.conf
 
-install -Dpm 0644 %{_sourcedir}/security/workload-resolve.cil \
+install -Dpm 0644 security/workload-resolve.cil \
     %{buildroot}%{_datadir}/workloadctl/workload-resolve.cil
 
-install -Dpm 0644 %{_sourcedir}/security/workload-clock.cil \
+install -Dpm 0644 security/workload-clock.cil \
     %{buildroot}%{_datadir}/workloadctl/workload-clock.cil
 
-install -Dpm 0644 %{_sourcedir}/completions/workloadctl-completion.bash \
+install -Dpm 0644 completions/workloadctl-completion.bash \
     %{buildroot}%{_datadir}/bash-completion/completions/workloadctl
 
-install -Dpm 0644 %{_sourcedir}/docs/workloads.md \
+install -Dpm 0644 docs/workloads.md \
     %{buildroot}%{_docdir}/workloadctl/workloads.md
 
-install -Dpm 0644 %{_sourcedir}/docs/schema-reference.toml \
+install -Dpm 0644 docs/schema-reference.toml \
     %{buildroot}%{_docdir}/workloadctl/schema-reference.toml
 
 # The broker's design doc. The generated units' Documentation= points at it.
@@ -248,7 +252,7 @@ install -Dpm 0644 %{_sourcedir}/docs/schema-reference.toml \
 # rendered; the broker takes its configuration as flags on the generated
 # unit's ExecStart= now and there is no file to show the shape of. §10 of the
 # doc shows the command line instead.
-install -Dpm 0644 %{_sourcedir}/docs/agent-broker.md \
+install -Dpm 0644 docs/agent-broker.md \
     %{buildroot}%{_docdir}/workloadctl/agent-broker.md
 
 # Shipped workload bundles: one subdir per bundle co-locating the template
@@ -259,7 +263,7 @@ install -Dpm 0644 %{_sourcedir}/docs/agent-broker.md \
 # resolve control files from here; [vm.cloud_init].user_data_file references
 # real on-disk paths under it. So it must be a real share location, not docdir.
 install -dm 0755 %{buildroot}%{_datadir}/workloadctl
-cp -a %{_sourcedir}/workloads %{buildroot}%{_datadir}/workloadctl/workloads
+cp -a workloads %{buildroot}%{_datadir}/workloadctl/workloads
 find %{buildroot}%{_datadir}/workloadctl/workloads -name '*.sh' -exec chmod 0755 {} \;
 
 # `cp -a` copies whatever the build tree holds, tracked or not, so a dirty
@@ -286,10 +290,17 @@ for bundle in %{buildroot}%{_datadir}/workloadctl/workloads/*/; do
     fi
 done
 
-install -Dpm 0644 %{_sourcedir}/LICENSE %{buildroot}%{_datadir}/licenses/workloadctl/LICENSE
+install -Dpm 0644 LICENSE %{buildroot}%{_datadir}/licenses/workloadctl/LICENSE
 
 
 install -dm 0755 %{buildroot}%{_sysconfdir}/workloads.d
+
+%check
+# The CLI imports its closure from the buildroot's private module directory,
+# and reports the package's own Version-Release.
+test "$(%{buildroot}%{_libexecdir}/workloadctl/workloadctl --version)" = \
+    "workloadctl %{version}-%{release}"
+%{buildroot}%{_libexecdir}/workloadctl/workloadctl --help >/dev/null
 
 # The timers are the enabled units; each oneshot service is pulled in by its
 # timer, not enabled on its own.

@@ -114,8 +114,8 @@ def script_env(**overrides):
     env["NO_COLOR"] = "1"
     # The generator derives a seccomp_allow workload's profile from the
     # baseline, and skips the workload when it cannot read one; a test
-    # reads the checkout's, which the image's rpm-builder stage has before
-    # anything installs it.
+    # reads the checkout's, which a build host has before anything
+    # installs it.
     env["WORKLOAD_SECCOMP_BASELINE"] = str(
         REPO_ROOT / "seccomp-workload-baseline.json")
     env.update({key: str(value) for key, value in overrides.items()})

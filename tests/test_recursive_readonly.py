@@ -114,7 +114,7 @@ class TestTheHookIsSelected(unittest.TestCase):
         self.assertEqual(RRO_HOOKS_DIR, "/usr/share/workloadctl/oci-hooks.d")
         self.assertRegex(
             SPEC.read_text(),
-            r"%\{_sourcedir\}/oci-hooks/workloadctl-rro\.json \\\n\s+"
+            r" oci-hooks/workloadctl-rro\.json \\\n\s+"
             r"%\{buildroot\}%\{_datadir\}/workloadctl/oci-hooks\.d/"
             r"workloadctl-rro\.json")
 
