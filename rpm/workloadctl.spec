@@ -297,7 +297,10 @@ install -dm 0755 %{buildroot}%{_sysconfdir}/workloads.d
 
 %check
 # The CLI imports its closure from the buildroot's private module directory,
-# and reports the package's own Version-Release.
+# and reports the package's own Version-Release. Without bytecode: a
+# __pycache__ written into the buildroot here is a file %%files does not list,
+# and fails the build.
+export PYTHONDONTWRITEBYTECODE=1
 test "$(%{buildroot}%{_libexecdir}/workloadctl/workloadctl --version)" = \
     "workloadctl %{version}-%{release}"
 %{buildroot}%{_libexecdir}/workloadctl/workloadctl --help >/dev/null

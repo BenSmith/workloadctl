@@ -165,7 +165,9 @@ equal). Commit, tag `vX.Y.Z` (annotated), push main and the tag, then publish
 a GitHub *release* for the tag: Packit builds the RPM in the Copr project
 `benjamin-coder-smith/workloadctl` on a release, not on a bare tag. Pull
 requests get a Copr test build. `just rpm-build` builds the way Copr does,
-from a `git archive` of the working tree.
+from a `git archive` of the working tree. `packit srpm` builds the source RPM
+Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
+`%autosetup -n`, a changelog entry): restore it before committing.
 
 ## CI
 
