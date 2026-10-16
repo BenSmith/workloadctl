@@ -4,8 +4,9 @@
 A share is a host directory some workloads use: its files carry a
 category its members hold, so no other workload reaches them; writers are
 in its group and readers in its read group, which has a read ACL, with a
-read-only mount, so a reader cannot plant a file. Each piece fails silently when missing: a mount
-without the category, a writer without the group, a reader with write.
+read-only mount, so a reader cannot plant a file. Each piece fails
+silently when missing: a mount without the category, a writer without the
+group, a reader with write, a container mounting what it was not given.
 """
 import re
 import shutil
@@ -99,6 +100,28 @@ class Joining(unittest.TestCase):
             errors = shares.validate_memberships(self.config(entry))
             self.assertTrue(any(words in e for e in errors), (entry, errors))
 
+    def test_containers_names_containers_the_workload_has(self):
+        doc = {"workload": {"name": "p", "mode": "pod"},
+               "containers": [{"name": "client", "container": {"image": "x"}},
+                              {"name": "dns", "container": {"image": "y"}}]}
+        for named, words in ((["client"], None), (["clinet"], "no container"),
+                             ([], "list of container"),
+                             ("client", "list of container")):
+            doc["shares"] = [{"name": "d", "target": "/d", "access": "read",
+                              "containers": named}]
+            errors = shares.validate_memberships(doc)
+            if words is None:
+                self.assertEqual(errors, [])
+            else:
+                self.assertTrue(any(words in e for e in errors),
+                                (named, errors))
+
+    def test_containers_is_refused_on_a_single_container_workload(self):
+        doc = self.config({"name": "d", "target": "/d", "access": "read",
+                           "containers": ["w"]})
+        self.assertTrue(any("[[containers]]" in e for e in
+                            validation.validate_workload_config(doc)))
+
     def test_a_vm_is_refused_through_the_workload_validation(self):
         doc = self.config({"name": "d", "target": "/d", "access": "read"},
                           vm=True)
@@ -143,6 +166,22 @@ class Resolving(unittest.TestCase):
         self.assertEqual([c["storage"]["volumes"] for c in got["containers"]],
                          [["/var/mnt/downloads:/dl:ro"],
                           ["/v:/v", "/var/mnt/downloads:/dl:ro"]])
+
+    def test_only_the_named_containers_mount_it(self):
+        doc = {"workload": {"name": "p", "mode": "pod"},
+               "containers": [{"name": "client", "container": {"image": "x"}},
+                              {"name": "dns", "container": {"image": "y"}}],
+               "shares": [{"name": "downloads", "target": "/dl",
+                           "access": "write", "containers": ["client"]}]}
+        got = shares.resolve(doc, parsed())
+        self.assertEqual([c["storage"]["volumes"] for c in got["containers"]],
+                         [["/var/mnt/downloads:/dl"], []])
+        # The pod has one user namespace and one label: the group and the
+        # category are the workload's.
+        self.assertEqual(got["security"]["extra_groups"],
+                         ["wl-share-downloads"])
+        self.assertEqual(got["security"]["share_categories"],
+                         [parsed()["downloads"].category])
 
     def test_an_undeclared_share_is_warned_about_and_left_out(self):
         said = []
@@ -204,6 +243,37 @@ class Generated(unittest.TestCase):
         self.assertIn("m _wl-torrent wl-share-downloads\n", writer)
         self.assertIn("m _wl-jelly wl-share-downloads-ro\n", reader)
         self.assertNotIn("wl-share-downloads\n", reader)
+
+
+    def test_a_pod_mounts_the_share_only_in_the_named_container(self):
+        conf, svc, users = (tempfile.mkdtemp() for _ in range(3))
+        (Path(conf) / "shares.toml").write_text(
+            '[shares.downloads]\npath = "/var/mnt/downloads"\n')
+        write_config(conf, "torrent", """\
+            [workload]
+            name = "torrent"
+            mode = "pod"
+            [[containers]]
+            name = "client"
+            [containers.container]
+            image = "example.test/t"
+            [[containers]]
+            name = "dns"
+            [containers.container]
+            image = "example.test/d"
+            [[shares]]
+            name = "downloads"
+            target = "/downloads"
+            access = "write"
+            containers = ["client"]
+            """)
+        result = run_generator(conf, svc, users)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        volume = '--volume "/var/mnt/downloads":"/downloads"'
+        client = (Path(svc) / "workload-torrent-client.service").read_text()
+        dns = (Path(svc) / "workload-torrent-dns.service").read_text()
+        self.assertIn(volume, client)
+        self.assertNotIn("/var/mnt/downloads", dns)
 
 
 class HostSetup(unittest.TestCase):

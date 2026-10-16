@@ -1836,12 +1836,15 @@ volumes = [
 # Its files carry the share's own SELinux category, which every member holds;
 # writers join the group wl-share-<name>, readers the group
 # wl-share-<name>-ro, which has a read ACL, and get a read-only mount.
-# Every container of the workload mounts it.
+# Every container of the workload mounts it, unless `containers` names the
+# ones that do (multi-container workloads; the category and groups stay the
+# workload's).
 [[shares]]
 name = "downloads"          # a share shares.toml declares
 target = "/downloads"       # where the containers see it
 access = "read"             # "read" or "write"
 subpath = "complete"        # optional: a directory inside the share
+# containers = ["app"]  # optional: only these containers mount it
 
 [network]
 # Optional: Container network mode

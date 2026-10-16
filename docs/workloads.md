@@ -1491,8 +1491,22 @@ in the container: a reader that serves files as container root under
 read group's ACL, and `disable` takes the member out of the groups. The
 category comes from the name; two shares that draw the same one are refused
 until one is given a `category` (300 to 1023). A share's name is at most 20
-characters. Shares are for container workloads, and every
-container of a workload mounts them. `diagnose` reports a share's label
+characters. Shares are for container workloads, and every container of a
+workload mounts them unless the membership names the ones that do:
+
+```toml
+# only the app container sees the files, not the pod's sidecars
+[[shares]]
+name = "downloads"
+target = "/downloads"
+access = "write"
+containers = ["app"]
+```
+
+A pod has one user namespace and one SELinux label, so the category and the
+groups are the workload's whichever containers mount the share: the mount is
+what keeps the others out, and the pod's containers share no PID namespace
+through which one could reach another's files. `diagnose` reports a share's label
 (`share[<name>]`).
 
 VM workloads run QEMU as `svirt_t`, the domain the distro policy already
