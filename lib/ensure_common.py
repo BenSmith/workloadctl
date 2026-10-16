@@ -401,6 +401,9 @@ def _install_file_nofollow(src, root_dir, host_path, *,
 
 # Mounted where SELinux is enabled at all.
 SELINUXFS_ENFORCE = Path("/sys/fs/selinux/enforce")
+# workload-inspect.cil's types for the CA and its key.
+CA_TYPE = "wlinspect_ca_t"
+CA_KEY_TYPE = "wlinspect_ca_key_t"
 
 
 def _label(argv):
@@ -420,6 +423,9 @@ def stamp_selinux_labels(name, uid, is_vm):
     first; -F because a plain restorecon leaves a file alone while its
     type is a customizable one.
 
+    A CA still under state/ (move_egress_pki keeps it) takes the CA's
+    types, so the workload cannot read its key.
+
     Raises: a tree left at s0 is open to every workload's processes.
     """
     if not SELINUXFS_ENFORCE.exists():
@@ -428,6 +434,14 @@ def stamp_selinux_labels(name, uid, is_vm):
     tree_type = VM_TREE_TYPE if is_vm else CONTAINER_TREE_TYPE
     _label(["chcon", "-R", "-h", "-t", tree_type, "-l", level,
             str(workload_root_dir(name))])
+    old_ca = workload_state_dir(name) / CA_DIR_NAME
+    if old_ca.is_dir() and not old_ca.is_symlink():
+        _label(["chcon", "-R", "-h", "-t", CA_TYPE, "-l", level,
+                str(old_ca)])
+        key = ca_key_path(workload_state_dir(name))
+        if key.is_file() and not key.is_symlink():
+            _label(["chcon", "-h", "-t", CA_KEY_TYPE, "-l", level,
+                    str(key)])
     egress = workload_egress_dir(name)
     if egress.is_dir():
         _label(["restorecon", "-RF", str(egress)])
@@ -564,12 +578,14 @@ def egress_anchor(name: str) -> Path:
 
 
 def move_egress_pki(pw, name: str):
-    """Move a CA minted under the workload's state/ into the egress tree.
+    """Copy a CA minted under the workload's state/ into the egress tree.
 
     The CA may be a provisioned guest's anchor, which a fresh mint would
     invalidate. Read without following a link, since state/ is the
-    workload user's. The caches are not moved: their leaves are minted
-    again under the same CA.
+    workload user's. The old copy stays, so a build that reads it there
+    still finds the same CA (stamp_selinux_labels keeps its types). The
+    caches are not copied: their leaves are minted again under the same
+    CA.
     """
     state_dir = workload_state_dir(name)
     old_ca = state_dir / CA_DIR_NAME
@@ -588,8 +604,10 @@ def move_egress_pki(pw, name: str):
                 if not _write_file_nofollow(anchor, dst, content, pw.pw_uid,
                                             pw.pw_gid, mode):
                     raise RuntimeError(f"cannot write {dst} safely")
-            log(f"  Moved the egress CA to {ca_dir(anchor)}")
-    for dir_name in (CA_DIR_NAME, LEAF_DIR_NAME, DENIAL_DIR_NAME):
+            log(f"  Copied the egress CA to {ca_dir(anchor)}")
+    if os.path.islink(old_ca):
+        os.unlink(old_ca)
+    for dir_name in (LEAF_DIR_NAME, DENIAL_DIR_NAME):
         path = state_dir / dir_name
         if os.path.islink(path):
             os.unlink(path)

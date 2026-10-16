@@ -375,15 +375,23 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         self.addCleanup(patch.stop)
         return state
 
-    def test_an_old_ca_is_moved_not_reminted(self):
+    def test_an_old_ca_is_copied_not_reminted(self):
         state = self._old_state()
         self.mod.move_egress_pki(self.pw, "myvm")
         self.assertEqual(ca_key_path(self.anchor).read_bytes(), b"KEY")
         self.assertEqual(ca_cert_path(self.anchor).read_bytes(), b"CERT")
         self.assertEqual(ca_key_path(self.anchor).stat().st_mode & 0o777,
                          0o600)
-        self.assertFalse((state / "ca").exists())
         self.assertFalse((state / "leaves").exists())
+
+    def test_the_old_ca_stays_for_a_build_that_reads_it_there(self):
+        """A rollback to a build that reads state/ca must find the same CA,
+        not mint one a provisioned guest does not trust."""
+        state = self._old_state()
+        self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertEqual(ca_key_path(state).read_bytes(), b"KEY")
+        self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertEqual(ca_key_path(self.anchor).read_bytes(), b"KEY")
 
     def test_a_ca_already_in_the_egress_tree_wins(self):
         state = self._old_state()
@@ -391,7 +399,7 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         ca_key_path(self.anchor).write_bytes(b"NEW")
         self.mod.move_egress_pki(self.pw, "myvm")
         self.assertEqual(ca_key_path(self.anchor).read_bytes(), b"NEW")
-        self.assertFalse((state / "ca").exists())
+        self.assertEqual(ca_key_path(state).read_bytes(), b"KEY")
 
     def test_a_linked_old_key_is_not_read(self):
         state = self._old_state()

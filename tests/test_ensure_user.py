@@ -2336,6 +2336,8 @@ class TestStampSelinuxLabels(unittest.TestCase):
                                   lambda n: Path("/var/lib/workloads/myapp")),
                 mock.patch.object(self.mod, "workload_egress_dir",
                                   lambda n: self.egress),
+                mock.patch.object(self.mod, "workload_state_dir",
+                                  lambda n: self.tmp / "state"),
                 mock.patch.object(self.mod, "mcs_level",
                                   lambda uid: "s0:c3,c7"),
                 mock.patch.object(self.mod.subprocess, "run",
@@ -2363,6 +2365,25 @@ class TestStampSelinuxLabels(unittest.TestCase):
         self.assertEqual(self.calls[1:], [
             ["restorecon", "-RF", str(self.egress)],
             ["chcon", "-R", "-h", "-l", "s0:c3,c7", str(self.egress)]])
+
+    def test_a_ca_kept_under_state_gets_the_cas_types_after_the_tree(self):
+        """The tree's pass gives it the tree's type; the workload must not
+        read the key, so the CA's types follow."""
+        ca = self.tmp / "state" / "ca"
+        ca.mkdir(parents=True)
+        (ca / "egress-ca.key").write_text("k")
+        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertEqual(self.calls[1:], [
+            ["chcon", "-R", "-h", "-t", "wlinspect_ca_t", "-l", "s0:c3,c7",
+             str(ca)],
+            ["chcon", "-h", "-t", "wlinspect_ca_key_t", "-l", "s0:c3,c7",
+             str(ca / "egress-ca.key")]])
+
+    def test_a_linked_ca_under_state_is_not_labelled(self):
+        (self.tmp / "state").mkdir()
+        (self.tmp / "state" / "ca").symlink_to(self.tmp)
+        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertEqual(len(self.calls), 1)
 
     def test_a_failure_raises_naming_it(self):
         with mock.patch.object(
