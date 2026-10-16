@@ -13,6 +13,7 @@ RUN dnf install --setopt=install_weak_deps=False --nodocs -y \
 # Add placeholder so podman bind-mounts wg0.conf as a file, not a directory.
 RUN touch /etc/wireguard/wg0.conf
 
+COPY --link --chmod=0644 wg-up.sh /wg-up.sh
 COPY --link --chmod=0755 entrypoint.sh /entrypoint.sh
 
 # Run as invoking user (workload user)

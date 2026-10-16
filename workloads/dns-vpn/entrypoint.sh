@@ -3,6 +3,7 @@ set -e
 
 WG_INTERFACE="${WG_INTERFACE:-wg0}"
 WG_CONFIG="/etc/wireguard/${WG_INTERFACE}.conf"
+. /wg-up.sh
 DNS_PORT="${DNS_PORT:-53}"
 
 if [ ! -f "$WG_CONFIG" ]; then
@@ -29,23 +30,14 @@ echo "Listening on port: $DNS_PORT"
 cleanup() {
     echo "Shutting down..."
     kill "$DNSMASQ_PID" 2>/dev/null || true
-    wg-quick down "$WG_INTERFACE" || true
+    wg_down
     exit 0
 }
 
 trap cleanup SIGTERM SIGINT SIGQUIT
 
 echo "Bringing up WireGuard interface..."
-wg-quick up "$WG_INTERFACE"
-
-# Keep LAN routes accessible through the pre-VPN interface.
-DEFAULT_IFACE=$(ip route show default | grep -v "$WG_INTERFACE" | head -n1 | awk '{print $5}')
-if [ -n "$DEFAULT_IFACE" ]; then
-    ip route add 192.168.0.0/16 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    ip route add 10.0.0.0/8 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    ip route add 172.16.0.0/12 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    echo "Local networks excluded from VPN via $DEFAULT_IFACE"
-fi
+wg_up
 
 echo "Starting DNS proxy..."
 dnsmasq \
@@ -74,5 +66,9 @@ while true; do
         echo "ERROR: dnsmasq process died!"
         exit 1
     fi
-    sleep 30
+    # In the background: bash runs the SIGTERM trap only between
+    # commands, and a foreground sleep would hold it past podman's
+    # stop timeout.
+    sleep 30 &
+    wait $!
 done

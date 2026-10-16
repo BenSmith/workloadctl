@@ -3,6 +3,7 @@ set -e
 
 WG_INTERFACE="${WG_INTERFACE:-wg0}"
 WG_CONFIG="/etc/wireguard/${WG_INTERFACE}.conf"
+. /wg-up.sh
 SOCKS_PORT="${SOCKS_PORT:-1080}"
 
 echo "VPN SOCKS5 proxy starting..."
@@ -17,23 +18,20 @@ fi
 cleanup() {
     echo "Shutting down..."
     kill "$MICROSOCKS_PID" 2>/dev/null || true
-    wg-quick down "$WG_INTERFACE" || true
+    wg_down
     exit 0
 }
 
 trap cleanup SIGTERM SIGINT SIGQUIT
 
 echo "Bringing up WireGuard interface..."
-wg-quick up "$WG_INTERFACE"
+wg_up
 
-# Keep LAN routes accessible through the pre-VPN interface so the proxy
-# can still reach local network addresses if needed.
-DEFAULT_IFACE=$(ip route show default | grep -v "$WG_INTERFACE" | head -n1 | awk '{print $5}')
-if [ -n "$DEFAULT_IFACE" ]; then
-    ip route add 192.168.0.0/16 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    ip route add 10.0.0.0/8 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    ip route add 172.16.0.0/12 dev "$DEFAULT_IFACE" 2>/dev/null || true
-    echo "Local networks excluded from VPN via $DEFAULT_IFACE"
+# The proxy resolves names through the tunnel's resolver. In place:
+# podman bind-mounts this file, and a new inode would not reach it.
+TUNNEL_DNS=$(wg_dns)
+if [ -n "$TUNNEL_DNS" ]; then
+    echo "nameserver $TUNNEL_DNS" > /etc/resolv.conf
 fi
 
 echo "Starting SOCKS5 proxy on port $SOCKS_PORT..."
@@ -58,5 +56,9 @@ while true; do
         echo "ERROR: microsocks process died!"
         exit 1
     fi
-    sleep 30
+    # In the background: bash runs the SIGTERM trap only between
+    # commands, and a foreground sleep would hold it past podman's
+    # stop timeout.
+    sleep 30 &
+    wait $!
 done
