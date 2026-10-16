@@ -63,9 +63,9 @@ family whose module the host has not loaded is refused whatever the image's
 module list says. [SELinux Confinement](workloads.md#selinux-confinement)
 has the details.
 
-**Where it stops:** the `state/` directory itself and the egress CA beneath
-it stay at `s0`, for the host's own daemons. A volume outside the workload's
-tree keeps the label it has.
+**Where it stops:** the level is stamped by the setup unit, not registered
+as a rule, so a relabel puts the tree back at `s0` until the next boot or
+`recreate`. A volume outside the workload's tree keeps the label it has.
 
 ## Mounts, devices and sockets
 
