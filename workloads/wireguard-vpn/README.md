@@ -46,8 +46,12 @@ Endpoint = SERVER_IP:51820
 PersistentKeepalive = 25
 ```
 
-Local network traffic (RFC 1918: 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) is
-automatically excluded from the VPN so the container can still reach the LAN.
+The container routes each `AllowedIPs` prefix into the tunnel itself (a
+default route as two `/1` routes beside it), since `/proc/sys/net` is
+read-only in a container and wg-quick's own default-route handling needs it.
+192.168.0.0/16 and 172.16.0.0/12 stay on the LAN; 10.0.0.0/8 does not, since
+providers put their tunnel addresses and resolvers there. The config's
+`DNS =` server becomes the container's resolver.
 
 ## Troubleshooting
 
