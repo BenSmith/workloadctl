@@ -26,22 +26,34 @@ echo "Pi-hole VPN starting..."
 echo "WireGuard interface: $WG_INTERFACE"
 echo "Upstream DNS: $VPN_DNS (via VPN tunnel)"
 
-# Override Pi-hole's upstream DNS with the VPN DNS server(s)
-export PIHOLE_DNS_="$VPN_DNS"
+# Pi-hole v6 takes its upstreams from FTLCONF_ variables.
+export FTLCONF_dns_upstreams="$VPN_DNS"
 
 cleanup() {
     echo "Shutting down..."
     [ -n "${PIHOLE_PID:-}" ] && kill "$PIHOLE_PID" 2>/dev/null || true
     wg_down
-    exit 0
+    exit "${1:-0}"
 }
 trap cleanup SIGTERM SIGINT SIGQUIT
 
 echo "Bringing up WireGuard interface..."
 wg_up
 
+# The container's own lookups, a fresh volume's first gravity run among
+# them, go through the tunnel. In place: podman bind-mounts this file, and a
+# new inode would not reach it.
+RESOLVER=$(echo "${VPN_DNS%%;*}" \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+if [ -n "$RESOLVER" ]; then
+    echo "nameserver $RESOLVER" > /etc/resolv.conf
+fi
+
 echo "Starting Pi-hole..."
 /usr/bin/start.sh &
 PIHOLE_PID=$!
-wait "$PIHOLE_PID"
-cleanup
+# A stop arrives as a signal, whose trap exits 0; Pi-hole exiting on its own
+# is a failure, so systemd restarts the unit.
+wait "$PIHOLE_PID" || true
+echo "ERROR: Pi-hole exited"
+cleanup 1

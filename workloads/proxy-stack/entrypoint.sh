@@ -28,8 +28,8 @@ echo "WireGuard interface: $WG_INTERFACE"
 echo "VPN upstream DNS: $VPN_DNS"
 echo "SOCKS5 port: $SOCKS_PORT"
 
-# Pi-hole reads this env var for its upstream DNS configuration
-export PIHOLE_DNS_="$VPN_DNS"
+# Pi-hole v6 takes its upstreams from FTLCONF_ variables.
+export FTLCONF_dns_upstreams="$VPN_DNS"
 
 cleanup() {
     echo "Shutting down..."
@@ -37,42 +37,58 @@ cleanup() {
     [ -n "$MICROSOCKS_PID" ] && kill "$MICROSOCKS_PID" 2>/dev/null || true
     [ -n "$PIHOLE_PID" ]   && kill "$PIHOLE_PID"   2>/dev/null || true
     wg_down
-    exit 0
+    exit "${1:-0}"
 }
 trap cleanup SIGTERM SIGINT SIGQUIT
 
 echo "Bringing up WireGuard..."
 wg_up
 
-# Point the container's resolver at Pi-hole (starting next).
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
+# Until Pi-hole answers, the container resolves through the tunnel: a fresh
+# volume's first gravity run needs DNS before FTL starts. In place: podman
+# bind-mounts this file, and a new inode would not reach it.
+RESOLVER=$(echo "${VPN_DNS%%;*}" \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+if [ -n "$RESOLVER" ]; then
+    echo "nameserver $RESOLVER" > /etc/resolv.conf
+fi
+
+# microsocks needs no Pi-hole; it resolves through whichever resolver the
+# container has.
+echo "Starting microsocks..."
+microsocks -p "$SOCKS_PORT" &
+MICROSOCKS_PID=$!
 
 # Start Pi-hole (s6-overlay, manages FTL and lighttpd internally).
 echo "Starting Pi-hole..."
 /usr/bin/start.sh &
 PIHOLE_PID=$!
 
-# Wait for Pi-hole FTL to open port 53 before starting the proxy services.
+# Squid's only resolver is Pi-hole (squid.conf), so it waits for port 53.
 echo "Waiting for Pi-hole DNS..."
-for i in $(seq 1 30); do
+for i in $(seq 1 120); do
     if bash -c 'echo >/dev/tcp/127.0.0.1/53' 2>/dev/null; then
         echo "Pi-hole DNS ready"
+        echo "nameserver 127.0.0.1" > /etc/resolv.conf
         break
     fi
-    [ "$i" -eq 30 ] && echo "Warning: Pi-hole DNS not ready after 30s, continuing anyway"
+    if ! kill -0 "$PIHOLE_PID" 2>/dev/null; then
+        echo "ERROR: Pi-hole died!"
+        cleanup 1
+    fi
+    [ "$i" -eq 120 ] && \
+        echo "Warning: Pi-hole DNS not ready after 120s, continuing anyway"
     sleep 1
 done
 
-# Start microsocks SOCKS5 proxy.
-echo "Starting microsocks..."
-microsocks -p "$SOCKS_PORT" &
-MICROSOCKS_PID=$!
-
-# Initialize Squid cache dirs if needed, then start.
+# Squid starts as its own user: it opens its logs after dropping root, and
+# the container's stdout is journald's socket, which cannot be opened by
+# path. A pipe the squid user made can be.
 echo "Starting Squid..."
-squid -z 2>/dev/null || true
+chown squid:squid /var/spool/squid
+capsh --user=squid -- -c "squid -z -N" 2>/dev/null || true
 rm -f /var/spool/squid/squid.pid
-squid -N &
+capsh --user=squid -- -c "exec squid -N > >(cat) 2>&1" &
 SQUID_PID=$!
 
 echo ""
@@ -82,11 +98,11 @@ echo "  SOCKS5 proxy:  :$SOCKS_PORT (→ VPN)"
 echo "  Pi-hole DNS:   :53   (DNS blocking → VPN upstream)"
 echo "  Pi-hole admin: :80"
 
-# Monitor all services; exit if any die so systemd restarts the unit.
+# Monitor all services; a death exits non-zero, so systemd restarts the unit.
 while true; do
-    if ! kill -0 "$PIHOLE_PID"     2>/dev/null; then echo "ERROR: Pi-hole died!";    cleanup; fi
-    if ! kill -0 "$MICROSOCKS_PID" 2>/dev/null; then echo "ERROR: microsocks died!"; cleanup; fi
-    if ! kill -0 "$SQUID_PID"      2>/dev/null; then echo "ERROR: Squid died!";      cleanup; fi
+    if ! kill -0 "$PIHOLE_PID"     2>/dev/null; then echo "ERROR: Pi-hole died!";    cleanup 1; fi
+    if ! kill -0 "$MICROSOCKS_PID" 2>/dev/null; then echo "ERROR: microsocks died!"; cleanup 1; fi
+    if ! kill -0 "$SQUID_PID"      2>/dev/null; then echo "ERROR: Squid died!";      cleanup 1; fi
     # In the background: bash runs the SIGTERM trap only between
     # commands, and a foreground sleep would hold it past podman's
     # stop timeout.
