@@ -2336,8 +2336,6 @@ class TestStampSelinuxLabels(unittest.TestCase):
                                   lambda n: Path("/var/lib/workloads/myapp")),
                 mock.patch.object(self.mod, "workload_egress_dir",
                                   lambda n: self.egress),
-                mock.patch.object(self.mod, "workload_state_dir",
-                                  lambda n: self.tmp / "state"),
                 mock.patch.object(self.mod, "mcs_level",
                                   lambda uid: "s0:c3,c7"),
                 mock.patch.object(self.mod.subprocess, "run",
@@ -2365,25 +2363,6 @@ class TestStampSelinuxLabels(unittest.TestCase):
         self.assertEqual(self.calls[1:], [
             ["restorecon", "-RF", str(self.egress)],
             ["chcon", "-R", "-h", "-l", "s0:c3,c7", str(self.egress)]])
-
-    def test_a_ca_kept_under_state_gets_the_cas_types_after_the_tree(self):
-        """The tree's pass gives it the tree's type; the workload must not
-        read the key, so the CA's types follow."""
-        ca = self.tmp / "state" / "ca"
-        ca.mkdir(parents=True)
-        (ca / "egress-ca.key").write_text("k")
-        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
-        self.assertEqual(self.calls[1:], [
-            ["chcon", "-R", "-h", "-t", "wlinspect_ca_t", "-l", "s0:c3,c7",
-             str(ca)],
-            ["chcon", "-h", "-t", "wlinspect_ca_key_t", "-l", "s0:c3,c7",
-             str(ca / "egress-ca.key")]])
-
-    def test_a_linked_ca_under_state_is_not_labelled(self):
-        (self.tmp / "state").mkdir()
-        (self.tmp / "state" / "ca").symlink_to(self.tmp)
-        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
-        self.assertEqual(len(self.calls), 1)
 
     def test_a_failure_raises_naming_it(self):
         with mock.patch.object(
@@ -3541,17 +3520,16 @@ class TestProvision(unittest.TestCase):
         mocks["setup_volume_directories"].assert_not_called()
         mocks["enable_linger"].assert_not_called()
 
-    def test_an_inspected_vm_moves_its_ca_before_minting(self):
+    def test_an_inspected_vm_mints_its_ca_before_its_caches(self):
         mocks = self._patch_common("vm")
         order = mock.Mock()
         with mock.patch.object(self.mod, "vm_uses_inspect", return_value=True), \
-                mock.patch.object(self.mod, "move_egress_pki", order.move), \
                 mock.patch.object(self.mod, "generate_egress_ca", order.mint), \
                 mock.patch.object(self.mod, "provision_egress_pki_dirs", order.dirs):
             rc = self.mod.provision("myvm")
         self.assertEqual(rc, 0)
         self.assertEqual([c[0] for c in order.mock_calls],
-                         ["move", "mint", "dirs"])
+                         ["mint", "dirs"])
         mocks["stamp_selinux_labels"].assert_called_once()
 
     def test_vm_nvram_failure_is_fatal(self):
@@ -3685,7 +3663,7 @@ class ContainerEgressCaGateTest(unittest.TestCase):
         "write_environment_file", "stamp_selinux_labels", "enable_linger",
         "ensure_manager_slice",
     )
-    _GATED = ("setup_workload_runtime_dir", "move_egress_pki", "generate_egress_ca",
+    _GATED = ("setup_workload_runtime_dir", "generate_egress_ca",
               "write_container_ca_bundle", "provision_egress_pki_dirs")
 
     def _drive(self, network):

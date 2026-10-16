@@ -27,7 +27,7 @@ import ensure_common
 from ensure_common import (
     warn_if_stale_home, setup_home_directory, record_deployment_provenance,
     stamp_selinux_labels, write_environment_file, setup_workload_runtime_dir,
-    move_egress_pki, generate_egress_ca, provision_egress_pki_dirs,
+    generate_egress_ca, provision_egress_pki_dirs,
     write_container_ca_bundle,
 )
 from ensure_vm import (
@@ -221,7 +221,6 @@ def provision(name: str) -> int:
         # branch below this one.
         if vm_uses_inspect(config):
             try:
-                move_egress_pki(pw, name)
                 generate_egress_ca(pw, name)
             except Exception as e:
                 ensure_common.log(f"  ERROR: Failed to generate egress CA for {name}: {e}")
@@ -305,7 +304,6 @@ def provision(name: str) -> int:
                     f"runtime directory for {name}: {e}")
                 return 1
             try:
-                move_egress_pki(pw, name)
                 generate_egress_ca(pw, name)
             except Exception as e:
                 ensure_common.log(f"  ERROR: Failed to generate egress CA for {name}: {e}")

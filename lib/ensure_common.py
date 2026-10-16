@@ -41,7 +41,6 @@ from workload_lib import (
 from workload_mcs import CONTAINER_TREE_TYPE, VM_TREE_TYPE, mcs_level
 from run_files import workload_env_dir
 from moatery.egress_ca import (
-    CA_DIR_NAME, DENIAL_DIR_NAME, LEAF_DIR_NAME,
     ca_cert_path, ca_dir, denial_dir, leaf_dir, ca_key_path,
 )
 from config_parser import SOCKET_DIR
@@ -401,9 +400,6 @@ def _install_file_nofollow(src, root_dir, host_path, *,
 
 # Mounted where SELinux is enabled at all.
 SELINUXFS_ENFORCE = Path("/sys/fs/selinux/enforce")
-# workload-inspect.cil's types for the CA and its key.
-CA_TYPE = "wlinspect_ca_t"
-CA_KEY_TYPE = "wlinspect_ca_key_t"
 
 
 def _label(argv):
@@ -423,9 +419,6 @@ def stamp_selinux_labels(name, uid, is_vm):
     first; -F because a plain restorecon leaves a file alone while its
     type is a customizable one.
 
-    A CA still under state/ (move_egress_pki keeps it) takes the CA's
-    types, so the workload cannot read its key.
-
     Raises: a tree left at s0 is open to every workload's processes.
     """
     if not SELINUXFS_ENFORCE.exists():
@@ -434,14 +427,6 @@ def stamp_selinux_labels(name, uid, is_vm):
     tree_type = VM_TREE_TYPE if is_vm else CONTAINER_TREE_TYPE
     _label(["chcon", "-R", "-h", "-t", tree_type, "-l", level,
             str(workload_root_dir(name))])
-    old_ca = workload_state_dir(name) / CA_DIR_NAME
-    if old_ca.is_dir() and not old_ca.is_symlink():
-        _label(["chcon", "-R", "-h", "-t", CA_TYPE, "-l", level,
-                str(old_ca)])
-        key = ca_key_path(workload_state_dir(name))
-        if key.is_file() and not key.is_symlink():
-            _label(["chcon", "-h", "-t", CA_KEY_TYPE, "-l", level,
-                    str(key)])
     egress = workload_egress_dir(name)
     if egress.is_dir():
         _label(["restorecon", "-RF", str(egress)])
@@ -575,44 +560,6 @@ def egress_anchor(name: str) -> Path:
         raise RuntimeError(f"{anchor} is not root's directory")
     os.chmod(anchor, 0o711)
     return anchor
-
-
-def move_egress_pki(pw, name: str):
-    """Copy a CA minted under the workload's state/ into the egress tree.
-
-    The CA may be a provisioned guest's anchor, which a fresh mint would
-    invalidate. Read without following a link, since state/ is the
-    workload user's. The old copy stays, so a build that reads it there
-    still finds the same CA (stamp_selinux_labels keeps its types). The
-    caches are not copied: their leaves are minted again under the same
-    CA.
-    """
-    state_dir = workload_state_dir(name)
-    old_ca = state_dir / CA_DIR_NAME
-    if not os.path.lexists(old_ca):
-        return
-    anchor = egress_anchor(name)
-    if not os.path.lexists(ca_dir(anchor)):
-        key = _read_file_nofollow(state_dir.parent, ca_key_path(state_dir))
-        cert = _read_file_nofollow(state_dir.parent, ca_cert_path(state_dir))
-        if key is not None and cert is not None:
-            if not _provision_dir_secure(anchor, ca_dir(anchor), pw.pw_uid,
-                                         pw.pw_gid, 0o700):
-                raise RuntimeError(f"cannot provision {ca_dir(anchor)} safely")
-            for content, dst, mode in ((key, ca_key_path(anchor), 0o600),
-                                       (cert, ca_cert_path(anchor), 0o644)):
-                if not _write_file_nofollow(anchor, dst, content, pw.pw_uid,
-                                            pw.pw_gid, mode):
-                    raise RuntimeError(f"cannot write {dst} safely")
-            log(f"  Copied the egress CA to {ca_dir(anchor)}")
-    if os.path.islink(old_ca):
-        os.unlink(old_ca)
-    for dir_name in (LEAF_DIR_NAME, DENIAL_DIR_NAME):
-        path = state_dir / dir_name
-        if os.path.islink(path):
-            os.unlink(path)
-        elif os.path.lexists(path):
-            shutil.rmtree(path)
 
 
 def generate_egress_ca(pw, name: str):
