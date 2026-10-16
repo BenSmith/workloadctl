@@ -1461,7 +1461,13 @@ container domain, QEMU, passt, virtiofsd, the egress inspector, the responder
 and the clock keeper, so such a socket fails unless the host has already
 loaded the module (bluetooth on a host with an adapter, say). The host's own
 services load what they need as before. `privileged` runs as `spc_t`, which
-keeps the permission.
+keeps the permission. A workload whose software needs a module names it, and
+its setup unit loads it before any of its containers start:
+
+```toml
+[security]
+kernel_modules = ["wireguard"]
+```
 
 **A directory several workloads use is a share.** Declare it once, in
 `/etc/workloads.d/shares.toml`, and join it from each workload:

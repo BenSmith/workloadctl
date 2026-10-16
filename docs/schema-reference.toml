@@ -1676,6 +1676,22 @@ audio = true
 #
 # seccomp_netlink = []
 
+# Optional: Kernel modules the host loads before the workload starts
+# Type: list of strings (module names)
+# Default: []
+#
+# No container may make the kernel load a module, so software that needs one
+# the host has not loaded fails inside the container (wg-quick's `ip link add
+# ... type wireguard` with "Unknown device type"). The workload's setup unit
+# modprobes each named module first; one the image refuses, or that does not
+# exist, fails the setup unit and the workload does not start. Containers
+# only (a VM's guest loads its own), and only in the top-level [security].
+#
+# Example: a WireGuard tunnel
+#   kernel_modules = ["wireguard"]
+#
+# kernel_modules = []
+
 # Optional: Run 32-bit (x86, x32) code under the seccomp baseline
 # Type: bool
 # Default: false

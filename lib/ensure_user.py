@@ -42,6 +42,7 @@ from ensure_container import (
 )
 from podman_storage import ensure_transient_store
 from shares import load_shares, resolve as resolve_shares
+from kernel_modules import load_kernel_modules
 
 
 # Per-workload provisioning lock. A module constant so tests can redirect it.
@@ -280,6 +281,14 @@ def provision(name: str) -> int:
             ensure_transient_store(pw, name)
         except Exception as e:
             ensure_common.log(f"  ERROR: Failed to make {username}'s podman store transient: {e}")
+            return 1
+
+        # Its containers may not make the kernel load a module, so the host
+        # loads the ones it names, before any of them starts.
+        try:
+            load_kernel_modules(config)
+        except Exception as e:
+            ensure_common.log(f"  ERROR: Failed to load {name}'s kernel modules: {e}")
             return 1
 
         # The egress CA (P1-10, G12's container half). generate_egress_ca

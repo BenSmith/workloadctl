@@ -53,6 +53,9 @@ capabilities = ["NET_ADMIN"]
 # wg-quick configures the tunnel through generic netlink, which the
 # baseline refuses.
 seccomp_netlink = ["generic"]
+# The wireguard link: no container may make the kernel load a module,
+# so the host loads it first.
+kernel_modules = ["wireguard"]
 
 [resources]
 memory_max = "128M"

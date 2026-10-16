@@ -60,7 +60,8 @@ their mode. A share is labelled with a category of its own, which only its
 members' processes hold. `[security].selinux_policy` adds a policy scoped to
 one workload. No workload domain may make the kernel load a module, so a
 family whose module the host has not loaded is refused whatever the image's
-module list says. [SELinux Confinement](workloads.md#selinux-confinement)
+module list says; the host loads the ones a workload names in
+`[security].kernel_modules`, before it starts. [SELinux Confinement](workloads.md#selinux-confinement)
 has the details.
 
 **Where it stops:** the level is stamped by the setup unit, not registered

@@ -25,6 +25,7 @@ from container_validate import (
 )
 from vm_validate import validate_vm_config, vm_network_warnings
 from workload_seccomp import validate_seccomp
+from kernel_modules import validate_kernel_modules
 from recursive_readonly import rro_volume_errors
 from container_network_config import container_allow_entries
 from egress_policy import container_uses_resolve
@@ -164,6 +165,7 @@ def validate_workload_config(config: dict) -> list[str]:
         _reject_bad_workload_tokens(_vm_scannable(config), "", errors)
         errors.extend(validate_vm_config(config))
         errors.extend(validate_seccomp(config, kind))
+        errors.extend(validate_kernel_modules(config, kind))
         return errors
 
     # --- container validation ---
@@ -230,6 +232,7 @@ def validate_workload_config(config: dict) -> list[str]:
     # cannot answer it. See container_runs_on_host_network().
     errors.extend(validate_container_network(config.get("network", {}), config))
     errors.extend(validate_seccomp(config, kind))
+    errors.extend(validate_kernel_modules(config, kind))
     for where, volumes in _volume_lists(config):
         errors.extend(rro_volume_errors(volumes, where))
 

@@ -3476,6 +3476,37 @@ class TestProvision(unittest.TestCase):
         "setup_home_directory",
     )
 
+    def test_a_container_loads_its_kernel_modules_before_it_can_start(self):
+        """Its containers may not make the kernel load a module, so the setup
+        unit loads the ones the workload names; linger is what lets the user
+        manager start them."""
+        mocks = self._patch_common("container")
+        config = {"workload": {"name": "test"},
+                  "security": {"kernel_modules": ["wireguard"]}}
+        mocks["load_workload_config"].return_value = config
+        order = mock.Mock()
+        mocks["enable_linger"].side_effect = lambda *a: order.linger()
+        with mock.patch.object(self.mod, "load_kernel_modules",
+                               side_effect=lambda c: order.load(c)):
+            rc = self.mod.provision("test")
+        self.assertEqual(rc, 0)
+        self.assertEqual(order.mock_calls,
+                         [mock.call.load(config), mock.call.linger()])
+
+    def test_a_module_that_fails_to_load_stops_the_workload(self):
+        mocks = self._patch_common("container")
+        with mock.patch.object(self.mod, "load_kernel_modules",
+                               side_effect=RuntimeError("modprobe x failed")):
+            rc = self.mod.provision("test")
+        self.assertEqual(rc, 1)
+        mocks["enable_linger"].assert_not_called()
+
+    def test_a_vm_loads_no_kernel_modules(self):
+        self._patch_common("vm")
+        with mock.patch.object(self.mod, "load_kernel_modules") as load:
+            self.mod.provision("myvm")
+        load.assert_not_called()
+
     def test_container_must_succeed_step_failures_are_fatal(self):
         mocks = self._patch_common("container")
         for step in self.CONTAINER_MUST_SUCCEED:
