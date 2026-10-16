@@ -11,7 +11,6 @@ import os
 import stat
 import subprocess
 import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -19,19 +18,16 @@ WORKLOADS = Path(__file__).resolve().parent.parent / "workloads"
 HELPER = WORKLOADS / "wireguard-vpn" / "wg-up.sh"
 
 
-def _wireguard_bundles():
-    for toml in sorted(WORKLOADS.glob("*/workload.toml")):
-        security = tomllib.loads(toml.read_text()).get("security", {})
-        if "generic" in security.get("seccomp_netlink", []):
-            yield toml.parent
+# The bundles that bring their tunnel up through the helper. A bundle with
+# its own tunnel logic (a kill switch, a VPN toggle) is not listed.
+HELPER_BUNDLES = ("dns-vpn", "pihole-vpn", "proxy-stack", "socks5-vpn",
+                  "wireguard-vpn")
 
 
 class TestEveryBundleUsesTheHelper(unittest.TestCase):
 
     def test_each_carries_the_same_helper_and_uses_it(self):
-        bundles = list(_wireguard_bundles())
-        self.assertGreaterEqual(len(bundles), 5)
-        for bundle in bundles:
+        for bundle in (WORKLOADS / name for name in HELPER_BUNDLES):
             with self.subTest(bundle=bundle.name):
                 self.assertEqual((bundle / "wg-up.sh").read_text(),
                                  HELPER.read_text())
