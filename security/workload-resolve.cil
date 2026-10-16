@@ -161,3 +161,6 @@
 ; workload-inspect.cil for the full argument.
 (allow wlresolve_t qemu_var_run_t (dir (add_name remove_name search write)))
 (allow wlresolve_t qemu_var_run_t (file (create getattr open read rename setattr unlink write)))
+
+; No module loads, as for every workload domain (see workload-vm.cil).
+(deny wlresolve_t kernel_t (system (module_request)))

@@ -2174,6 +2174,36 @@ class HostSelinuxModuleCurrentTest(unittest.TestCase):
                                lambda s, t, c, p: t != "svirt_image_t"):
             self.assertIs(diagnose_selinux._selinux_module_enforced(str(cil)), False)
 
+    def test_a_deny_is_in_force_only_when_the_policy_refuses_it(self):
+        """A module that takes access away shows only as a refusal: on a host
+        without it the deny's permission is still granted, and that is the
+        stale case."""
+        cil = self.tmp / "m.cil"
+        cil.write_text(
+            "(allow wlvfsd_t fs_t (filesystem (getattr)))\n"
+            "(deny svirt_t kernel_t (system (module_request)))\n")
+        for grants_deny, want in ((True, False), (False, True)):
+            with mock.patch.object(
+                    diagnose_selinux, "_policy_grants",
+                    lambda s, t, c, p: grants_deny if t == "kernel_t"
+                    else True):
+                self.assertIs(
+                    diagnose_selinux._selinux_module_enforced(str(cil)), want)
+
+    def test_a_deny_on_an_attribute_is_skipped_not_failed(self):
+        """No context names an attribute, so the kernel cannot be asked about
+        container_domain; the module's other rules answer for it."""
+        cil = self.tmp / "m.cil"
+        cil.write_text(
+            "(deny container_domain kernel_t (system (module_request)))\n"
+            "(deny svirt_t kernel_t (system (module_request)))\n")
+        with mock.patch.object(
+                diagnose_selinux, "_policy_grants",
+                lambda s, t, c, p: None if s == "container_domain"
+                else False):
+            self.assertIs(diagnose_selinux._selinux_module_enforced(str(cil)),
+                          True)
+
     def test_enforced_is_unknown_when_nothing_could_be_asked(self):
         """SELinux disabled, or a policy without these classes: an untestable
         condition must not read as a pass."""

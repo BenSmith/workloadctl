@@ -598,3 +598,6 @@
 ; the whole denial. Correcting the mode of an existing directory needs nothing
 ; more.
 (allow systemd_tmpfiles_t wlinspect_log_t (dir (create)))
+
+; No module loads, as for every workload domain (see workload-vm.cil).
+(deny wlinspect_t kernel_t (system (module_request)))

@@ -92,3 +92,6 @@
 (allow wlclock_t qemu_var_run_t (sock_file (getattr write)))
 (allow wlclock_t svirt_t (unix_stream_socket (connectto)))
 (allow wlclock_t self (unix_stream_socket (connect create getattr read shutdown write)))
+
+; No module loads, as for every workload domain (see workload-vm.cil).
+(deny wlclock_t kernel_t (system (module_request)))

@@ -360,15 +360,19 @@ def _loaded_module_source(module: str) -> bytes | None:
 
 SELINUXFS = Path("/sys/fs/selinux")
 
-# (allow SRC TGT (CLASS (perm perm ...))) -- the only CIL form this asks about.
-# Anything else in the module (typetransition, typeattributeset, filecon) either
-# is not an access decision or cannot be queried through the AV interface.
+# (allow|deny SRC TGT (CLASS (perm perm ...))) -- the only CIL forms this asks
+# about. Anything else in the module (typetransition, typeattributeset,
+# filecon) either is not an access decision or cannot be queried through the AV
+# interface.
 _CIL_ALLOW = re.compile(
     r"\(allow\s+([\w.]+)\s+([\w.]+)\s+\(([\w.]+)\s+\(([^()]*)\)\)\)")
+_CIL_DENY = re.compile(
+    r"\(deny\s+([\w.]+)\s+([\w.]+)\s+\(([\w.]+)\s+\(([^()]*)\)\)\)")
 _CIL_COMMENT = re.compile(r";[^\n]*")
 
 
-def _cil_allow_rules(text: str, block_type: str | None = None):
+def _cil_allow_rules(text: str, block_type: str | None = None,
+                     pattern=_CIL_ALLOW):
     """Yield (src, tgt, class, perms) for every allow rule in CIL `text`.
 
     Comments are stripped BEFORE whitespace is collapsed, and collapsing is what
@@ -385,7 +389,7 @@ def _cil_allow_rules(text: str, block_type: str | None = None):
     """
     text = _CIL_COMMENT.sub("", text)
     text = re.sub(r"\s+", " ", text)
-    for src, tgt, cls, perms in _CIL_ALLOW.findall(text):
+    for src, tgt, cls, perms in pattern.findall(text):
         if block_type is not None:
             src = block_type if src == "process" else src
             tgt = block_type if tgt == "process" else tgt
@@ -454,7 +458,8 @@ def _policy_grants(src: str, tgt: str, cls: str, perms) -> bool | None:
 
 
 def _selinux_module_enforced(cil_path: str) -> bool | None:
-    """Whether every allow rule in the shipped CIL is granted by live policy.
+    """Whether every allow rule in the shipped CIL is granted by live policy,
+    and every deny rule refused.
 
     This is the question that matters and the byte comparison only approximates:
     "are the rules this build needs actually in force?". It catches the case the
@@ -476,15 +481,24 @@ def _selinux_module_enforced(cil_path: str) -> bool | None:
 
 
 def _rules_enforced(text: str, block_type: str | None = None) -> bool | None:
-    """Whether every queryable allow rule in `text` is granted by live policy."""
+    """Whether every queryable allow rule in `text` is granted by live policy,
+    and every queryable deny rule refused.
+
+    A deny is the only sign of a module that removes access, and a host
+    without it grants what the deny takes away. One written against an
+    attribute cannot be asked (no context names an attribute) and is
+    skipped; a module loads whole, so its other rules answer for it.
+    """
     asked = False
-    for src, tgt, cls, perms in _cil_allow_rules(text, block_type):
-        granted = _policy_grants(src, tgt, cls, perms)
-        if granted is None:
-            continue
-        asked = True
-        if not granted:
-            return False
+    for pattern, want in ((_CIL_ALLOW, True), (_CIL_DENY, False)):
+        for src, tgt, cls, perms in _cil_allow_rules(text, block_type,
+                                                     pattern):
+            granted = _policy_grants(src, tgt, cls, perms)
+            if granted is None:
+                continue
+            asked = True
+            if granted is not want:
+                return False
     return True if asked else None
 
 

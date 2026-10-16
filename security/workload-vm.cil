@@ -346,3 +346,24 @@
 ; `semodule -DB`. Anyone re-deriving this module's contents from a fresh audit
 ; harvest will miss it the same way; disable dontaudit first.
 (allow passt_t svirt_t (unix_stream_socket (read write)))
+
+; NO WORKLOAD DOMAIN ASKS THE KERNEL FOR A MODULE
+;
+; A socket() for a family or protocol the kernel has not loaded makes it run
+; modprobe for that module, and domain_kernel_load_modules (on in Fedora's
+; policy) lets every domain ask. The image refuses most such modules by name,
+; but not the ones its hosts use, bluetooth on a host with an adapter among
+; them, and when those load is the host's business, not a workload's. A deny
+; takes the permission away whatever grants it, the boolean's rule included;
+; the host's own domains (udev_t, init_t, NetworkManager_t) keep it.
+;
+; container_domain is container_t and every udica-derived workload type (see
+; workload-inspect.cil). spc_t, a privileged container's, is not in it and is
+; left alone: the host's own containers, toolbox's among them, run as spc_t.
+; QEMU here takes no vhost-net or tun, so svirt_t loses nothing it uses. The
+; inspector, the responder and the clock keeper carry the same deny in their
+; own modules, so that no module names another's types.
+(deny container_domain kernel_t (system (module_request)))
+(deny svirt_t kernel_t (system (module_request)))
+(deny passt_t kernel_t (system (module_request)))
+(deny wlvfsd_t kernel_t (system (module_request)))

@@ -1454,6 +1454,15 @@ its share's category, and a share cannot be inside a workload's tree.
 `diagnose` reports files under `data/` that are not at the level
 (`mcs_labels`).
 
+**No workload can make the kernel load a module.** A `socket()` for a family
+the kernel has not loaded asks it to load that family's module, and Fedora's
+policy lets every domain ask. workloadctl's modules deny it to every
+container domain, QEMU, passt, virtiofsd, the egress inspector, the responder
+and the clock keeper, so such a socket fails unless the host has already
+loaded the module (bluetooth on a host with an adapter, say). The host's own
+services load what they need as before. `privileged` runs as `spc_t`, which
+keeps the permission.
+
 **A directory several workloads use is a share.** Declare it once, in
 `/etc/workloads.d/shares.toml`, and join it from each workload:
 

@@ -47,7 +47,8 @@ has the lists.
 `seccomp_netlink = ["generic"]` (the WireGuard bundles) can still make the
 kernel load a module by its generic netlink family name; the image's
 module refusals are what stop that. `privileged`, and a
-`seccomp=` profile of the workload's own, replace the baseline.
+`seccomp=` profile of the workload's own, replace the baseline;
+`privileged` also runs as `spc_t`, which may still load modules.
 
 ## SELinux
 
@@ -57,8 +58,10 @@ derived from its uid. Everything under its `data/` and `state/` carries the
 same level, so another workload's process is refused those files whatever
 their mode. A share is labelled with a category of its own, which only its
 members' processes hold. `[security].selinux_policy` adds a policy scoped to
-one workload. [SELinux Confinement](workloads.md#selinux-confinement) has
-the details.
+one workload. No workload domain may make the kernel load a module, so a
+family whose module the host has not loaded is refused whatever the image's
+module list says. [SELinux Confinement](workloads.md#selinux-confinement)
+has the details.
 
 **Where it stops:** the `state/` directory itself and the egress CA beneath
 it stay at `s0`, for the host's own daemons. A volume outside the workload's
