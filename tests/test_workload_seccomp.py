@@ -320,6 +320,32 @@ class TestAPod(unittest.TestCase):
         self.assertEqual(decide(profile, "socket", AF_NETLINK, 3,
                                 NETLINK_PROTOCOLS["generic"]), ALLOW)
 
+    def test_the_profile_is_readable_whatever_the_umask(self):
+        """The workload user's podman reads the profile. Written under the
+        enabling root's umask 077 (on the proving host, 2026-10-16) it was
+        0600 root, and podman exited 125 with "opening seccomp profile
+        failed: permission denied" on every start."""
+        import os
+        config_dir, services_dir, sysusers_dir = self.dirs
+        write_config(config_dir, "vpn", """\
+            [workload]
+            name = "vpn"
+
+            [security]
+            seccomp_netlink = ["generic"]
+
+            [container]
+            image = "vpn"
+        """)
+        old = os.umask(0o077)
+        try:
+            result = run_generator(config_dir, services_dir, sysusers_dir)
+        finally:
+            os.umask(old)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        mode = (Path(services_dir) / "workload-vpn.seccomp.json").stat().st_mode
+        self.assertEqual(mode & 0o777, 0o644)
+
 
 if __name__ == "__main__":
     unittest.main()

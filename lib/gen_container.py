@@ -660,6 +660,9 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
         try:
             profile_file.write_text(render_derived_profile(
                 allowed, netlink=netlink, allow_32bit=allow_32bit))
+            # The workload user's podman reads it, so its mode is not left
+            # to the umask of whoever ran enable.
+            profile_file.chmod(0o644)
         except (OSError, ValueError) as e:
             profile_file.unlink(missing_ok=True)
             log_msg(f"  Skipping {name}: cannot render its seccomp profile "
