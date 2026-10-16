@@ -318,14 +318,14 @@ class TestTheGeneratorHandsMoateryItsFlags(unittest.TestCase):
         from workload_addr import (
             BROKER_INSTANCE_PORT, INSPECT_LISTENER_BIN, broker_listen_address,
         )
-        from workload_lib import workload_state_dir
+        from workload_lib import workload_egress_dir
         cmd = inspect_listener_command("web", 10004)
         self.assertEqual(cmd[0], INSPECT_LISTENER_BIN)
         flags = {cmd[i]: cmd[i + 1] for i in range(1, len(cmd), 2)}
         self.assertEqual(flags, {
             "--name": "web",
             "--policy": inspect_policy_path("web"),
-            "--state-dir": str(workload_state_dir("web")),
+            "--state-dir": str(workload_egress_dir("web")),
             "--status": inspect_status_path("web"),
             "--record": str(inspect_record_path("web")),
             "--broker":
@@ -428,7 +428,7 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
 
     def _argv(self):
         """generate_egress_ca against a mint double that writes moatery's
-        two files where it is told: the argv it ran, and the state dir."""
+        two files where it is told: the argv it ran, and the egress dir."""
         import ensure_common
         from moatery.egress_ca import ca_cert_path, ca_key_path
         root = Path(tempfile.mkdtemp())
@@ -446,7 +446,7 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
             ca_cert_path(minted).write_text("CERT")
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with mock.patch.object(ensure_common, "workload_state_dir",
+        with mock.patch.object(ensure_common, "egress_anchor",
                                return_value=state), \
                 mock.patch.object(ensure_common.os, "chown"), \
                 mock.patch.object(ensure_common.subprocess, "run", fake_run):
@@ -464,9 +464,9 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
         flags = {argv[i]: argv[i + 1] for i in range(1, len(argv), 2)}
         self.assertEqual(set(flags), {"--name", "--state-dir"})
         self.assertEqual(flags["--name"], "web")
-        # Minted in a root-only directory in the workload root, not in the
-        # workload user's state/ (audit F34).
-        self.assertEqual(Path(flags["--state-dir"]).parent, state.parent)
+        # Minted in a root-only directory beside ca/, not in the workload
+        # user's ca/ (audit F34).
+        self.assertEqual(Path(flags["--state-dir"]).parent, state)
 
     def test_the_ca_the_mint_writes_is_where_the_inspector_reads(self):
         """The CA the mint writes is the one the inspector signs with: it
@@ -474,7 +474,7 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
         from gen_egress import inspect_listener_command
         from moatery.egress_ca import ca_cert_path, ca_key_path
         argv, state = self._argv()
-        with mock.patch("gen_egress.workload_state_dir", return_value=state):
+        with mock.patch("gen_egress.workload_egress_dir", return_value=state):
             cmd = inspect_listener_command("web", 10004)
         inspector_state = cmd[cmd.index("--state-dir") + 1]
         self.assertEqual(inspector_state, str(state))

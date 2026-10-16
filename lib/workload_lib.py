@@ -406,6 +406,17 @@ def workload_home_dir(name: str) -> Path:
     return workload_state_dir(name)
 
 
+# The egress inspectors' CAs and leaf caches, one directory per workload. Not
+# under the workload root: the policy module types this tree, and a VM's
+# root carries one type throughout (workload_selinux.apply_vm_fcontext).
+EGRESS_PKI_BASE = Path("/var/lib/workloadctl/egress")
+
+
+def workload_egress_dir(name: str) -> Path:
+    """The inspector's --state-dir: its CA, leaf cache and denial cache."""
+    return EGRESS_PKI_BASE / name
+
+
 # Per-container keys that may appear at *either* nesting depth in a
 # [[containers]] entry:
 #   [containers.container.environment] / [containers.container.health]   (nested)

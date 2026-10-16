@@ -294,9 +294,9 @@ def inspect_status_path(name: str) -> str:
 # by `systemd-journal` and `adm`, which is the wrong ACL on a host where sudo
 # does not stay passwordless.
 #
-# NOT THE WORKLOAD TREE either. state/ is svirt_image_t, the label
-# pki_fcontext_patterns() exists to move material OUT of -- an audit record
-# does not belong in the same tree as the guest's disks. data/ is worse: `./`
+# NOT THE WORKLOAD TREE either. A VM's is svirt_image_t throughout, the
+# guest's disks' type -- an audit record does not belong in the same tree
+# as the guest's disks. data/ is worse: `./`
 # volume anchors resolve into it, so a guest with a virtiofs volume at the data
 # root would read its own audit log.
 #

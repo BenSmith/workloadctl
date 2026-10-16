@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """A workload's SELinux level: two MCS categories of its own.
 
-Every container and VM of a workload runs at this level, and the contents
-of its data/ and state/ carry it, so a process of another workload is
-refused them by SELinux whatever their modes say (audit F3). Derived from
-the workload uid, like the per-workload addresses, so it survives a
-recreate and no two workloads share it.
-
-The directory state/ itself stays at s0: the host's own confined daemons,
-the egress inspector among them, traverse it to reach the PKI subtree,
-whose files keep their s0 rules.
+Every container and VM of a workload runs at this level, and its whole
+tree and egress PKI carry it, so a process of another workload is refused
+them by SELinux whatever their modes say (audit F3). Derived from the
+workload uid, like the per-workload addresses, so it survives a recreate
+and no two workloads share it. Nothing registers it as a rule: the setup
+unit stamps it at each boot (ensure_common.stamp_selinux_labels).
 
 Installed to /usr/libexec/workloadctl/workload_mcs.py.
 """
@@ -24,6 +21,11 @@ CATEGORIES = 1024
 # process would hold some other workload's whole pair as well. C(300, 2) pairs
 # cover every uid in the workload range.
 WORKLOAD_CATEGORIES = 300
+
+# The type a workload's tree carries throughout: what rootless podman uses,
+# or what a confined QEMU can open its disks with.
+CONTAINER_TREE_TYPE = "container_file_t"
+VM_TREE_TYPE = "svirt_image_t"
 
 
 def mcs_categories(uid: int) -> tuple[int, int]:

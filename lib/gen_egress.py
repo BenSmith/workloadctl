@@ -21,7 +21,7 @@ Installed to /usr/libexec/workloadctl/gen_egress.py.
 """
 
 
-from workload_lib import workload_state_dir, dq, uq
+from workload_lib import workload_egress_dir, dq, uq
 from run_files import GENERATED_BY
 from moatery.egress_plane import PLANES
 from egress_policy import (
@@ -271,7 +271,7 @@ def inspect_listener_command(name: str, uid: int) -> list:
         INSPECT_LISTENER_BIN,
         "--name", name,
         "--policy", inspect_policy_path(name),
-        "--state-dir", str(workload_state_dir(name)),
+        "--state-dir", str(workload_egress_dir(name)),
         "--status", inspect_status_path(name),
         "--record", str(inspect_record_path(name)),
         "--broker", f"{broker_listen_address(uid)}:{BROKER_INSTANCE_PORT}",
@@ -402,8 +402,8 @@ def generate_inspect_service(config, user_name: str, uid: int) -> str:
     harden_sidecar(svc, name,
                    families="AF_INET AF_INET6 AF_UNIX AF_NETLINK",
                    tasks_max=192, memory_max="512M",
-                   extra_rw=(leaf_dir(workload_state_dir(name)),
-                             denial_dir(workload_state_dir(name))))
+                   extra_rw=(leaf_dir(workload_egress_dir(name)),
+                             denial_dir(workload_egress_dir(name))))
     svc.blank()
     svc.add("StandardOutput", "journal")
     svc.add("StandardError", "journal")

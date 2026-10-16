@@ -24,7 +24,8 @@ import tomllib
 import deployment
 from config_parser import WORKLOADS_BASE
 from workload_lib import (
-    iter_workloads, selinux_module_name, USERNAME_PREFIX, workload_username,
+    iter_workloads, selinux_module_name, USERNAME_PREFIX, workload_egress_dir,
+    workload_username,
 )
 from workload_uid import remove_subid_entries, subid_files_with_entries
 from workloadctl_core import WorkloadManager, require_root
@@ -253,6 +254,8 @@ def cmd_cleanup(args, manager: WorkloadManager):
         if not args.json:
             print(f"Removing directory {d}...")
         shutil.rmtree(d, ignore_errors=True)
+        # Its egress CA, which lives outside the workload root.
+        shutil.rmtree(workload_egress_dir(d.name), ignore_errors=True)
         removed_dirs.append(str(d))
         if not args.json:
             print(f"  ✓ Removed {d}")

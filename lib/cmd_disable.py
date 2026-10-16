@@ -17,7 +17,7 @@ import time
 
 from cli_log import emit_result, error, info, json_enabled
 from config_parser import workload_root_dir
-from workload_lib import workload_enabled_marker
+from workload_lib import workload_egress_dir, workload_enabled_marker
 from run_files import workload_run_files
 from substrate import get_substrate
 from egress_policy import inspect_record_dir
@@ -30,7 +30,7 @@ from workloadctl_core import (
 from host_setup import run_host_setup
 from shares_setup import apply_shares
 from workload_selinux import (
-    apply_level_fcontext, apply_selinux_policy, apply_vm_fcontext,
+    apply_selinux_policy, apply_vm_fcontext,
 )
 
 
@@ -139,6 +139,9 @@ def _disable_plan(config: WorkloadConfig, manager: WorkloadManager, purge: bool)
         workload_dir = workload_root_dir(config.name)
         if workload_dir.exists():
             lines.append(f"DESTROY data directory: {workload_dir} ({_dir_size(workload_dir)})")
+        egress_dir = workload_egress_dir(config.name)
+        if egress_dir.exists():
+            lines.append(f"remove egress CA and caches: {egress_dir}")
     else:
         if user_present:
             lines.append(f"stop lingering user manager for {config.username}")
@@ -232,14 +235,11 @@ def cmd_disable(args, manager: WorkloadManager):
     # an unambiguous teardown — nothing else depends on wl_<name>).
     attempt("remove SELinux module", lambda: apply_selinux_policy(config, "disable"))
 
-    # Unregister this workload's fcontext rules (svirt_image_t tree and/or PKI
-    # subtree). Independent of the module above: different tool, different
-    # file in the store, different gate (is_vm/uses_inspect() vs
-    # [security].selinux_policy).
+    # Unregister this workload's fcontext rules. Independent of the module
+    # above: different tool, different file in the store, different gate
+    # (is_vm vs [security].selinux_policy).
     attempt("remove SELinux fcontext rule",
             lambda: apply_vm_fcontext(config, "disable"))
-    attempt("remove SELinux level rules",
-            lambda: apply_level_fcontext(config, "disable"))
     attempt("retire share membership",
             lambda: apply_shares(config, "disable"))
 
@@ -340,6 +340,16 @@ def cmd_disable(args, manager: WorkloadManager):
             except OSError as e:
                 failures.append(f"remove {workload_dir}: {e} "
                                 "(data may still be present — remove manually before re-enabling)")
+
+        # The egress CA lives outside the workload root. A re-enable mints a
+        # new one; this one's key must not outlive the workload.
+        egress_dir = workload_egress_dir(config.name)
+        if egress_dir.exists():
+            try:
+                info(f"  Removing egress PKI {egress_dir}...")
+                shutil.rmtree(egress_dir)
+            except OSError as e:
+                failures.append(f"remove {egress_dir}: {e}")
 
         # The per-request egress record, which lives under /var/log and not
         # under the workload root above, so the rmtree does not reach it.

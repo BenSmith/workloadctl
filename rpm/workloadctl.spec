@@ -306,10 +306,10 @@ systemd-tmpfiles --create workloads-dirs.conf 2>/dev/null || :
 # scrolled out of the journal by the time anyone connected the two.
 #
 #   1. The blanket rule for the workload tree: rootless podman needs
-#      container_file_t. Per-workload VM overrides (svirt_image_t) are
-#      registered at enable and win their own subtree by specificity; both live
-#      in file_contexts.local, which is required, because .local outranks the
-#      base file wholesale and most-specific-wins applies only within one source.
+#      container_file_t. Per-workload VM rules (svirt_image_t) are registered
+#      at enable, after this one, and within file_contexts.local the rule added
+#      last applies; re-registering this one modifies it in place. Both live in
+#      file_contexts.local, which outranks the base file wholesale.
 #   2. The VM runtime socket dir: a confined QEMU cannot create a socket under
 #      var_run_t, and fails to start rather than degrading. svirt_var_run_t
 #      carries the full sock_file permission set; virt_var_run_t (what libvirt

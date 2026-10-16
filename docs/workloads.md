@@ -1440,15 +1440,19 @@ you with a share that mounts empty.
 
 **Every workload runs at an MCS level of its own**, two categories derived
 from its uid (`s0:cA,cB`): its containers (on the pod, in pod mode), its QEMU
-and its virtiofsd sidecars. Everything under its `data/` and `state/` carries
-the same level, from per-workload fcontext rules `workloadctl enable` and
-`recreate` register, so another workload's process is refused those files by
-SELinux whatever their mode; a file a container creates takes its directory's
-level, so new files carry it too. The `state/` directory itself, and the
-egress inspector's CA under it, stay at `s0`, for the host's own daemons. A volume outside the tree keeps its own label: a share two workloads
-read, such as a downloads directory, stays at `s0`, reachable by both.
+and its virtiofsd sidecars. Its whole tree under `/var/lib/workloads/<name>`,
+and its egress inspector's CA and caches under
+`/var/lib/workloadctl/egress/<name>`, carry the same level, so another
+workload's process is refused those files by SELinux whatever their mode; a
+file a container creates takes its directory's level, so new files carry it
+too. The level is stamped by the workload's setup unit at each boot, not
+registered as a rule, so a relabel puts the files back at `s0` until the next
+boot or `workloadctl recreate <name>`; the setup unit fails, and the workload
+does not start, if it cannot stamp them. A volume outside the tree keeps its
+own label: a share two workloads read, such as a downloads directory, keeps
+its share's category, and a share cannot be inside a workload's tree.
 `diagnose` reports files under `data/` that are not at the level
-(`mcs_labels`); `workloadctl recreate <name>` registers the rules and relabels.
+(`mcs_labels`).
 
 **A directory several workloads use is a share.** Declare it once, in
 `/etc/workloads.d/shares.toml`, and join it from each workload:

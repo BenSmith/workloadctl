@@ -911,18 +911,20 @@ means deleting that entry, because a host in both keys is a `validate` error.
 
 **When the inspector says the CA "is not there" and it plainly is.** The
 listener refuses to start under `tls = "inspect"` without
-`/var/lib/workloads/<name>/state/ca/egress-ca.crt`, and the message names the
+`/var/lib/workloadctl/egress/<name>/ca/egress-ca.crt`, and the message names the
 path. If that file exists and is readable by `_wl-<name>`, the problem is not
 the file: `Path.exists()` cannot tell a denied traversal from a missing file, so
 an SELinux label or a sandbox mount failure reads as absence. Check
 `ausearch -m avc -ts recent` for `wlinspect_t`, and that the three PKI
-directories carry their own types:
+directories carry their own types, at the workload's level:
 
 ```bash
-sudo ls -Zd /var/lib/workloads/<name>/state/{ca,leaves,leaves-denied}
+sudo ls -Zd /var/lib/workloadctl/egress/<name>/{ca,leaves,leaves-denied}
 # ca -> wlinspect_ca_t, both caches -> wlinspect_leaf_t
-sudo semanage fcontext -l | grep '<name>/state'
 ```
+
+The policy module types them, and the setup unit stamps the level at each
+boot; `sudo systemctl restart workload-<name>-setup.service` restamps them.
 
 An RPM reinstall drops the `semanage` rules (the same failure mode as the QMP
 socket's), and `restorecon -RF` on the workload tree puts them back once the

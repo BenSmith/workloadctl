@@ -19,7 +19,7 @@ from workloadctl_core import WorkloadConfig, WorkloadManager, require_root
 from substrate import get_substrate, service_active
 from provisioning import regenerate_units, transfer_image
 from shares_setup import apply_shares
-from workload_selinux import apply_level_fcontext, apply_vm_fcontext
+from workload_selinux import apply_vm_fcontext
 
 
 # ---------------------------------------------------------------------------
@@ -126,25 +126,10 @@ def cmd_recreate(args, manager: WorkloadManager):
         ["systemctl", "reset-failed", config.service_name],
         check=False, capture_output=True,
     )
-    # RE-REGISTER THE FCONTEXT RULES FIRST, because the setup unit restarted
-    # below ends with a `restorecon` and a restorecon can only relabel a file
-    # to a type some rule names. apply_vm_fcontext is gated on `is_vm` or
-    # `container_uses_inspect()`, so a workload that GAINED an egress trigger
-    # had no PKI patterns registered at its enable and gets none from a
-    # regeneration -- `recreate` never called this at all.
-    #
-    # The consequence is the same silent one P1-10 shipped and fixed at enable:
-    # /var/lib/workloads/<name>/state/ca stays on the blanket container_file_t,
-    # wlinspect_t has read on wlinspect_ca_t/wlinspect_leaf_t and never on that
-    # type, and the listener's own existence check on its CA reads back False
-    # because EACCES is indistinguishable from ENOENT. It then exits with
-    # "tls = 'inspect' terminates, which needs this workload's egress CA, and
-    # <path> is not there" about a file that is right there, mode 0644, owned
-    # by the very user it runs as. Without it, rung 3 is unreachable by
-    # `recreate` on a container under enforcing.
+    # The fcontext rule first: a workload that became a VM, or stopped being
+    # one, has its rule added or removed before the setup unit restarted
+    # below stamps its tree.
     apply_vm_fcontext(config, "enable")
-    # And the level rules: an enable from before them, or a moved uid.
-    apply_level_fcontext(config, "enable")
     apply_shares(config, "enable")
 
     # RE-RUN THE SETUP UNIT, or a workload that GAINED something /var-side is

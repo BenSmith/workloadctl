@@ -1,7 +1,7 @@
 """Per-workload user provisioning that does not know which substrate it serves.
 
 The half of `libexec/workload-ensure-user` that runs for every workload: the
-home directory, the environment file, the SELinux relabel, the provenance
+home directory, the environment file, the SELinux labels, the provenance
 record. A function belongs here when it cannot tell a VM from a container --
 not when it merely happens to be called from both branches today.
 
@@ -34,9 +34,14 @@ from pathlib import Path
 
 import deployment
 from config_parser import workload_root_dir
-from workload_lib import workload_state_dir, workload_data_dir
+from workload_lib import (
+    EGRESS_PKI_BASE, workload_data_dir, workload_egress_dir,
+    workload_state_dir,
+)
+from workload_mcs import CONTAINER_TREE_TYPE, VM_TREE_TYPE, mcs_level
 from run_files import workload_env_dir
 from moatery.egress_ca import (
+    CA_DIR_NAME, DENIAL_DIR_NAME, LEAF_DIR_NAME,
     ca_cert_path, ca_dir, denial_dir, leaf_dir, ca_key_path,
 )
 from config_parser import SOCKET_DIR
@@ -394,27 +399,39 @@ def _install_file_nofollow(src, root_dir, host_path, *,
         os.close(dir_fd)
 
 
-def restore_selinux_labels(name):
-    """Restore SELinux labels on the workload's whole tree (state/ + data/).
+# Mounted where SELinux is enabled at all.
+SELINUXFS_ENFORCE = Path("/sys/fs/selinux/enforce")
 
-    Relabels the canonical workload root, not the passwd home: for a correct
-    user the passwd home is state/ (which would miss data/), and for a stale
-    user it's the root — anchoring on workload_root_dir covers both subtrees.
-    """
-    target = str(workload_root_dir(name))
-    # -F is REQUIRED, not belt-and-braces. Both container_file_t and
-    # svirt_image_t are listed in contexts/customizable_types, and plain
-    # restorecon SKIPS any file whose *current* type is customizable — it
-    # prints "not reset as customized by admin", visible only under -v, and
-    # exits 0. Without -F a VM workload's tree would silently never migrate
-    # from the blanket container_file_t to svirt_image_t, and the failure would
-    # surface much later as a confined QEMU unable to read its own disk.
-    result = subprocess.run(
-        ["restorecon", "-RF", target],
-        capture_output=True, text=True
-    )
+
+def _label(argv):
+    result = subprocess.run(argv, capture_output=True, text=True)
     if result.returncode != 0:
-        log(f"  WARNING: restorecon failed for {target}: {result.stderr}")
+        raise RuntimeError(f"{' '.join(argv)}: {result.stderr.strip()}")
+
+
+def stamp_selinux_labels(name, uid, is_vm):
+    """Give the workload's tree and its egress PKI the workload's level.
+
+    The rules give both trees their types at s0, and a relabel puts them
+    back there; nothing registers the level (workload_mcs), so it is
+    stamped here at every setup. The workload root takes one type
+    throughout, set with the level in one pass, so no file is at s0
+    between the two. The PKI has three types, which restorecon sets
+    first; -F because a plain restorecon leaves a file alone while its
+    type is a customizable one.
+
+    Raises: a tree left at s0 is open to every workload's processes.
+    """
+    if not SELINUXFS_ENFORCE.exists():
+        return
+    level = mcs_level(uid)
+    tree_type = VM_TREE_TYPE if is_vm else CONTAINER_TREE_TYPE
+    _label(["chcon", "-R", "-h", "-t", tree_type, "-l", level,
+            str(workload_root_dir(name))])
+    egress = workload_egress_dir(name)
+    if egress.is_dir():
+        _label(["restorecon", "-RF", str(egress)])
+        _label(["chcon", "-R", "-h", "-l", level, str(egress)])
 
 
 def _detect_host_ip():
@@ -530,6 +547,56 @@ def _mint_ca_into(name: str, state_dir: Path) -> None:
             f"{said or f'no output, exit {result.returncode}'}")
 
 
+def egress_anchor(name: str) -> Path:
+    """The workload's directory in the egress PKI tree: root's, 0711 so
+    the inspector, as the workload user, reaches its caches through it."""
+    EGRESS_PKI_BASE.mkdir(mode=0o711, parents=True, exist_ok=True)
+    anchor = workload_egress_dir(name)
+    try:
+        anchor.mkdir(mode=0o711)
+    except FileExistsError:
+        pass
+    st = os.lstat(anchor)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0:
+        raise RuntimeError(f"{anchor} is not root's directory")
+    os.chmod(anchor, 0o711)
+    return anchor
+
+
+def move_egress_pki(pw, name: str):
+    """Move a CA minted under the workload's state/ into the egress tree.
+
+    The CA may be a provisioned guest's anchor, which a fresh mint would
+    invalidate. Read without following a link, since state/ is the
+    workload user's. The caches are not moved: their leaves are minted
+    again under the same CA.
+    """
+    state_dir = workload_state_dir(name)
+    old_ca = state_dir / CA_DIR_NAME
+    if not os.path.lexists(old_ca):
+        return
+    anchor = egress_anchor(name)
+    if not os.path.lexists(ca_dir(anchor)):
+        key = _read_file_nofollow(state_dir.parent, ca_key_path(state_dir))
+        cert = _read_file_nofollow(state_dir.parent, ca_cert_path(state_dir))
+        if key is not None and cert is not None:
+            if not _provision_dir_secure(anchor, ca_dir(anchor), pw.pw_uid,
+                                         pw.pw_gid, 0o700):
+                raise RuntimeError(f"cannot provision {ca_dir(anchor)} safely")
+            for content, dst, mode in ((key, ca_key_path(anchor), 0o600),
+                                       (cert, ca_cert_path(anchor), 0o644)):
+                if not _write_file_nofollow(anchor, dst, content, pw.pw_uid,
+                                            pw.pw_gid, mode):
+                    raise RuntimeError(f"cannot write {dst} safely")
+            log(f"  Moved the egress CA to {ca_dir(anchor)}")
+    for dir_name in (CA_DIR_NAME, LEAF_DIR_NAME, DENIAL_DIR_NAME):
+        path = state_dir / dir_name
+        if os.path.islink(path):
+            os.unlink(path)
+        elif os.path.lexists(path):
+            shutil.rmtree(path)
+
+
 def generate_egress_ca(pw, name: str):
     """Mint this workload's egress CA if absent, or raise with the mint's words.
 
@@ -551,18 +618,16 @@ def generate_egress_ca(pw, name: str):
     incident the hatch exists for.
 
     When it DOES mint, it clears the leaf caches -- see the comment at the end.
-    provision_egress_pki_dirs recreates and relabels them a moment later, which is
-    why removing them here is safe.
+    provision_egress_pki_dirs recreates them a moment later, which is why
+    removing them here is safe.
     """
-    state_dir = workload_state_dir(name)
-    # The workload user owns state/ and state/ca, so any name there may be a
-    # link it planted. The CA is minted in a root-only directory in the
-    # workload root (state/'s parent, root's) and copied in without
-    # following one.
-    anchor = state_dir.parent
-    dir_path = ca_dir(state_dir)
-    key_path = ca_key_path(state_dir)
-    cert_path = ca_cert_path(state_dir)
+    # The workload user owns ca/, so any name there may be a link it
+    # planted. The CA is minted in a root-only directory beside it and
+    # copied in without following one.
+    anchor = egress_anchor(name)
+    dir_path = ca_dir(anchor)
+    key_path = ca_key_path(anchor)
+    cert_path = ca_cert_path(anchor)
 
     present = [p for p in (key_path, cert_path) if os.path.lexists(p)]
     if len(present) == 2:
@@ -596,14 +661,13 @@ def generate_egress_ca(pw, name: str):
     # A NEW CA MAKES EVERY CACHED LEAF A FORGERY, so the caches go with it.
     # This runs only on the branch that actually minted -- the guard above
     # returns before it for the ordinary case -- and the case it exists for is
-    # an operator recovering a lost or damaged CA by deleting state/ca. The
+    # an operator recovering a lost or damaged CA by deleting its ca/. The
     # leaves are files with a 30-day life, LeafCache adopts any PEM it finds at
     # the hashed path without asking who signed it, and the guest by then
     # trusts only the replacement. The result is a guest that fails handshakes
     # on exactly its established hosts, told by the listener's own log line to
     # re-seed -- which is both the wrong remedy and already done.
-    for cache_dir in (leaf_dir(workload_state_dir(name)),
-                      denial_dir(workload_state_dir(name))):
+    for cache_dir in (leaf_dir(anchor), denial_dir(anchor)):
         shutil.rmtree(cache_dir, ignore_errors=True)
 
     log(f"  Generated egress CA: {cert_path}")
@@ -613,49 +677,26 @@ def write_container_ca_bundle(pw, name: str):
     """Write the bundle a container mounts, from this host's roots now.
 
     On every start, so a host's root update reaches the container at its
-    next one. Beside the CA, so provision_egress_pki_dirs labels it with
-    the CA's type, which the containers may read.
+    next one. Beside the CA, so it has the CA's type, which the containers
+    may read.
     """
-    state_dir = workload_state_dir(name)
-    content = host_trust_bundle(ca_cert_path(state_dir).read_bytes())
-    if not _write_file_nofollow(state_dir.parent,
-                                container_ca_bundle_path(state_dir), content,
-                                pw.pw_uid, pw.pw_gid, 0o644):
+    anchor = egress_anchor(name)
+    content = host_trust_bundle(ca_cert_path(anchor).read_bytes())
+    if not _write_file_nofollow(anchor, container_ca_bundle_path(anchor),
+                                content, pw.pw_uid, pw.pw_gid, 0o644):
         raise RuntimeError(f"cannot write the CA bundle for {name} safely")
 
 
 def provision_egress_pki_dirs(pw, name: str):
-    """Create the leaf caches beside the CA, then label the whole PKI subtree.
+    """Create the leaf caches beside the CA.
 
-    Two jobs that have to happen in this order and in this process.
-
-    The directories exist here rather than being left to the minter's own
-    mkdir because of the labelling below: a directory the inspector creates
-    for itself inherits its parent's type (svirt_image_t, the workload tree
-    rule), and the inspector has no `relabelto` on anything, so it would
-    create a directory it then cannot use. Creating them as root and relabelling
-    once is the only ordering where the inspector never has to.
-
-    And the relabel is needed at all because `restorecon` is userspace:
-    file_contexts.local decides what a path SHOULD be labelled, while the
-    kernel labels a newly created directory from its parent. The fcontext rules
-    are registered at enable, before this runs, so nothing has applied them to
-    a subtree that did not exist yet.
-
-    Best-effort: a host without restorecon, or with SELinux disabled, gets an
-    unlabelled subtree and an inspector that fails loudly at startup, which is
-    a better failure than refusing to provision the VM at all.
+    Here rather than left to the minter's own mkdir: a directory the
+    inspector made would take its parent's type, and the inspector has no
+    `relabelto`. stamp_selinux_labels types them, later in the same setup
+    and before the inspector starts.
     """
-    state_dir = workload_state_dir(name)
-    for directory in (ca_dir(state_dir), leaf_dir(state_dir),
-                      denial_dir(state_dir)):
-        # state/ is the workload user's: the walk refuses a link on the way.
-        if not _provision_dir_secure(state_dir.parent, directory,
+    anchor = egress_anchor(name)
+    for directory in (ca_dir(anchor), leaf_dir(anchor), denial_dir(anchor)):
+        if not _provision_dir_secure(anchor, directory,
                                      pw.pw_uid, pw.pw_gid, 0o700):
             raise RuntimeError(f"cannot provision {directory} safely")
-        if shutil.which("restorecon"):
-            # -F for the same reason apply_vm_fcontext needs it: svirt_image_t
-            # is in contexts/customizable_types, so a plain restorecon skips
-            # every directory currently carrying it and exits 0.
-            subprocess.run(["restorecon", "-RF", str(directory)],
-                           check=False, capture_output=True)

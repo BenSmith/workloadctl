@@ -28,7 +28,7 @@ from pathlib import Path, PurePosixPath
 from config_parser import parse_volume_spec, workload_root_dir
 from workload_lib import (
     WORKLOAD_CONFIG_DIR, expand_volume_path, virtiofs_tags,
-    workload_state_dir,
+    workload_egress_dir, workload_state_dir,
 )
 from egress_policy import vm_uses_inspect
 from workload_addr import UID_MAX, UID_MIN, inspect_address
@@ -123,7 +123,7 @@ def _read_vm_egress_ca(name: str) -> str:
     gets a CA, and generate_egress_ca only runs for filtered ones.
     """
     try:
-        return ca_cert_path(workload_state_dir(name)).read_text()
+        return ca_cert_path(workload_egress_dir(name)).read_text()
     except OSError:
         return ""
 

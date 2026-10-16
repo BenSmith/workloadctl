@@ -1532,14 +1532,8 @@ class TestSelinuxHelpers(unittest.TestCase):
 # ── apply_vm_fcontext ───────────────────────────────────────────────────────
 
 class TestApplyVmFcontext(unittest.TestCase):
-    """The per-workload svirt_image_t (VM) and PKI-subtree fcontext rules.
-
-    Gated on is_vm OR container_uses_inspect(), NOT on
-    [security].selinux_policy. Labelling is a precondition for a confined VM
-    or an inspecting container's own inspector starting at all, not optional
-    hardening, and that flag is opt-in — a workload that omitted it would fail
-    to start with an EPERM that looks like nothing is wrong.
-    """
+    """The per-workload svirt_image_t rule, against real configs: a VM's one
+    rule, a container's none (Rules in test_workload_mcs has the rest)."""
 
     def _run_calls(self, toml, name, action, listing=""):
         calls = []
@@ -1556,143 +1550,29 @@ class TestApplyVmFcontext(unittest.TestCase):
                         workload_selinux.apply_vm_fcontext(cfg, action)
         return calls
 
-    def test_container_workload_is_untouched(self):
-        # A plain container has no PKI subtree and no disk to relabel; it must
-        # keep matching the blanket container_file_t rule.
-        self.assertEqual(
-            self._run_calls(_CONTAINER_TOML, 'test-wl', "enable"), [])
-
-    def test_inspected_container_registers_the_pki_subtree_only(self):
-        # P1-10 wired the CA/leaf directories and their restorecon into a
-        # container's own ensure-user branch, but restorecon can only apply a
-        # label already registered via semanage -- without this, an inspecting
-        # container's CA silently stayed container_file_t, wlinspect_t had no
-        # read on it, and EACCES read back through os.path.exists() exactly
-        # like the file being missing.
-        calls = self._run_calls(
-            _CONTAINER_INSPECT_TOML, 'test-wl', "enable")
-        adds = [c for c in calls if "-a" in c]
-        by_pattern = {c[-1]: c[c.index("-t") + 1] for c in adds}
-        self.assertEqual(
-            by_pattern.get("/var/lib/workloads/test-wl/state/ca(/.*)?"),
-            "wlinspect_ca_t")
-        self.assertEqual(
-            by_pattern.get(
-                r"/var/lib/workloads/test-wl/state/ca/egress-ca\.key"),
-            "wlinspect_ca_key_t")
-        for cache in ("leaves", "leaves-denied"):
-            self.assertEqual(
-                by_pattern.get(
-                    f"/var/lib/workloads/test-wl/state/{cache}(/.*)?"),
-                "wlinspect_leaf_t")
-        # No tree-wide rule: a container keeps the blanket container_file_t
-        # everywhere but its PKI subtree.
-        self.assertNotIn("svirt_image_t", [c[c.index("-t") + 1] for c in adds])
-
-    def test_inspected_container_disable_unregisters_pki_only(self):
-        calls = self._run_calls(
-            _CONTAINER_INSPECT_TOML, 'test-wl', "disable")
-        self.assertEqual(len(calls), 4)
-        self.assertTrue(all("-d" in c for c in calls), calls)
-        self.assertEqual(
-            {c[-1] for c in calls},
-            {"/var/lib/workloads/test-wl/state/ca(/.*)?",
-             r"/var/lib/workloads/test-wl/state/ca/egress-ca\.key",
-             "/var/lib/workloads/test-wl/state/leaves(/.*)?",
-             "/var/lib/workloads/test-wl/state/leaves-denied(/.*)?"})
+    def test_a_container_registers_nothing(self):
+        calls = self._run_calls(_CONTAINER_TOML, 'test-wl', "enable")
+        self.assertEqual([c for c in calls if "-a" in c], [])
 
     def test_enable_registers_svirt_image_t_for_the_subtree(self):
         calls = self._run_calls(_VM_TOML, 'test-vm', "enable")
         adds = [c for c in calls if "-a" in c]
-        tree = [c for c in adds if "svirt_image_t" in c]
-        self.assertEqual(len(tree), 1)
-        self.assertIn("/var/lib/workloads/test-vm(/.*)?", tree[0])
-
-    def test_enable_registers_the_pki_subtree_with_its_own_labels(self):
-        """The CA and the two leaf caches are labelled apart from the tree.
-
-        wlinspect_t is a separate domain from svirt_t so the component
-        terminating guest input cannot reach the guest's disks. Rung 3 gives it
-        a key to read and a cache to write, both under the state directory —
-        so the material gets labels of its own and the domain is granted those.
-        Granting it svirt_image_t instead is one rule shorter and hands the
-        inspector the disks.
-        """
-        calls = self._run_calls(_VM_TOML, 'test-vm', "enable")
-        adds = [c for c in calls if "-a" in c]
-        by_pattern = {c[-1]: c[c.index("-t") + 1] for c in adds}
-        self.assertEqual(
-            by_pattern.get("/var/lib/workloads/test-vm/state/ca(/.*)?"),
-            "wlinspect_ca_t")
-        # Read-only CA, read-write leaves: two types, because an inspector that
-        # could rewrite the CA could replace the anchor the guest was seeded
-        # with, and no restart recovers that.
-        for cache in ("leaves", "leaves-denied"):
-            self.assertEqual(
-                by_pattern.get(
-                    f"/var/lib/workloads/test-vm/state/{cache}(/.*)?"),
-                "wlinspect_leaf_t")
-
-    def test_a_host_with_only_the_tree_rule_still_gets_the_pki_rules(self):
-        """The upgrade case, and the reason each rule is checked on its own.
-
-        A host provisioned before rung 3 has the tree rule registered and the
-        four PKI rules not at all. A registration that returns early on the
-        first pattern already present never registers them — on exactly the
-        hosts that need it.
-        """
-        listing = ("/var/lib/workloads/test-vm(/.*)?  "
-                   "system_u:object_r:svirt_image_t:s0\n")
-        calls = self._run_calls(_VM_TOML, 'test-vm', "enable", listing=listing)
-        adds = [c for c in calls if "-a" in c]
-        self.assertEqual(len(adds), 4)
-        self.assertTrue(all("state/" in c[-1] for c in adds), adds)
-
-    def test_enable_relabels_with_dash_f(self):
-        # Both container_file_t and svirt_image_t are customizable types, so a
-        # plain restorecon -R skips them and exits 0 — the migration would
-        # silently never happen.
-        calls = self._run_calls(_VM_TOML, 'test-vm', "enable")
-        relabels = [c for c in calls if c and c[0] == "restorecon"]
-        self.assertEqual(len(relabels), 1)
-        self.assertIn("-RF", relabels[0])
+        self.assertEqual(len(adds), 1)
+        self.assertIn("svirt_image_t", adds[0])
+        self.assertIn("/var/lib/workloads/test-vm(/.*)?", adds[0])
 
     def test_enable_is_idempotent_when_already_registered(self):
-        listing = "".join(
-            f"{pattern}  system_u:object_r:{t}:s0\n" for pattern, t in (
-                ("/var/lib/workloads/test-vm(/.*)?", "svirt_image_t"),
-                ("/var/lib/workloads/test-vm/state/ca(/.*)?",
-                 "wlinspect_ca_t"),
-                (r"/var/lib/workloads/test-vm/state/ca/egress-ca\.key",
-                 "wlinspect_ca_key_t"),
-                ("/var/lib/workloads/test-vm/state/leaves(/.*)?",
-                 "wlinspect_leaf_t"),
-                ("/var/lib/workloads/test-vm/state/leaves-denied(/.*)?",
-                 "wlinspect_leaf_t"),
-            ))
+        listing = ("/var/lib/workloads/test-vm(/.*)?  all files  "
+                   "system_u:object_r:svirt_image_t:s0\n")
         calls = self._run_calls(_VM_TOML, 'test-vm', "enable", listing=listing)
-        self.assertEqual([c for c in calls if "-a" in c], [])
-        # And no relabel either: nothing was registered, so there is nothing
-        # for a restorecon to apply, and a full -RF of a VM tree is not free.
-        self.assertEqual([c for c in calls if c and c[0] == "restorecon"], [])
+        self.assertEqual([c for c in calls if "-a" in c or "-d" in c], [])
 
-    def test_disable_unregisters_every_pattern_enable_registered(self):
-        """Including the PKI rules, and the specific ones first.
-
-        A disable that removed only the tree rule would leave four orphans
-        registered against a workload that no longer exists, and the next
-        workload to reuse the name would inherit them.
-        """
-        calls = self._run_calls(_VM_TOML, 'test-vm', "disable")
-        self.assertEqual(len(calls), 5)
-        self.assertTrue(all("-d" in c for c in calls), calls)
-        self.assertEqual(calls[-1][-1], "/var/lib/workloads/test-vm(/.*)?")
-        self.assertEqual(
-            [c[-1] for c in calls[:4]],
-            ["/var/lib/workloads/test-vm/state/ca(/.*)?",
-             r"/var/lib/workloads/test-vm/state/ca/egress-ca\.key",
-             "/var/lib/workloads/test-vm/state/leaves(/.*)?",
-             "/var/lib/workloads/test-vm/state/leaves-denied(/.*)?"])
+    def test_disable_unregisters_the_rule(self):
+        listing = ("/var/lib/workloads/test-vm(/.*)?  all files  "
+                   "system_u:object_r:svirt_image_t:s0\n")
+        calls = self._run_calls(_VM_TOML, 'test-vm', "disable", listing=listing)
+        self.assertEqual([c for c in calls if "-d" in c], [
+            ["semanage", "fcontext", "-d", "/var/lib/workloads/test-vm(/.*)?"]])
 
     def test_missing_semanage_is_not_a_failure(self):
         with _cfg(_VM_TOML, 'test-vm') as cfg:
@@ -2547,8 +2427,13 @@ class TestCmdCleanup(unittest.TestCase):
             base = Path(base_dir)
             orphan_dir = base / "orphan-wl"
             orphan_dir.mkdir()
+            # Its egress CA, outside the workload root, goes with it.
+            egress = base / ".egress"
+            (egress / "orphan-wl" / "ca").mkdir(parents=True)
             with _RootBypass():
-                with patch.object(cmd_cleanup, 'iter_workloads', return_value=[]):
+                with patch.object(cmd_cleanup, 'iter_workloads', return_value=[]), \
+                        patch.object(cmd_cleanup, 'workload_egress_dir',
+                                     lambda name: egress / name):
                     with patch('pwd.getpwall', return_value=[]):
                         with patch.object(cmd_cleanup, 'WORKLOADS_BASE', base):
                             with patch.object(cmd_cleanup.shutil, 'which', return_value=None):
@@ -2556,6 +2441,7 @@ class TestCmdCleanup(unittest.TestCase):
                                 with redirect_stdout(buf):
                                     cmd_cleanup.cmd_cleanup(_ns(apply=True, json=False), MagicMock())
             self.assertFalse(orphan_dir.exists())
+            self.assertFalse((egress / "orphan-wl").exists())
             self.assertIn("Cleanup complete", buf.getvalue())
 
     def test_configured_workload_dir_not_orphaned(self):

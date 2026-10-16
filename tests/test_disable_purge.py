@@ -510,8 +510,9 @@ class PurgeRemovesTheEgressRecordTest(unittest.TestCase):
     holds the uid rather than by the name on the directory.
     """
 
-    def _purge(self, record_root):
+    def _purge(self, record_root, egress_root=None):
         run = Path(tempfile.mkdtemp())
+        egress_root = egress_root or Path(tempfile.mkdtemp())
         with _Env(FILTERED_TOML, 'rr') as (config, _env_dir):
             record_dir = record_root / 'rr'
             record_dir.mkdir(parents=True)
@@ -531,6 +532,8 @@ class PurgeRemovesTheEgressRecordTest(unittest.TestCase):
                               MagicMock(return_value=False)), \
                  patch.object(cmd_disable, 'inspect_record_dir',
                               lambda name: record_root / name), \
+                 patch.object(cmd_disable, 'workload_egress_dir',
+                              lambda name: egress_root / name), \
                  patch.object(VMSubstrate, 'teardown', MagicMock(return_value=[])), \
                  patch.object(cmd_disable, 'workload_enabled_marker',
                               MagicMock(return_value=MagicMock())), \
@@ -550,6 +553,16 @@ class PurgeRemovesTheEgressRecordTest(unittest.TestCase):
         self.assertTrue(sibling.exists(),
                         "exact-name removal must not touch another workload's "
                         "record -- 'rr' and 'rr-other' share a prefix")
+
+    def test_purge_removes_the_egress_pki(self):
+        """The CA lives outside the workload root; its key must not outlive
+        the workload, and a re-enable mints a new one."""
+        egress = Path(tempfile.mkdtemp())
+        (egress / 'rr' / 'ca').mkdir(parents=True)
+        (egress / 'rr-other' / 'ca').mkdir(parents=True)
+        self._purge(Path(tempfile.mkdtemp()), egress)
+        self.assertFalse((egress / 'rr').exists())
+        self.assertTrue((egress / 'rr-other').exists())
 
 
 class TestDisableStopsWholeTopology(unittest.TestCase):

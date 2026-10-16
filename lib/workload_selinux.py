@@ -4,9 +4,10 @@ Two things, both taking an `action` because they run in both directions
 and a teardown is the same step with the sign flipped: the fcontext for a
 VM workload's tree (svirt_image_t, so a confined QEMU can use its disks)
 and the CIL module built from a bundle's shipped policy over udica's base
-templates. `shadowed_filecon_paths` is the check that a bundle's filecon
+templates. The level each tree carries is no rule: the setup unit stamps
+it (ensure_common.stamp_selinux_labels). `shadowed_filecon_paths` is the check that a bundle's filecon
 lines are not silently overridden by the roots registered via semanage.
-Everything here shells out to semodule, semanage and restorecon and prints
+Everything here shells out to semodule and semanage and prints
 its own diagnostic; SelinuxPolicyError tells the caller that has happened.
 
 Installed to /usr/libexec/workloadctl/workload_selinux.py.
@@ -21,71 +22,14 @@ from pathlib import Path
 
 from cli_log import error, info, warn
 from config_parser import workload_root_dir
-from container_network_config import container_uses_inspect
-from moatery.egress_ca import (
-    CA_DIR_NAME, DENIAL_DIR_NAME, LEAF_DIR_NAME, ca_key_path)
 from workload_lib import (
     NAME_PATTERN,
     WORKLOAD_BUNDLES_DIR,
     selinux_module_name,
     selinux_type_name,
 )
-from workload_mcs import mcs_level
-from workloadctl_core import WorkloadConfig, WorkloadUserNotFound
-
-
-# THE PKI SUBTREE HAS ITS OWN LABELS, AND THAT IS THE WHOLE POINT
-#
-# `wlinspect_t` is a separate domain from `svirt_t` so that the component
-# terminating guest input cannot reach the workload's disks, volumes or state
-# directory. The inspector reads a private key and writes a leaf cache, and
-# both live in that state directory beside the disk images.
-# Granting the domain `svirt_image_t` would be one rule shorter, would work,
-# and would hand the inspector the guest's disks — so the material moves
-# instead: three directories with labels of their own, and the domain is
-# granted those.
-#
-# Two types, not one, because the permissions genuinely differ. The CA is
-# READ-ONLY to the inspector: an inspector that could rewrite it could replace
-# the anchor the guest was seeded with, which is unrecoverable without a
-# re-provision. The leaves are read-write because minting them is the job.
-#
-# The CA's private key has a third, read by the inspector alone. The
-# certificate's type is readable by every container domain, since
-# ca_delivery mounts the certificate into a container; the key sharing it
-# would let any escaped container open any filtered workload's key where
-# DAC allowed.
-CA_SELINUX_TYPE = "wlinspect_ca_t"
-CA_KEY_SELINUX_TYPE = "wlinspect_ca_key_t"
-LEAF_SELINUX_TYPE = "wlinspect_leaf_t"
-
-
-def pki_fcontext_patterns(name: str) -> list[tuple[str, str]]:
-    """(pattern, type) for every directory in one workload's PKI subtree, and
-    for the CA key inside it.
-
-    Registered in `file_contexts.local` beside the per-workload svirt_image_t
-    rule, and more specific than it, which is the only reason these win: within
-    ONE source most-specific-wins applies, and `.local` outranks the base file
-    wholesale. A CIL `filecon` in the policy module lands in the base file and
-    would be silently shadowed -- see shadowed_filecon_paths().
-
-    Here rather than in egress_ca, whose names these are: egress_ca is on the
-    listener's side of the line and takes a state directory it is handed,
-    while this function is the one that knows where a WORKLOAD's state
-    directory is. The directory names stay in egress_ca so the minter that
-    creates the directories and the pattern that labels them cannot drift;
-    the composition with the workload root, and the types, live here.
-    """
-    root = workload_root_dir(name)
-    return [
-        (f"{root}/state/{CA_DIR_NAME}(/.*)?", CA_SELINUX_TYPE),
-        # A literal path, so more specific than the directory rule above.
-        (str(ca_key_path(f"{root}/state")).replace(".", r"\."),
-         CA_KEY_SELINUX_TYPE),
-        (f"{root}/state/{LEAF_DIR_NAME}(/.*)?", LEAF_SELINUX_TYPE),
-        (f"{root}/state/{DENIAL_DIR_NAME}(/.*)?", LEAF_SELINUX_TYPE),
-    ]
+from workload_mcs import VM_TREE_TYPE
+from workloadctl_core import WorkloadConfig
 
 
 class SelinuxPolicyError(Exception):
@@ -140,196 +84,61 @@ def _print_available_bundles(bundle: str):
     error("         available bundles: " + ", ".join(available))
 
 
-# SELinux type for a VM workload's tree. NOT container_file_t, which the
-# blanket /var/lib/workloads rule applies: `virt_domain` has no read, write,
-# getattr or append on container_file_t, so a confined QEMU cannot use a disk
-# image labelled with it. svirt_image_t carries the full set.
-IMAGE_SELINUX_TYPE = "svirt_image_t"
-
-
 def fcontext_pattern(name: str) -> str:
     """The fcontext pattern covering one VM workload's whole tree."""
     return f"{workload_root_dir(name)}(/.*)?"
 
 
-def apply_vm_fcontext(config: WorkloadConfig, action: str):
-    """Register (enable) or unregister (disable) a workload's PKI/tree fcontext rules.
-
-    VM disks need svirt_image_t, not the container_file_t the blanket
-    /var/lib/workloads rule gives them. A per-workload rule wins its whole
-    subtree by specificity — directories, disks, nvram.fd and files nobody
-    enumerated — while sibling container workloads keep matching the blanket
-    rule, so the blanket rule does not move and existing hosts need no
-    migration.
-
-    A container has no disk to relabel this way, but one running its own
-    egress inspector (`container_uses_inspect()`) still has a CA/leaf PKI
-    subtree that needs moving OFF container_file_t: wlinspect_t has read on
-    wlinspect_ca_t/wlinspect_leaf_t only, never on the blanket type (see
-    workload-inspect.cil). Skipping this for containers is exactly the bug
-    P1-10 shipped — `provision_egress_pki_dirs()`'s `restorecon` had nothing
-    registered to relabel the subtree TO, so it silently stayed
-    container_file_t and the inspector's own `os.path.exists()` on its CA
-    read back False (EACCES reads the same as ENOENT). So this registers the
-    PKI patterns for both substrates that need them, and the whole-tree
-    svirt_image_t pattern for a VM only — a container's tree otherwise stays
-    on the blanket rule on purpose.
-
-    **Gated on is_vm or container_uses_inspect(), not on
-    [security].selinux_policy.** Labelling is a precondition for the
-    inspector/VM starting at all, not an optional hardening step, and that
-    flag is opt-in — a workload that omitted it would fail to start with an
-    EPERM that looks like nothing is wrong. The two are independent in both
-    directions: this is `semanage`, the policy module is `semodule`, and they
-    land in different files in the store.
-
-    Both rules must live in `file_contexts.local`, which is why this is
-    `semanage` and not a CIL `filecon` shipped in the bundle: `.local` outranks
-    the base `file_contexts` *wholesale*, so most-specific-wins applies only
-    within one source. A module's filecon lands in the base file and would be
-    silently shadowed by the blanket rule.
-
-    Best-effort: a host without semanage, or with SELinux disabled, is not a
-    reason to fail an enable.
-    """
-    is_vm = config.is_vm
-    inspected_container = not is_vm and container_uses_inspect(config.config)
-    if not is_vm and not inspected_container:
-        return
-    if not shutil.which("semanage"):
-        return
-
-    pki_patterns = pki_fcontext_patterns(config.name)
-
-    if action == "disable":
-        # The PKI rules first: they are more specific than the tree rule, so
-        # removing the general one first would leave three orphans matching
-        # nothing registered above them. A container has no tree rule to
-        # remove -- only the PKI subtree was ever registered for it.
-        for pki_pattern, _ in pki_patterns:
-            subprocess.run(["semanage", "fcontext", "-d", pki_pattern],
-                           check=False, capture_output=True)
-        if is_vm:
-            subprocess.run(
-                ["semanage", "fcontext", "-d", fcontext_pattern(config.name)],
-                check=False, capture_output=True)
-        return
-
-    listed = subprocess.run(["semanage", "fcontext", "-l"],
+def _local_rules_under(root: str) -> list[str]:
+    """The file_contexts.local patterns for `root` and below it."""
+    listed = subprocess.run(["semanage", "fcontext", "-l", "-C"],
                             capture_output=True, text=True)
-    known = listed.stdout if listed.returncode == 0 else ""
-
-    wanted = list(pki_patterns)
-    if is_vm:
-        wanted = [(fcontext_pattern(config.name), IMAGE_SELINUX_TYPE)] + wanted
-    registered_any = False
-    for one, selinux_type in wanted:
-        # Each rule is checked on its own rather than short-circuiting on the
-        # tree rule. An upgrade onto a host provisioned before the PKI subtree
-        # had labels of its own has the tree rule already and the three PKI
-        # rules not at all, and a check that returns early on the first hit
-        # never registers them -- on exactly the hosts that need it.
-        if one in known:
-            continue
-        result = subprocess.run(
-            ["semanage", "fcontext", "-a", "-t", selinux_type, one],
-            capture_output=True, text=True)
-        if result.returncode != 0:
-            # WARN AND CARRY ON, never return. Each rule stands alone, and
-            # returning here left the ones already registered unlabelled: the
-            # relabel below is the only thing that applies them, and skipping
-            # it produces a tree whose rules say one thing and whose files say
-            # another -- which presents as the inspector reporting its own CA
-            # missing (EACCES and ENOENT are the same answer to Path.exists)
-            # or as "QMP socket not ready", never as a failed semanage call.
-            warn(f"  WARNING: could not register the SELinux fcontext rule for "
-                 f"'{config.name}': {result.stderr.strip()}")
-            continue
-        info(f"  Registered SELinux fcontext: {one} -> {selinux_type}")
-        registered_any = True
-
-    if not registered_any:
-        return  # everything already registered; the tree is already labelled
-
-    # Relabel now rather than waiting for the next start. -F is REQUIRED: both
-    # container_file_t and svirt_image_t are in contexts/customizable_types, and
-    # plain restorecon skips any file whose *current* type is listed there,
-    # printing "not reset as customized by admin" only under -v and exiting 0.
-    # Without -F this migration silently never happens.
-    subprocess.run(["restorecon", "-RF", str(workload_root_dir(config.name))],
-                   check=False, capture_output=True)
-
-
-
-def level_fcontext_patterns(name: str) -> list[str]:
-    """What carries the workload's MCS level: data/ and all below it, and
-    everything below state/. state/ itself stays s0 so the host's confined
-    daemons can traverse it; the PKI subtree, more specific, stays s0.
-
-    data/ carries it too because a file a container creates takes its
-    directory's level, not the container's (measured: a container's writes
-    into a bind-mounted volume land at the directory's s0), so a data/ at s0
-    would give a new top-level file s0 until the next relabel."""
-    root = workload_root_dir(name)
-    return [f"{root}/data(/.*)?", f"{root}/state/.+"]
-
-
-def _registered_contexts(listing: str) -> dict[str, str]:
-    """pattern -> context, from `semanage fcontext -l`."""
-    out = {}
-    for line in listing.splitlines():
+    if listed.returncode != 0:
+        return []
+    found = []
+    for line in listed.stdout.splitlines():
         words = line.split()
-        if len(words) >= 3 and ":" in words[-1]:
-            out[words[0]] = words[-1]
-    return out
+        if (words and words[0].startswith(root)
+                and words[0][len(root):][:1] in ("/", "(")):
+            found.append(words[0])
+    return found
 
 
-def apply_level_fcontext(config: WorkloadConfig, action: str):
-    """Register (enable) or unregister (disable) the rules that give a
-    workload's data and state its own MCS level (workload_mcs), then
-    relabel.
+def apply_vm_fcontext(config: WorkloadConfig, action: str):
+    """Make a workload's rules in file_contexts.local exactly what it needs:
+    for a VM, its whole tree as svirt_image_t; for a container, none.
 
-    After the user exists, since the level comes from its uid: the enable
-    calls this after provisioning, recreate after the units. Not at each
-    start, where N workloads would race semanage's lock. A workload started
-    before this runs is not broken by it: its processes run at the level and
-    read the s0 files they find; this only takes the files off s0.
-    Best-effort, like apply_vm_fcontext.
+    A confined QEMU cannot use a disk of the blanket rule's
+    container_file_t, and the rule keeps a relabel from handing it one.
+    It wins over the blanket rule, registered first, because within
+    file_contexts.local the rule added last applies. Any other rule under
+    the workload's root is removed, so nothing there competes with it.
+
+    Best-effort: a host without semanage, or with SELinux disabled, is not
+    a reason to fail an enable.
     """
     if not shutil.which("semanage"):
         return
-    patterns = level_fcontext_patterns(config.name)
-    if action == "disable":
-        for pattern in patterns:
-            subprocess.run(["semanage", "fcontext", "-d", pattern],
-                           check=False, capture_output=True)
-        return
-    try:
-        level = mcs_level(config.uid)
-    except (WorkloadUserNotFound, ValueError) as e:
-        warn(f"  WARNING: no SELinux level for '{config.name}': {e}")
-        return
-    selinux_type = IMAGE_SELINUX_TYPE if config.is_vm else "container_file_t"
-    listed = subprocess.run(["semanage", "fcontext", "-l"],
-                            capture_output=True, text=True)
-    known = _registered_contexts(listed.stdout if listed.returncode == 0
-                                 else "")
-    for pattern in patterns:
-        context = known.get(pattern)
-        if context and context.endswith(f":{selinux_type}:{level}"):
+    root = str(workload_root_dir(config.name))
+    wanted = fcontext_pattern(config.name)
+    keep = action != "disable" and config.is_vm
+    present = _local_rules_under(root)
+    for pattern in present:
+        if keep and pattern == wanted:
             continue
-        verb = "-m" if context else "-a"
-        result = subprocess.run(
-            ["semanage", "fcontext", verb, "-t", selinux_type, "-r", level,
-             pattern], capture_output=True, text=True)
-        if result.returncode != 0:
-            warn(f"  WARNING: could not register the SELinux level rule for "
-                 f"'{config.name}': {result.stderr.strip()}")
-            continue
-        info(f"  Registered SELinux fcontext: {pattern} -> "
-             f"{selinux_type}:{level}")
-    subprocess.run(["restorecon", "-RF", str(workload_root_dir(config.name))],
-                   check=False, capture_output=True)
+        subprocess.run(["semanage", "fcontext", "-d", pattern],
+                       check=False, capture_output=True)
+    if not keep or wanted in present:
+        return
+    result = subprocess.run(
+        ["semanage", "fcontext", "-a", "-t", VM_TREE_TYPE, wanted],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        warn(f"  WARNING: could not register the SELinux fcontext rule for "
+             f"'{config.name}': {result.stderr.strip()}")
+        return
+    info(f"  Registered SELinux fcontext: {wanted} -> {VM_TREE_TYPE}")
+
 
 # Path prefixes workloadctl registers in file_contexts.local (the blanket rule
 # from the RPM's %post, plus every per-workload VM rule under the same root).

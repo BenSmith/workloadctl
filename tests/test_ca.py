@@ -48,15 +48,16 @@ def _text(cert, *args):
 
 
 class TestCaPaths(unittest.TestCase):
-    def test_the_ca_lives_under_the_state_dir(self):
-        # state/, not data/: `backup` never captures state/, which is what
-        # keeps the private key out of every archive with no exclusion rule.
-        d = ca_dir("/var/lib/workloads/myvm/state")
-        self.assertEqual(d, Path("/var/lib/workloads/myvm/state/ca"))
-        self.assertEqual(ca_key_path("/var/lib/workloads/myvm/state"),
-                         d / CA_KEY_NAME)
-        self.assertEqual(ca_cert_path("/var/lib/workloads/myvm/state"),
-                         d / CA_CERT_NAME)
+    def test_the_ca_lives_in_the_egress_tree(self):
+        # Outside the workload root: `backup` captures only data/, which keeps
+        # the private key out of every archive with no exclusion rule, and the
+        # policy module types this tree, where a VM's root is one type.
+        from workload_lib import workload_egress_dir
+        egress = workload_egress_dir("myvm")
+        d = ca_dir(egress)
+        self.assertEqual(d, Path("/var/lib/workloadctl/egress/myvm/ca"))
+        self.assertEqual(ca_key_path(egress), d / CA_KEY_NAME)
+        self.assertEqual(ca_cert_path(egress), d / CA_CERT_NAME)
 
     def test_the_subject_names_the_workload(self):
         # An operator reading a certificate error inside a guest has to be able
@@ -174,8 +175,8 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         self.mod = ensure_common
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        self.state = Path(self.tmp) / "state"
-        self.state.mkdir()
+        self.anchor = Path(self.tmp) / "egress"
+        self.anchor.mkdir()
         self.pw = types.SimpleNamespace(
             pw_dir=self.tmp, pw_uid=os.getuid(), pw_gid=os.getgid(),
             pw_name="_wl-myvm")
@@ -183,11 +184,11 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
 
     def _patch(self):
         mod = self.mod
-        self._orig_state = mod.workload_state_dir
+        self._orig_anchor = mod.egress_anchor
         self._orig_chown = mod.os.chown
-        mod.workload_state_dir = lambda name: self.state
+        mod.egress_anchor = lambda name: self.anchor
         mod.os.chown = lambda *a, **k: None
-        self.addCleanup(setattr, mod, "workload_state_dir", self._orig_state)
+        self.addCleanup(setattr, mod, "egress_anchor", self._orig_anchor)
         self.addCleanup(setattr, mod.os, "chown", self._orig_chown)
         # The mint is moatery's program: the checkout's, when one is named,
         # which then has to find the checkout's package too.
@@ -203,8 +204,8 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
     @unittest.skipUnless(HAVE_OPENSSL, "needs openssl")
     def test_it_mints_once_and_leaves_it_alone(self):
         self.mod.generate_egress_ca(self.pw, "myvm")
-        cert = ca_cert_path(self.state)
-        key = ca_key_path(self.state)
+        cert = ca_cert_path(self.anchor)
+        key = ca_key_path(self.anchor)
         self.assertTrue(cert.exists() and key.exists())
         first = (cert.read_bytes(), key.read_bytes())
 
@@ -216,11 +217,11 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
     @unittest.skipUnless(HAVE_OPENSSL, "needs openssl")
     def test_the_private_half_is_not_world_readable(self):
         self.mod.generate_egress_ca(self.pw, "myvm")
-        self.assertEqual(ca_key_path(self.state).stat().st_mode & 0o777, 0o600)
+        self.assertEqual(ca_key_path(self.anchor).stat().st_mode & 0o777, 0o600)
         # The certificate is a public anchor -- the seed builder and `diagnose`
         # both read it -- so it is deliberately NOT 0600.
-        self.assertEqual(ca_cert_path(self.state).stat().st_mode & 0o777, 0o644)
-        self.assertEqual(ca_dir(self.state).stat().st_mode & 0o777, 0o700)
+        self.assertEqual(ca_cert_path(self.anchor).stat().st_mode & 0o777, 0o644)
+        self.assertEqual(ca_dir(self.anchor).stat().st_mode & 0o777, 0o700)
 
     @unittest.skipUnless(HAVE_OPENSSL, "needs openssl")
     def test_the_certificate_is_readable_under_a_tight_umask(self):
@@ -231,7 +232,7 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
             self.mod.generate_egress_ca(self.pw, "myvm")
         finally:
             os.umask(old)
-        self.assertEqual(ca_cert_path(self.state).stat().st_mode & 0o777,
+        self.assertEqual(ca_cert_path(self.anchor).stat().st_mode & 0o777,
                          0o644)
 
     @unittest.skipUnless(HAVE_OPENSSL, "needs openssl")
@@ -240,7 +241,7 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         inspector re-mints every leaf after each restart and the denial
         cache forgets what it refused."""
         self.mod.generate_egress_ca(self.pw, "myvm")
-        leaf = leaf_dir(self.state) / "kept.pem"
+        leaf = leaf_dir(self.anchor) / "kept.pem"
         leaf.parent.mkdir(parents=True, exist_ok=True)
         leaf.write_text("x")
         self.mod.generate_egress_ca(self.pw, "myvm")
@@ -253,22 +254,21 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         key is the operator's to resolve; minting over it would strand a
         provisioned guest without a word."""
         self.mod.generate_egress_ca(self.pw, "myvm")
-        cert = ca_cert_path(self.state)
+        cert = ca_cert_path(self.anchor)
         before = cert.read_bytes()
-        ca_key_path(self.state).unlink()
+        ca_key_path(self.anchor).unlink()
         with self.assertRaises(RuntimeError) as ctx:
             self.mod.generate_egress_ca(self.pw, "myvm")
         self.assertIn(str(cert), str(ctx.exception))
         self.assertEqual(cert.read_bytes(), before)
-        self.assertFalse(ca_key_path(self.state).exists())
+        self.assertFalse(ca_key_path(self.anchor).exists())
 
     def test_a_linked_ca_dir_is_refused_not_minted_into(self):
-        # F34: the workload user owns state/, so state/ca may be a link; the
-        # CA is minted in the workload root and copied in by the no-follow
-        # walk, which refuses the link.
+        # F34: the CA is minted in a root-only directory and copied in by the
+        # no-follow walk, which refuses a link at ca/.
         outside = Path(self.tmp) / "outside"
         outside.mkdir()
-        (self.state / "ca").symlink_to(outside)
+        (self.anchor / "ca").symlink_to(outside)
         chowned = []
         with mock.patch.object(self.mod.os, "chown",
                                lambda path, *a, **k: chowned.append(path)):
@@ -280,8 +280,8 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
 
     def test_a_dangling_link_at_the_key_is_half_a_ca_not_a_target(self):
         target = Path(self.tmp) / "new-key"
-        (self.state / "ca").mkdir()
-        ca_key_path(self.state).symlink_to(target)
+        (self.anchor / "ca").mkdir()
+        ca_key_path(self.anchor).symlink_to(target)
         with self.assertRaises(RuntimeError):
             self.mod.generate_egress_ca(self.pw, "myvm")
         self.assertFalse(target.exists())
@@ -298,9 +298,9 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         with mock.patch.object(self.mod.subprocess, "run", spy):
             self.mod.generate_egress_ca(self.pw, "myvm")
         mint_state = Path(argv[0][argv[0].index("--state-dir") + 1])
-        self.assertEqual(mint_state.parent, Path(self.tmp))
-        self.assertNotEqual(mint_state, self.state)
-        self.assertTrue(ca_key_path(self.state).is_file())
+        self.assertEqual(mint_state.parent, self.anchor)
+        self.assertNotEqual(mint_state, self.anchor)
+        self.assertTrue(ca_key_path(self.anchor).is_file())
 
     def test_a_mint_that_cannot_run_raises_naming_it(self):
         with mock.patch.object(self.mod.subprocess, "run",
@@ -333,69 +333,139 @@ class TestGeneratorIsIdempotent(unittest.TestCase):
         self.assertIn("exit 3", str(ctx.exception))
 
     # ------------------------------------------------------------------
-    # The PKI directories and their labels.
-    #
-    # Measured 2026-08-26 on a KVM host: without this step the inspector
-    # crash-looped reporting a CA that was plainly on disk as "not there",
-    # because Path.exists() cannot tell EACCES from ENOENT and the traversal
-    # was denied. The unit tests below cannot see SELinux; what they can see is
-    # that the step runs, creates all three directories, and relabels them.
+    # The PKI directories. Their labels are stamp_selinux_labels' (test_ensure_user).
 
     def test_the_leaf_caches_are_created_beside_the_ca(self):
         # The minter's own mkdir cannot do this: a directory the INSPECTOR
-        # creates inherits its parent's svirt_image_t, and the domain has no
+        # creates inherits its parent's type, and the domain has no
         # relabelto -- it would create a directory it then cannot use.
-        with mock.patch.object(self.mod.shutil, "which", return_value=None):
-            self.mod.provision_egress_pki_dirs(self.pw, "myvm")
+        self.mod.provision_egress_pki_dirs(self.pw, "myvm")
         for name in ("ca", "leaves", "leaves-denied"):
-            d = self.state / name
+            d = self.anchor / name
             self.assertTrue(d.is_dir(), name)
             self.assertEqual(d.stat().st_mode & 0o777, 0o700, name)
 
     def test_a_linked_leaf_cache_is_refused_not_chowned(self):
         outside = Path(self.tmp) / "outside"
         outside.mkdir()
-        (self.state / "leaves").symlink_to(outside)
-        with mock.patch.object(self.mod.shutil, "which", return_value=None), \
-             mock.patch.object(self.mod.os, "fchown") as fchown:
+        (self.anchor / "leaves").symlink_to(outside)
+        with mock.patch.object(self.mod.os, "fchown") as fchown:
             with self.assertRaises(RuntimeError):
                 self.mod.provision_egress_pki_dirs(self.pw, "myvm")
-        self.assertTrue((self.state / "leaves").is_symlink())
+        self.assertTrue((self.anchor / "leaves").is_symlink())
         self.assertEqual(fchown.call_count, 1)  # ca/ alone, before leaves/
 
-    def test_it_relabels_each_directory_with_dash_f(self):
-        # -F for the same reason apply_vm_fcontext needs it: svirt_image_t is a
-        # customizable type, so a plain restorecon skips it and exits 0 and the
-        # migration silently never happens.
-        calls = []
-        with mock.patch.object(self.mod.shutil, "which",
-                               return_value="/usr/sbin/restorecon"):
-            with mock.patch.object(self.mod.subprocess, "run",
-                                   side_effect=lambda argv, **kw: calls.append(argv)):
-                self.mod.provision_egress_pki_dirs(self.pw, "myvm")
-        self.assertEqual(len(calls), 3)
-        self.assertTrue(all(c[:2] == ["restorecon", "-RF"] for c in calls), calls)
-        self.assertEqual(
-            sorted(Path(c[2]).name for c in calls),
-            ["ca", "leaves", "leaves-denied"])
-
-    def test_a_host_without_restorecon_still_gets_its_directories(self):
-        # SELinux disabled is not a reason to refuse to provision the VM; the
-        # inspector fails loudly at startup instead, which is the better
-        # failure.
-        with mock.patch.object(self.mod.shutil, "which", return_value=None):
-            with mock.patch.object(self.mod.subprocess, "run") as run_mock:
-                self.mod.provision_egress_pki_dirs(self.pw, "myvm")
-        run_mock.assert_not_called()
-        self.assertTrue((self.state / "leaves").is_dir())
-
     def test_it_is_idempotent(self):
-        with mock.patch.object(self.mod.shutil, "which", return_value=None):
-            self.mod.provision_egress_pki_dirs(self.pw, "myvm")
-            (self.state / "leaves" / "keep.pem").write_text("x")
-            self.mod.provision_egress_pki_dirs(self.pw, "myvm")
-        self.assertTrue((self.state / "leaves" / "keep.pem").exists())
+        self.mod.provision_egress_pki_dirs(self.pw, "myvm")
+        (self.anchor / "leaves" / "keep.pem").write_text("x")
+        self.mod.provision_egress_pki_dirs(self.pw, "myvm")
+        self.assertTrue((self.anchor / "leaves" / "keep.pem").exists())
 
+    # A CA under the workload's state/, moved into the egress tree.
+
+    def _old_state(self):
+        state = Path(self.tmp) / "wl" / "state"
+        (state / "ca").mkdir(parents=True)
+        (state / "leaves").mkdir()
+        ca_key_path(state).write_bytes(b"KEY")
+        ca_cert_path(state).write_bytes(b"CERT")
+        patch = mock.patch.object(self.mod, "workload_state_dir",
+                                  return_value=state)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return state
+
+    def test_an_old_ca_is_moved_not_reminted(self):
+        state = self._old_state()
+        self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertEqual(ca_key_path(self.anchor).read_bytes(), b"KEY")
+        self.assertEqual(ca_cert_path(self.anchor).read_bytes(), b"CERT")
+        self.assertEqual(ca_key_path(self.anchor).stat().st_mode & 0o777,
+                         0o600)
+        self.assertFalse((state / "ca").exists())
+        self.assertFalse((state / "leaves").exists())
+
+    def test_a_ca_already_in_the_egress_tree_wins(self):
+        state = self._old_state()
+        ca_dir(self.anchor).mkdir()
+        ca_key_path(self.anchor).write_bytes(b"NEW")
+        self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertEqual(ca_key_path(self.anchor).read_bytes(), b"NEW")
+        self.assertFalse((state / "ca").exists())
+
+    def test_a_linked_old_key_is_not_read(self):
+        state = self._old_state()
+        secret = Path(self.tmp) / "secret"
+        secret.write_bytes(b"SECRET")
+        ca_key_path(state).unlink()
+        ca_key_path(state).symlink_to(secret)
+        self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertFalse(ca_dir(self.anchor).exists())
+        self.assertTrue(secret.exists())
+
+    def test_a_linked_old_ca_dir_is_removed_not_followed(self):
+        state = Path(self.tmp) / "wl" / "state"
+        state.mkdir(parents=True)
+        outside = Path(self.tmp) / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("x")
+        (state / "ca").symlink_to(outside)
+        with mock.patch.object(self.mod, "workload_state_dir",
+                               return_value=state):
+            self.mod.move_egress_pki(self.pw, "myvm")
+        self.assertFalse(os.path.lexists(state / "ca"))
+        self.assertTrue((outside / "keep").exists())
+
+    def test_no_old_ca_touches_nothing(self):
+        state = Path(self.tmp) / "wl" / "state"
+        state.mkdir(parents=True)
+        with mock.patch.object(self.mod, "workload_state_dir",
+                               return_value=state), \
+                mock.patch.object(self.mod, "egress_anchor") as anchor:
+            self.mod.move_egress_pki(self.pw, "myvm")
+        anchor.assert_not_called()
+
+
+class TestTheEgressAnchor(unittest.TestCase):
+    """The workload's directory in the egress tree is root's: the CA is
+    minted in it and the no-follow walks start from it."""
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        for patch in (
+                mock.patch.object(ensure_common, "EGRESS_PKI_BASE", self.base),
+                mock.patch.object(ensure_common, "workload_egress_dir",
+                                  lambda name: self.base / name)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_one_not_roots_is_refused(self):
+        if os.getuid() == 0:
+            self.skipTest("root owns what it makes")
+        with self.assertRaises(RuntimeError):
+            ensure_common.egress_anchor("web")
+
+    def test_a_link_at_the_name_is_refused(self):
+        (self.base / "web").symlink_to(self.base)
+        with mock.patch.object(ensure_common.os, "lstat",
+                               wraps=os.lstat) as lstat:
+            with self.assertRaises(RuntimeError):
+                ensure_common.egress_anchor("web")
+        lstat.assert_called_with(self.base / "web")
+
+    def test_roots_directory_is_made_0711(self):
+        real = os.lstat
+
+        def as_root(path, *a, **k):
+            st = real(path, *a, **k)
+            return os.stat_result((st.st_mode, st.st_ino, st.st_dev,
+                                   st.st_nlink, 0, 0, st.st_size,
+                                   st.st_atime, st.st_mtime, st.st_ctime))
+        with mock.patch.object(ensure_common.os, "lstat", as_root):
+            anchor = ensure_common.egress_anchor("web")
+        self.assertEqual(anchor, self.base / "web")
+        self.assertEqual(anchor.stat().st_mode & 0o777, 0o711)
 
 
 class TestTheBundleTheVariablesName(unittest.TestCase):
@@ -437,7 +507,7 @@ class TestTheBundleTheVariablesName(unittest.TestCase):
             cert.parent.mkdir(parents=True)
             cert.write_bytes(self.CA)
             pw = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
-            with mock.patch.object(ensure_common, "workload_state_dir",
+            with mock.patch.object(ensure_common, "egress_anchor",
                                    return_value=state), \
                     mock.patch.object(ensure_common, "host_trust_bundle",
                                       side_effect=lambda ca: b"R\n" + ca):

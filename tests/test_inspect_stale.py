@@ -370,7 +370,7 @@ class TestTheDiskReadsAreDefensiveToo(unittest.TestCase):
     def test_a_ca_pem_that_is_not_text_reads_as_unknown(self):
         cert = self.dir / "ca.crt"
         cert.write_bytes(self.GARBAGE)
-        with mock.patch.object(diagnose_inspect, "workload_state_dir",
+        with mock.patch.object(diagnose_inspect, "workload_egress_dir",
                                return_value=self.dir), \
              mock.patch.object(diagnose_inspect, "ca_cert_path",
                                return_value=cert):
@@ -393,7 +393,7 @@ class TestTheDiskReadsAreDefensiveToo(unittest.TestCase):
             vm_network=dict(NET),
             config={"vm": {"network": dict(NET)}}, is_vm=True)
         elems = [{"concat": [UID, 80]}, {"concat": [UID, 443]}]
-        with mock.patch.object(diagnose_inspect, "workload_state_dir",
+        with mock.patch.object(diagnose_inspect, "workload_egress_dir",
                                return_value=self.dir), \
              mock.patch.object(diagnose_inspect, "ca_cert_path",
                                return_value=cert):

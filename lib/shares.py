@@ -33,7 +33,8 @@ import tomllib
 from pathlib import Path
 from typing import NamedTuple
 
-from workload_lib import NAME_PATTERN, workload_config_dir
+from config_parser import WORKLOADS_BASE
+from workload_lib import EGRESS_PKI_BASE, NAME_PATTERN, workload_config_dir
 from workload_mcs import CATEGORIES, WORKLOAD_CATEGORIES
 
 SHARES_FILE_NAME = "shares.toml"
@@ -94,6 +95,13 @@ def parse_shares(doc: dict) -> tuple[dict[str, Share], list[str]]:
         if (not isinstance(path, str) or not path.startswith("/")
                 or ".." in Path(path).parts or path.rstrip("/") == ""):
             errors.append(f"{where}: path must be an absolute directory")
+            continue
+        # Each workload's tree is stamped with its own level at setup, which
+        # would take a share inside one off the share's category.
+        if any(Path(path).is_relative_to(tree)
+               for tree in (WORKLOADS_BASE, EGRESS_PKI_BASE)):
+            errors.append(f"{where}: path must not be under {WORKLOADS_BASE} "
+                          f"or {EGRESS_PKI_BASE}")
             continue
         category = entry.get("category", derived_category(name))
         if (not isinstance(category, int) or isinstance(category, bool)

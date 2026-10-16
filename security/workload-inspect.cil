@@ -419,9 +419,7 @@
 ; CA is read-only to this domain (an inspector that could rewrite it could
 ; replace the anchor the guest was SEEDED with, which no restart recovers --
 ; only a re-provision), and the leaf caches are read-write because minting into
-; them is the job. lib/provisioning.py registers the fcontext rules, with the
-; patterns from egress_ca.pki_fcontext_patterns; a filecon here would land
-; in the base file_contexts and be shadowed by file_contexts.local.
+; them is the job. The filecons are after the key's type, below.
 (type wlinspect_ca_t)
 (roletype object_r wlinspect_ca_t)
 (typeattributeset file_type (wlinspect_ca_t))
@@ -441,6 +439,16 @@
 (roletype object_r wlinspect_ca_key_t)
 (typeattributeset file_type (wlinspect_ca_key_t))
 (allow wlinspect_t wlinspect_ca_key_t (file (getattr map open read)))
+
+; The tree is /var/lib/workloadctl/egress/<name>/, outside /var/lib/workloads,
+; so nothing in file_contexts.local shadows these. Within the base file the
+; more specific pattern applies, which is what gives the key its own type
+; inside ca/. The level is the workload's, stamped at setup
+; (ensure_common.stamp_selinux_labels).
+(filecon "/var/lib/workloadctl/egress/[^/]+/ca(/.*)?" any (system_u object_r wlinspect_ca_t ((s0) (s0))))
+(filecon "/var/lib/workloadctl/egress/[^/]+/ca/egress-ca\.key" file (system_u object_r wlinspect_ca_key_t ((s0) (s0))))
+(filecon "/var/lib/workloadctl/egress/[^/]+/leaves(/.*)?" any (system_u object_r wlinspect_leaf_t ((s0) (s0))))
+(filecon "/var/lib/workloadctl/egress/[^/]+/leaves-denied(/.*)?" any (system_u object_r wlinspect_leaf_t ((s0) (s0))))
 
 ; A container workload's own [network].ca_delivery = "env"/"mount" bind-mounts
 ; this same certificate (never the key) into the container. Without this rule
@@ -482,13 +490,10 @@
 (allow wlinspect_t wlinspect_leaf_t (file (create getattr map open read rename setattr unlink write)))
 
 ; Traversal to reach them, and traversal is ALL of it: `search` on a directory
-; permits walking through it, not reading what is in it. /var/lib/workloads is
-; container_file_t (the blanket rule) and /var/lib/workloads/<name> and its
-; state/ are svirt_image_t (the per-workload tree rule), so the path to a
-; wlinspect_ca_t directory crosses both. No file permission on either type is
-; granted here, which is what keeps the guest's disks out of reach.
-(allow wlinspect_t container_file_t (dir (search)))
-(allow wlinspect_t svirt_image_t (dir (search)))
+; permits walking through it, not reading what is in it. The directories above
+; the caches are var_lib_t. Nothing on a workload's own tree is granted, which
+; is what keeps the guest's disks out of reach.
+(allow wlinspect_t var_lib_t (dir (search)))
 
 ; The system trust store, which the SPLICING listener had no use for and the
 ; terminating one cannot work without: every upstream connection is verified
@@ -552,14 +557,12 @@
 ; it with no rule of ours. Rotation is logrotate's deliberately -- writing our
 ; own is a solved problem whose failure mode is a full /var on a hypervisor.
 ;
-; A `filecon` IS REACHABLE HERE, which is the opposite of what the PKI subtree
-; needs, and the difference is the prefix rather than anything about the rule.
-; file_contexts.local outranks the base file wholesale, so a module filecon is
+; A `filecon` IS REACHABLE HERE, as it is for the PKI tree, and for the same
+; reason: the prefix. file_contexts.local outranks the base file wholesale, so a module filecon is
 ; shadowed only under a path workloadctl registers via semanage; that set is
 ; provisioning.LOCAL_FCONTEXT_ROOTS -- /var/lib/workloads and /run/workload-vm
-; -- and /var/log is in neither. One glob also covers every workload, so unlike
-; pki_fcontext_patterns there is nothing per-workload to register at enable
-; or to remove at disable.
+; -- and /var/log is in neither. One glob also covers every workload, so there
+; is nothing per-workload to register at enable or to remove at disable.
 (type wlinspect_log_t)
 (roletype object_r wlinspect_log_t)
 (typeattributeset file_type (wlinspect_log_t))

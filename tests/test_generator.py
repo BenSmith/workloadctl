@@ -3659,7 +3659,8 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         from guest_ca import CA_BUNDLE_PATH
         # The bundle (host roots and the CA), not the CA alone: a spliced
         # connection presents the origin's own certificate.
-        self.assertIn(f'/ca/bundle.pem":"{CA_BUNDLE_PATH}":ro', service)
+        self.assertIn(f'"/var/lib/workloadctl/egress/agent/ca/bundle.pem":'
+                      f'"{CA_BUNDLE_PATH}":ro', service)
         self.assertNotIn("egress-ca.crt", service)
         for var in ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
                     "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "PIP_CERT"):
@@ -3684,7 +3685,8 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         result = self.run_gen()
         self.assertEqual(result.returncode, 0, result.stderr)
         service = self.read("workload-agent2.service")
-        self.assertIn("/etc/ssl/certs/workload-ca.crt", service)
+        self.assertIn('"/var/lib/workloadctl/egress/agent2/ca/egress-ca.crt":'
+                      '"/etc/ssl/certs/workload-ca.crt":ro', service)
         self.assertNotIn("SSL_CERT_FILE", service)
 
     def test_ca_delivery_image_delivers_nothing(self):

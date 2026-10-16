@@ -57,7 +57,12 @@ class Declaring(unittest.TestCase):
                              "b": {"path": "/b", "category": 600}}},
                  "one category"),
                 ({"shares": {"a": {"path": "/m"},
-                             "b": {"path": "/m/sub"}}}, "overlap")):
+                             "b": {"path": "/m/sub"}}}, "overlap"),
+                # Each workload's tree is stamped with its own level.
+                ({"shares": {"a": {"path": "/var/lib/workloads/w/data"}}},
+                 "must not be under"),
+                ({"shares": {"a": {"path": "/var/lib/workloadctl/egress"}}},
+                 "must not be under")):
             _, errors = shares.parse_shares(doc)
             self.assertTrue(any(words in e for e in errors), (doc, errors))
 

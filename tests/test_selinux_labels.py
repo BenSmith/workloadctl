@@ -49,13 +49,10 @@ class SelinuxLabelCheckTest(unittest.TestCase):
             rule_present=True, label="var_lib_t", name="app")
         self.assertFalse(passed)
         self.assertIn("var_lib_t", message)
-        # The fix registers the rule and relabels. It deliberately no longer
-        # points at workload-ensure-user: that script stopped registering the
-        # blanket fcontext rule when the registration moved to the RPM's %post,
-        # so running it would restorecon against a policy with no rule for this
-        # path and re-apply the very default label being complained about.
+        # The fix registers the rule, then recreates: the setup unit it
+        # restarts stamps the type and the level together.
         self.assertIn("semanage fcontext -a -t container_file_t", fix)
-        self.assertIn("restorecon -RF", fix)
+        self.assertIn("workloadctl recreate app", fix)
 
     def test_wrong_label_with_no_rule_says_a_relabel_will_not_help(self):
         _, with_rule, _ = diagnose_selinux.selinux_label_check(
@@ -73,7 +70,7 @@ class SelinuxLabelCheckTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("relabel", message)
         self.assertIn("semanage fcontext -a -t container_file_t", fix)
-        self.assertIn("restorecon", fix)
+        self.assertIn("workloadctl recreate app", fix)
 
     def test_unknown_rule_state_does_not_fail_a_correctly_labeled_tree(self):
         """semanage unreadable (including: the lock is contended right now)
@@ -117,22 +114,20 @@ class SelinuxLabelCheckVmTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("container_file_t", message)
 
-    def test_vm_fix_names_the_workload_subtree_not_the_base(self):
-        # The VM rule is per workload and wins its subtree by specificity; a
-        # fix naming /var/lib/workloads would relabel every sibling container
-        # workload to svirt_image_t and break all of them.
+    def test_vm_fix_recreates_the_workload(self):
+        # recreate registers the VM's own rule; a fix naming
+        # /var/lib/workloads would relabel every sibling container workload
+        # to svirt_image_t and break all of them.
         _, _, fix = diagnose_selinux.selinux_label_check(
             rule_present=False, label="svirt_image_t", name="vm1", is_vm=True)
-        self.assertIn("/var/lib/workloads/vm1(/.*)?", fix)
-        self.assertIn("svirt_image_t", fix)
+        self.assertEqual(fix, "sudo workloadctl recreate vm1")
 
-    def test_every_fix_uses_dash_f(self):
-        # Both types are customizable, so a plain `restorecon -R` skips them
-        # and exits 0 — a remediation that appears to work and changes nothing.
+    def test_no_fix_relabels_with_restorecon(self):
+        # A restorecon puts the workload's level back to s0.
         for is_vm, wrong in ((True, "container_file_t"), (False, "var_lib_t")):
             _, _, fix = diagnose_selinux.selinux_label_check(
                 rule_present=True, label=wrong, name="w", is_vm=is_vm)
-            self.assertIn("restorecon -RF", fix)
+            self.assertNotIn("restorecon", fix)
 
 
 class VmSocketDirSelinuxCheckTest(unittest.TestCase):

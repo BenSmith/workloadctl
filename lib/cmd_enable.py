@@ -27,7 +27,6 @@ from provisioning import (
 from host_setup import run_host_setup
 from shares_setup import apply_shares
 from workload_selinux import (
-    apply_level_fcontext,
     apply_selinux_policy,
     apply_vm_fcontext,
     SelinuxPolicyError,
@@ -83,11 +82,9 @@ def cmd_enable(args, manager: WorkloadManager):
                       "reason": str(e)}], ok=False)
         sys.exit(1)
 
-    # Register this workload's fcontext rules: the whole-tree svirt_image_t
-    # rule for a VM, and/or the CA/leaf PKI subtree rules for either substrate
-    # when it runs its own egress inspector. Enable is the right place for it
-    # and a workload's ExecStartPre is not: at boot N workloads would race the
-    # same semanage read lock, whereas an enable is one-time and
+    # Register a VM's whole-tree svirt_image_t rule. Enable is the right place
+    # for it and a workload's ExecStartPre is not: at boot N workloads would
+    # race the same semanage read lock, whereas an enable is one-time and
     # operator-initiated.
     apply_vm_fcontext(config, "enable")
 
@@ -103,8 +100,6 @@ def cmd_enable(args, manager: WorkloadManager):
         subprocess.run(["systemctl", "daemon-reload"], check=False)
         raise
     provision_user(config)
-    # Now that the user, and so its level, exists.
-    apply_level_fcontext(config, "enable")
     apply_shares(config, "enable")
     if not config.is_vm:
         # Same shape as the SELinux step: the diagnostic is the raiser's, the

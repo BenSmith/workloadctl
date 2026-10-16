@@ -47,7 +47,7 @@ from nft_constants import (
 )
 from substrate import service_active
 from workload_addr import inspect_address
-from workload_lib import workload_state_dir
+from workload_lib import workload_egress_dir
 
 
 # The window egress_ca.CA_VALIDITY_DAYS' comment already promised: `diagnose`
@@ -855,7 +855,7 @@ def _ca_fingerprint_on_disk(name: str) -> str | None:
     A diagnostic must not die of the fault it was written to report.
     """
     try:
-        return pem_fingerprint(ca_cert_path(workload_state_dir(name)))
+        return pem_fingerprint(ca_cert_path(workload_egress_dir(name)))
     except (OSError, ValueError):
         return None
 

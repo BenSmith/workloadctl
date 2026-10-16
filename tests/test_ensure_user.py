@@ -350,6 +350,8 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
              mock.patch.object(self.mod, "SOCKET_DIR", self.runtime), \
              mock.patch.object(self.mod, "workload_state_dir",
                                lambda _name: self.home), \
+             mock.patch.object(self.mod, "workload_egress_dir",
+                               lambda _name: self.home), \
              mock.patch.object(self.mod.subprocess, "run", self._fake_iso_run), \
              mock.patch.object(_shutil, "which",
                                lambda name: "/usr/bin/genisoimage"
@@ -1182,7 +1184,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
     def test_the_seed_can_reach_the_ca_the_contract_demands(self):
         """The contract is only satisfiable because these variables exist.
 
-        The CA lives in the workload's state directory and a seed is rendered
+        The CA lives in the workload's egress directory and a seed is rendered
         before anything in the guest can read it, so without a magic var an
         operator has NO way to install the anchor the check above insists on --
         the only remaining escape would be seed_provides = ["ca"], which turns
@@ -1202,7 +1204,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         parse at all.
         """
         from moatery.egress_ca import ca_cert_path
-        # `workload_state_dir` is mocked to self.home for the duration of the
+        # `workload_egress_dir` is mocked to self.home for the duration of the
         # build, so this is where _read_vm_egress_ca will look.
         cert = ca_cert_path(self.home)
         cert.parent.mkdir(parents=True, exist_ok=True)
@@ -2316,36 +2318,66 @@ class TestRecordDeploymentProvenance(unittest.TestCase):
                             for m in msgs))
 
 
-class TestRestoreSelinuxLabels(unittest.TestCase):
+class TestStampSelinuxLabels(unittest.TestCase):
+    """The workload's level, stamped over its tree and its egress PKI at
+    every setup: nothing registers it, so a relabel resets it to s0."""
+
     def setUp(self):
         self.mod = ensure_common
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        enforce = self.tmp / "enforce"
+        enforce.write_text("1")
+        self.egress = self.tmp / "egress"
+        self.calls = []
+        for patch in (
+                mock.patch.object(self.mod, "SELINUXFS_ENFORCE", enforce),
+                mock.patch.object(self.mod, "workload_root_dir",
+                                  lambda n: Path("/var/lib/workloads/myapp")),
+                mock.patch.object(self.mod, "workload_egress_dir",
+                                  lambda n: self.egress),
+                mock.patch.object(self.mod, "mcs_level",
+                                  lambda uid: "s0:c3,c7"),
+                mock.patch.object(self.mod.subprocess, "run",
+                                  side_effect=self._run)):
+            patch.start()
+            self.addCleanup(patch.stop)
 
-    def test_invokes_restorecon_on_workload_root(self):
-        calls = []
-        with mock.patch.object(self.mod, "workload_root_dir", lambda n: Path("/var/lib/workloads/myapp")), \
-             mock.patch.object(self.mod.subprocess, "run",
-                               side_effect=lambda argv, **kw: (calls.append(argv),
-                                                                types.SimpleNamespace(returncode=0, stderr=""))[1]):
-            self.mod.restore_selinux_labels("myapp")
-        # -F, not plain -R. Both container_file_t and svirt_image_t are in
-        # contexts/customizable_types, and plain restorecon SKIPS any file whose
-        # current type is customizable — it prints "not reset as customized by
-        # admin" only under -v and exits 0. Without -F a VM workload's tree
-        # would silently never migrate off the blanket container_file_t, and the
-        # failure would surface much later as a confined QEMU unable to read its
-        # own disk. The success path is indistinguishable from the no-op one,
-        # which is exactly why this is asserted on the argv.
-        self.assertEqual(calls[0][:2], ["restorecon", "-RF"])
-        self.assertIn("/var/lib/workloads/myapp", calls[0])
+    def _run(self, argv, **kw):
+        self.calls.append(argv)
+        return types.SimpleNamespace(returncode=0, stderr="")
 
-    def test_logs_warning_on_failure(self):
-        msgs = []
-        with mock.patch.object(self.mod, "workload_root_dir", lambda n: Path("/x")), \
-             mock.patch.object(self.mod.subprocess, "run",
-                               return_value=types.SimpleNamespace(returncode=1, stderr="denied")), \
-             mock.patch.object(ensure_common, "log", side_effect=msgs.append):
-            self.mod.restore_selinux_labels("myapp")
-        self.assertTrue(any("restorecon failed" in m for m in msgs))
+    def test_a_containers_tree_gets_its_type_and_level_in_one_pass(self):
+        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertEqual(self.calls, [
+            ["chcon", "-R", "-h", "-t", "container_file_t", "-l", "s0:c3,c7",
+             "/var/lib/workloads/myapp"]])
+
+    def test_a_vms_tree_gets_svirt_image_t(self):
+        self.mod.stamp_selinux_labels("myvm", 10000, is_vm=True)
+        self.assertEqual(self.calls[0][4], "svirt_image_t")
+
+    def test_the_egress_pki_gets_its_types_then_the_level(self):
+        self.egress.mkdir()
+        self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertEqual(self.calls[1:], [
+            ["restorecon", "-RF", str(self.egress)],
+            ["chcon", "-R", "-h", "-l", "s0:c3,c7", str(self.egress)]])
+
+    def test_a_failure_raises_naming_it(self):
+        with mock.patch.object(
+                self.mod.subprocess, "run",
+                return_value=types.SimpleNamespace(returncode=1,
+                                                   stderr="denied")):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertIn("denied", str(ctx.exception))
+
+    def test_nothing_runs_with_selinux_disabled(self):
+        with mock.patch.object(self.mod, "SELINUXFS_ENFORCE",
+                               self.tmp / "absent"):
+            self.mod.stamp_selinux_labels("myapp", 10000, is_vm=False)
+        self.assertEqual(self.calls, [])
 
 
 class TestDetectHostIp(unittest.TestCase):
@@ -3362,7 +3394,7 @@ class TestProvision(unittest.TestCase):
             "ensure_transient_store": mock.patch.object(self.mod, "ensure_transient_store"),
             "setup_volume_directories": mock.patch.object(self.mod, "setup_volume_directories"),
             "write_environment_file": mock.patch.object(self.mod, "write_environment_file"),
-            "restore_selinux_labels": mock.patch.object(self.mod, "restore_selinux_labels"),
+            "stamp_selinux_labels": mock.patch.object(self.mod, "stamp_selinux_labels"),
             "enable_linger": mock.patch.object(self.mod, "enable_linger"),
             "setup_nvram": mock.patch.object(self.mod, "setup_nvram"),
             "setup_workload_runtime_dir": mock.patch.object(self.mod, "setup_workload_runtime_dir"),
@@ -3397,7 +3429,7 @@ class TestProvision(unittest.TestCase):
         mocks["ensure_transient_store"].assert_called_once_with(self.pw, "myapp")
         mocks["setup_volume_directories"].assert_called_once()
         mocks["write_environment_file"].assert_called_once()
-        mocks["restore_selinux_labels"].assert_called_once()
+        mocks["stamp_selinux_labels"].assert_called_once()
         mocks["enable_linger"].assert_called_once()
         # VM-only steps must not run for container workloads
         mocks["setup_nvram"].assert_not_called()
@@ -3437,11 +3469,11 @@ class TestProvision(unittest.TestCase):
         "ensure_transient_store",
         "setup_volume_directories",
         "write_environment_file",
+        "stamp_selinux_labels",
         "enable_linger",
     )
     CONTAINER_BEST_EFFORT = (
         "setup_home_directory",
-        "restore_selinux_labels",
     )
 
     def test_container_must_succeed_step_failures_are_fatal(self):
@@ -3481,12 +3513,25 @@ class TestProvision(unittest.TestCase):
         mocks["generate_vm_host_keypair"].assert_called_once()
         mocks["build_cloud_init_iso"].assert_called_once()
         mocks["write_environment_file"].assert_called_once()
-        mocks["restore_selinux_labels"].assert_called_once()
+        mocks["stamp_selinux_labels"].assert_called_once()
         # Container-only steps must not run for VM workloads
         mocks["ensure_transient_store"].assert_not_called()
         mocks["configure_subuid_subgid"].assert_not_called()
         mocks["setup_volume_directories"].assert_not_called()
         mocks["enable_linger"].assert_not_called()
+
+    def test_an_inspected_vm_moves_its_ca_before_minting(self):
+        mocks = self._patch_common("vm")
+        order = mock.Mock()
+        with mock.patch.object(self.mod, "vm_uses_inspect", return_value=True), \
+                mock.patch.object(self.mod, "move_egress_pki", order.move), \
+                mock.patch.object(self.mod, "generate_egress_ca", order.mint), \
+                mock.patch.object(self.mod, "provision_egress_pki_dirs", order.dirs):
+            rc = self.mod.provision("myvm")
+        self.assertEqual(rc, 0)
+        self.assertEqual([c[0] for c in order.mock_calls],
+                         ["move", "mint", "dirs"])
+        mocks["stamp_selinux_labels"].assert_called_once()
 
     def test_vm_nvram_failure_is_fatal(self):
         mocks = self._patch_common("vm")
@@ -3616,10 +3661,10 @@ class ContainerEgressCaGateTest(unittest.TestCase):
         "warn_if_stale_home", "setup_home_directory",
         "record_deployment_provenance", "configure_subuid_subgid",
         "ensure_transient_store", "setup_volume_directories", "setup_required_file_ownership",
-        "write_environment_file", "restore_selinux_labels", "enable_linger",
+        "write_environment_file", "stamp_selinux_labels", "enable_linger",
         "ensure_manager_slice",
     )
-    _GATED = ("setup_workload_runtime_dir", "generate_egress_ca",
+    _GATED = ("setup_workload_runtime_dir", "move_egress_pki", "generate_egress_ca",
               "write_container_ca_bundle", "provision_egress_pki_dirs")
 
     def _drive(self, network):

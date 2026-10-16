@@ -34,6 +34,13 @@ def _filecons():
     return re.findall(r'\(filecon\s+"([^"]+)"', _body())
 
 
+def _pki_filecons():
+    """(path, type) for each filecon giving a PKI type."""
+    return re.findall(
+        r'\(filecon\s+"([^"]+)"\s+\w+\s+\(system_u object_r '
+        r'(wlinspect_ca_t|wlinspect_ca_key_t|wlinspect_leaf_t) ', _body())
+
+
 class TestFilecon(unittest.TestCase):
     def test_no_filecon_globs_the_libexec_directory(self):
         """A glob over /usr/libexec/moatery would make every program there
@@ -307,13 +314,18 @@ class TestBoundary(unittest.TestCase):
         found = re.findall(pattern, _body())
         return set(" ".join(found).split())
 
-    def test_the_workload_state_tree_is_traversable_and_not_readable(self):
-        # /var/lib/workloads is container_file_t and the per-workload tree is
-        # svirt_image_t; the path to the CA crosses both. `search` on a dir is
+    def test_the_way_to_the_pki_is_traversal_only(self):
+        # The egress tree's parents are var_lib_t. `search` on a dir is
         # traversal only.
+        self.assertEqual(self._perms("var_lib_t", "dir"), {"search"})
+        self.assertEqual(self._perms("var_lib_t", "file"), set())
+
+    def test_nothing_on_a_workloads_own_tree_is_granted(self):
+        # The PKI is out of the workload trees, so the guest's disks and a
+        # container's files are not even traversed.
         for target in ("container_file_t", "svirt_image_t"):
-            self.assertEqual(self._perms(target, "dir"), {"search"}, target)
-            self.assertEqual(self._perms(target, "file"), set(), target)
+            for cls in ("dir", "file"):
+                self.assertEqual(self._perms(target, cls), set(), target)
 
     def test_the_trust_store_is_readable_and_not_writable(self):
         """The terminating listener verifies every upstream chain against it.
@@ -479,21 +491,18 @@ class TestBoundary(unittest.TestCase):
             self.assertIn(f"(type {t})", _body())
             self.assertIn(f"(typeattributeset file_type ({t}))", _body())
 
-    def test_the_pki_labels_are_not_declared_as_filecons_here(self):
-        """They are registered with semanage, in file_contexts.local.
-
-        A CIL filecon lands in the base file_contexts, and .local outranks the
-        base file WHOLESALE — so a filecon under /var/lib/workloads does not
-        lose on specificity, it is simply never consulted. The label an
-        operator asked for is not applied and nothing errors.
-        """
-        # Matched on the CONTEXT each filecon assigns, not on where the rule
-        # sits in the file. The original spelling split the text at the type
-        # declaration and searched everything after it, so it failed on the
-        # first unrelated filecon added below -- reporting the PKI rule as
-        # wrongly declared when the PKI rule had not changed.
-        for t in ("wlinspect_ca_t", "wlinspect_ca_key_t", "wlinspect_leaf_t"):
-            self.assertNotRegex(_body(), rf'\(filecon\s+"[^"]+"[^\n]*\b{t}\b')
+    def test_the_pki_filecons_are_where_none_is_shadowed(self):
+        """A CIL filecon lands in the base file_contexts, and .local outranks
+        the base file WHOLESALE, so one under a root workloadctl registers in
+        .local is never consulted. The PKI's are in the egress tree."""
+        import workload_selinux
+        from workload_lib import EGRESS_PKI_BASE
+        paths = [p for p, _ in _pki_filecons()]
+        self.assertEqual(len(paths), 4)
+        for path in paths:
+            self.assertTrue(path.startswith(f"{EGRESS_PKI_BASE}/"), path)
+        self.assertEqual(
+            workload_selinux.shadowed_filecon_paths(_body()), [])
 
 
 if __name__ == "__main__":
@@ -538,12 +547,19 @@ class TestTheKeyRuleNamesTheKey(unittest.TestCase):
     """The key's fcontext rule is built from moatery's own path for it, so
     the rule and the file the minter writes cannot drift apart."""
 
-    def test_it_matches_the_key_and_not_the_certificate(self):
-        from moatery.egress_ca import ca_cert_path, ca_key_path
-        import workload_selinux
-        patterns = {t: p for p, t in
-                    workload_selinux.pki_fcontext_patterns("web")}
-        key_rule = re.compile(patterns["wlinspect_ca_key_t"])
-        state = "/var/lib/workloads/web/state"
-        self.assertTrue(key_rule.fullmatch(str(ca_key_path(state))))
-        self.assertFalse(key_rule.fullmatch(str(ca_cert_path(state))))
+    def test_each_rule_matches_moaterys_path_for_it(self):
+        from moatery.egress_ca import (
+            ca_cert_path, ca_key_path, denial_dir, leaf_dir)
+        from workload_lib import workload_egress_dir
+        egress = workload_egress_dir("web")
+        rules = {}
+        for path, t in _pki_filecons():
+            rules.setdefault(t, []).append(re.compile(path))
+
+        def matched(t, path):
+            return any(r.fullmatch(str(path)) for r in rules[t])
+        self.assertTrue(matched("wlinspect_ca_key_t", ca_key_path(egress)))
+        self.assertFalse(matched("wlinspect_ca_key_t", ca_cert_path(egress)))
+        self.assertTrue(matched("wlinspect_ca_t", ca_cert_path(egress)))
+        for cache in (leaf_dir(egress), denial_dir(egress)):
+            self.assertTrue(matched("wlinspect_leaf_t", cache / "x.pem"))

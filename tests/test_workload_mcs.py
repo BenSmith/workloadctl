@@ -16,9 +16,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import cmd_disable
-import cmd_enable
-import cmd_lifecycle
 import workload_selinux
 from container_run_args import label_level_args
 from gen_vm import generate_virtiofs_service
@@ -26,7 +23,6 @@ from tests import REPO_ROOT
 from tests.test_generator import run_generator, write_config
 from workload_addr import UID_MAX, UID_MIN
 from workload_mcs import WORKLOAD_CATEGORIES, mcs_categories, mcs_level
-from workloadctl_core import WorkloadUserNotFound
 
 
 class Level(unittest.TestCase):
@@ -106,7 +102,11 @@ class Vms(unittest.TestCase):
 
 
 class Rules(unittest.TestCase):
-    """apply_level_fcontext, with semanage's answers stubbed."""
+    """apply_vm_fcontext, with semanage's answers stubbed: a VM's one rule
+    in file_contexts.local, a container's none, and nothing else under the
+    workload's root. The level is no rule (Stamp)."""
+
+    ROOT = "/var/lib/workloads/w"
 
     def setUp(self):
         self.calls = []
@@ -120,89 +120,68 @@ class Rules(unittest.TestCase):
         self.enterContext(mock.patch.object(
             workload_selinux.subprocess, "run", side_effect=run))
 
-    def _config(self, is_vm=False, uid=10042):
+    def _config(self, is_vm):
         config = mock.Mock(is_vm=is_vm)
         config.name = "w"
-        if isinstance(uid, Exception):
-            type(config).uid = mock.PropertyMock(side_effect=uid)
-        else:
-            config.uid = uid
         return config
 
     def _semanage(self, verb):
         return [c for c in self.calls if c[:3] == ["semanage", "fcontext", verb]]
 
-    def test_a_containers_contents_get_container_file_t_at_its_level(self):
-        workload_selinux.apply_level_fcontext(self._config(), "enable")
-        added = self._semanage("-a")
-        self.assertEqual(len(added), 2)
-        for argv in added:
-            self.assertEqual(argv[3:7],
-                             ["-t", "container_file_t", "-r", mcs_level(10042)])
-        self.assertEqual(sorted(a[-1] for a in added), sorted(
-            workload_selinux.level_fcontext_patterns("w")))
-        self.assertEqual(self.calls[-1][:2], ["restorecon", "-RF"])
+    def _listed(self, *patterns):
+        self.listing = "".join(
+            f"{p}  all files  system_u:object_r:container_file_t:s0\n"
+            for p in patterns)
 
-    def test_a_vms_get_svirt_image_t(self):
-        workload_selinux.apply_level_fcontext(self._config(is_vm=True),
-                                              "enable")
-        for argv in self._semanage("-a"):
-            self.assertEqual(argv[4], workload_selinux.IMAGE_SELINUX_TYPE)
+    def test_a_vm_gets_its_whole_tree_as_svirt_image_t(self):
+        workload_selinux.apply_vm_fcontext(self._config(True), "enable")
+        self.assertEqual(self._semanage("-a"), [
+            ["semanage", "fcontext", "-a", "-t", "svirt_image_t",
+             f"{self.ROOT}(/.*)?"]])
 
-    def test_registered_rules_are_kept_and_others_modified(self):
-        pattern = workload_selinux.level_fcontext_patterns("w")
-        self.listing = (
-            f"{pattern[0]}  all files  system_u:object_r:container_file_t:"
-            f"{mcs_level(10042)}\n"
-            f"{pattern[1]}  all files  system_u:object_r:container_file_t:"
-            f"s0:c1,c2\n")
-        workload_selinux.apply_level_fcontext(self._config(), "enable")
+    def test_every_other_rule_under_the_root_goes(self):
+        self._listed(f"{self.ROOT}(/.*)?", f"{self.ROOT}/state/ca(/.*)?",
+                     f"{self.ROOT}/state/.+", f"{self.ROOT}/data(/.*)?")
+        workload_selinux.apply_vm_fcontext(self._config(True), "enable")
         self.assertEqual(self._semanage("-a"), [])
-        self.assertEqual([c[-1] for c in self._semanage("-m")], [pattern[1]])
+        self.assertEqual(sorted(c[-1] for c in self._semanage("-d")), sorted([
+            f"{self.ROOT}/state/ca(/.*)?", f"{self.ROOT}/state/.+",
+            f"{self.ROOT}/data(/.*)?"]))
 
-    def test_no_user_registers_nothing(self):
-        workload_selinux.apply_level_fcontext(
-            self._config(uid=WorkloadUserNotFound("w")), "enable")
+    def test_a_container_keeps_none(self):
+        self._listed(f"{self.ROOT}(/.*)?", f"{self.ROOT}/data(/.*)?")
+        workload_selinux.apply_vm_fcontext(self._config(False), "enable")
+        self.assertEqual(self._semanage("-a"), [])
+        self.assertEqual(len(self._semanage("-d")), 2)
+
+    def test_disable_removes_the_vms_rule(self):
+        self._listed(f"{self.ROOT}(/.*)?")
+        workload_selinux.apply_vm_fcontext(self._config(True), "disable")
+        self.assertEqual([c[-1] for c in self._semanage("-d")],
+                         [f"{self.ROOT}(/.*)?"])
         self.assertEqual(self._semanage("-a"), [])
 
-    def test_disable_removes_both(self):
-        workload_selinux.apply_level_fcontext(self._config(), "disable")
-        self.assertEqual(sorted(c[-1] for c in self._semanage("-d")), sorted(
-            workload_selinux.level_fcontext_patterns("w")))
+    def test_another_workload_sharing_the_prefix_is_left_alone(self):
+        self._listed("/var/lib/workloads/w-2(/.*)?", "/var/lib/workloads(/.*)?")
+        workload_selinux.apply_vm_fcontext(self._config(False), "enable")
+        self.assertEqual(self._semanage("-d"), [])
 
-    def test_state_and_the_pki_subtree_stay_off_it(self):
-        """The stem before the first metacharacter decides which rule wins:
-        each PKI rule's is longer, and the state rule covers only what is
-        below state/, which the inspector traverses."""
-        def stem(pattern):
-            return re.split(r"[\\\\.()?*+\\[]", pattern, maxsplit=1)[0]
-        levels = workload_selinux.level_fcontext_patterns("w")
-        state_rule = next(p for p in levels if "/state/" in p)
-        self.assertTrue(state_rule.endswith("/state/.+"), state_rule)
-        for pki, _ in workload_selinux.pki_fcontext_patterns("w"):
-            self.assertGreater(len(stem(pki)), len(stem(state_rule)), pki)
+    def test_nothing_is_relabelled_here(self):
+        """The setup unit stamps the tree's type with its level; a
+        restorecon here would reset the level to s0."""
+        workload_selinux.apply_vm_fcontext(self._config(True), "enable")
+        self.assertFalse([c for c in self.calls if c[0] == "restorecon"])
 
 
 class Wiring(unittest.TestCase):
-    """What calls apply_level_fcontext: enable after the user exists,
-    recreate, and disable."""
+    """The setup unit's step stamps the level for both substrates."""
 
-    def _source(self, module):
-        return Path(module.__file__).read_text()
-
-    def test_enable_registers_after_provisioning_before_starting(self):
-        text = self._source(cmd_enable)
-        provision = text.index("    provision_user(config)\n")
-        register = text.index('apply_level_fcontext(config, "enable")')
-        start = text.index("    start_service(config)\n")
-        self.assertLess(provision, register)
-        self.assertLess(register, start)
-
-    def test_recreate_and_disable_call_it(self):
-        self.assertIn('apply_level_fcontext(config, "enable")',
-                      self._source(cmd_lifecycle))
-        self.assertIn('apply_level_fcontext(config, "disable")',
-                      self._source(cmd_disable))
+    def test_both_branches_of_the_setup_step_stamp(self):
+        text = (REPO_ROOT / "lib" / "ensure_user.py").read_text()
+        self.assertIn("stamp_selinux_labels(name, pw.pw_uid, is_vm=True)",
+                      text)
+        self.assertIn("stamp_selinux_labels(name, pw.pw_uid, is_vm=False)",
+                      text)
 
     def test_qemu_starts_at_its_uids_level(self):
         text = (REPO_ROOT / "lib" / "vm_notify.py").read_text()

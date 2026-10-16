@@ -379,8 +379,8 @@ class TestSidecarHardening(unittest.TestCase):
         unit = dict(self.units())["inspect"]
         rw = [line for line in unit.splitlines()
               if line.startswith("ReadWritePaths=")][0]
-        self.assertIn('"/var/lib/workloads/web/state/leaves"', rw)
-        self.assertIn('"/var/lib/workloads/web/state/leaves-denied"', rw)
+        self.assertIn('"/var/lib/workloadctl/egress/web/leaves"', rw)
+        self.assertIn('"/var/lib/workloadctl/egress/web/leaves-denied"', rw)
 
     def test_the_inspector_may_not_write_its_own_ca(self):
         """The same split the two SELinux types make, and for the same reason:
@@ -389,7 +389,7 @@ class TestSidecarHardening(unittest.TestCase):
         unit = dict(self.units())["inspect"]
         rw = [line for line in unit.splitlines()
               if line.startswith("ReadWritePaths=")][0]
-        self.assertNotIn("/state/ca", rw)
+        self.assertNotIn("/ca", rw)
 
     def test_the_responder_gets_no_extra_writable_paths(self):
         """It mints nothing; naming the caches there would be a widening with

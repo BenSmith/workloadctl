@@ -148,8 +148,8 @@ DIGEST_KEY = "policy_digest"
 # /var/lib/workloads, NOT /etc/workloads.d: the bundle directory holds the
 # TOML, the state subtree holds the PKI. A rig pointed at the config root
 # finds no certificate and reports the fingerprint check as unarmed.
-WORKLOADS_STATE = "/var/lib/workloads"
-CA_REL = "state/ca/egress-ca.crt"
+EGRESS_PKI = "/var/lib/workloadctl/egress"
+CA_REL = "ca/egress-ca.crt"
 
 # The listener's STATUS_INTERVAL, spelled out for the usual reason. The file is
 # written once before the accept loop and then on this cadence, so a check that
@@ -845,7 +845,7 @@ def staleness():
     # --- T7: the minter's CA fingerprint equals a fresh read of the file ---
     ca = ((doc or {}).get("mint") or {}).get("ca") or {}
     reported = ca.get("sha256") if isinstance(ca, dict) else None
-    cert = Path(WORKLOADS_STATE) / name / CA_REL
+    cert = Path(EGRESS_PKI) / name / CA_REL
     fresh = None
     if cert.exists():
         out = subprocess.run(

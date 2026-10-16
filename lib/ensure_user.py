@@ -26,8 +26,9 @@ from vm_defs import SEED_CONTRACT_EXIT, SeedContractError
 import ensure_common
 from ensure_common import (
     warn_if_stale_home, setup_home_directory, record_deployment_provenance,
-    restore_selinux_labels, write_environment_file, setup_workload_runtime_dir,
-    generate_egress_ca, provision_egress_pki_dirs, write_container_ca_bundle,
+    stamp_selinux_labels, write_environment_file, setup_workload_runtime_dir,
+    move_egress_pki, generate_egress_ca, provision_egress_pki_dirs,
+    write_container_ca_bundle,
 )
 from ensure_vm import (
     setup_nvram, setup_vm_volume_directories, build_cloud_init_iso,
@@ -220,6 +221,7 @@ def provision(name: str) -> int:
         # branch below this one.
         if vm_uses_inspect(config):
             try:
+                move_egress_pki(pw, name)
                 generate_egress_ca(pw, name)
             except Exception as e:
                 ensure_common.log(f"  ERROR: Failed to generate egress CA for {name}: {e}")
@@ -251,9 +253,11 @@ def provision(name: str) -> int:
             return 1
 
         try:
-            restore_selinux_labels(name)
+            stamp_selinux_labels(name, pw.pw_uid, is_vm=True)
         except Exception as e:
-            ensure_common.log(f"  WARNING: Failed to restore SELinux labels for {username}: {e}")
+            ensure_common.log(f"  ERROR: Failed to label {name}'s files with its "
+                f"SELinux level: {e}")
+            return 1
 
         try:
             write_environment_file(name, pw, config)
@@ -301,6 +305,7 @@ def provision(name: str) -> int:
                     f"runtime directory for {name}: {e}")
                 return 1
             try:
+                move_egress_pki(pw, name)
                 generate_egress_ca(pw, name)
             except Exception as e:
                 ensure_common.log(f"  ERROR: Failed to generate egress CA for {name}: {e}")
@@ -338,9 +343,11 @@ def provision(name: str) -> int:
             return 1
 
         try:
-            restore_selinux_labels(name)
+            stamp_selinux_labels(name, pw.pw_uid, is_vm=False)
         except Exception as e:
-            ensure_common.log(f"  WARNING: Failed to restore SELinux labels for {username}: {e}")
+            ensure_common.log(f"  ERROR: Failed to label {name}'s files with its "
+                f"SELinux level: {e}")
+            return 1
 
         try:
             enable_linger(pw)

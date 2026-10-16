@@ -113,8 +113,8 @@ def selinux_label_check(rule_present: bool | None, label: str | None,
     container_file_t, which rootless podman requires. VM workloads need
     svirt_image_t: `virt_domain` has no read, write, getattr or append on
     container_file_t, so a confined QEMU cannot use a disk image labelled with
-    it. The VM rule is registered per workload at enable time and wins its own
-    subtree against the blanket rule by specificity.
+    it. The VM rule is registered per workload at enable time, after the
+    blanket rule, and within file_contexts.local the rule added last applies.
 
     Historically this check hardcoded container_file_t, which would report
     every correctly-labelled VM workload as broken.
@@ -127,13 +127,13 @@ def selinux_label_check(rule_present: bool | None, label: str | None,
     if rule_present is None and label is None:
         return (True, "SELinux labeling state unknown "
                       "(semanage unavailable or SELinux disabled)", None)
-    # `restorecon -RF`, not `-R`: both container_file_t and svirt_image_t are
-    # in contexts/customizable_types, and plain restorecon skips any file whose
-    # *current* type is customizable — printing "not reset as customized by
-    # admin" only under -v, and exiting 0. Without -F the remediation below
-    # would appear to succeed and change nothing.
-    fix = (f"sudo semanage fcontext -a -t {expected} '{scope}(/.*)?' "
-           f"&& sudo restorecon -RF {scope}")
+    # Recreate, not restorecon: it registers a VM's rule and restarts the
+    # setup unit, which stamps the tree's type and its level together. A
+    # restorecon would put the level back to s0.
+    fix = f"sudo workloadctl recreate {name}"
+    if not is_vm:
+        fix = (f"sudo semanage fcontext -a -t {expected} '{scope}(/.*)?' "
+               f"&& {fix}")
 
     if label is not None and label != expected:
         return (False, f"Workload tree is labeled {label}, not {expected} "
@@ -637,16 +637,14 @@ def vm_confinement_check(config, *, enabled=PROBE, module_loaded=PROBE,
     return ("vm_confinement", True, f"QEMU confined as {VM_QEMU_TYPE}{tail}")
 
 
-# Everything under data/ carries the workload's own level (workload_mcs), from
-# the rules apply_level_fcontext registers and the relabel at each start, so
-# no other workload's process may open it whatever its mode (audit F3). A file
-# a container creates takes its directory's level, so new files keep it. A
-# file at another level is one the rules do not cover yet (an enable from
-# before them: recreate registers them) or one something stamped by hand.
+# Everything under data/ carries the workload's own level (workload_mcs),
+# stamped by the setup unit at each boot, so no other workload's process may
+# open it whatever its mode (audit F3). A file a container creates takes its
+# directory's level, so new files keep it. A file at another level is one a
+# relabel or a hand has reset since; the setup unit's next run restamps it.
 #
-# state/ is deliberately out of scope. It holds the rootless podman graphroot,
-# where podman writes its own files at s0 between relabels and labels each
-# container's layers itself; scanning it would fire on every healthy workload.
+# state/ is out of scope: it holds the rootless podman graphroot, which is
+# large, and the stamp covers it in the same pass as data/.
 MCS_SCAN_TIMEOUT = 60
 MCS_SAMPLE_PATHS = 3
 

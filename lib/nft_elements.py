@@ -94,14 +94,11 @@ def resolve_status_path(name: str) -> str:
 # The type the record subtree carries, and the pattern the CIL module's own
 # filecon names.
 #
-# A `filecon` IS reachable here, unlike the PKI subtree's -- and the difference
-# is worth stating, because pki_fcontext_patterns()'s docstring says the
-# opposite about a path that looks similar. file_contexts.local outranks the
-# base file wholesale, so a module filecon is shadowed only under a prefix
-# workloadctl has registered via semanage; LOCAL_FCONTEXT_ROOTS names those, and
-# /var/log is not one of them. One glob also covers every workload, so unlike
-# the PKI rules there is nothing per-workload to register or to remove at
-# disable.
+# A `filecon` is reachable here. file_contexts.local outranks the base file
+# wholesale, so a module filecon is shadowed only under a prefix workloadctl
+# has registered via semanage; LOCAL_FCONTEXT_ROOTS names those, and /var/log
+# is not one of them. One glob also covers every workload, so there is nothing
+# per-workload to register or to remove at disable.
 INSPECT_RECORD_SELINUX_TYPE = "wlinspect_log_t"
 
 
