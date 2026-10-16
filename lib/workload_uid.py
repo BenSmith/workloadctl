@@ -8,6 +8,7 @@ always the same path and the `username:start:count` format has one parser.
 """
 import contextlib
 import fcntl
+import grp
 import pwd
 from pathlib import Path
 
@@ -348,6 +349,11 @@ def _used_uids() -> set[int]:
     _reserved_uids_in_pending_sysusers — slots handed out but not yet created).
     Callers must hold SUBID_LOCK: the set is only meaningful for as long as no
     other allocator can move.
+
+    GIDs count too. sysusers gives the user a group of the same number, and
+    refuses a UID whose GID another group holds: the user then gets a system
+    UID, which ensure-user refuses. `groupadd` hands out the GID after the
+    highest one in use, so a group made by hand lands in the workload range.
     """
     used = set(_allocated_uids)
     used |= _reserved_uids_in_pending_sysusers()
@@ -355,6 +361,12 @@ def _used_uids() -> set[int]:
         for pw in pwd.getpwall():
             if UID_MIN <= pw.pw_uid <= UID_MAX:
                 used.add(pw.pw_uid)
+    except Exception:
+        pass
+    try:
+        for gr in grp.getgrall():
+            if UID_MIN <= gr.gr_gid <= UID_MAX:
+                used.add(gr.gr_gid)
     except Exception:
         pass
     return used

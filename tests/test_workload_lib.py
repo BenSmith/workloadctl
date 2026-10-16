@@ -1446,6 +1446,9 @@ class TestGetNextUid(unittest.TestCase):
                 return_value=set(),
             )
         )
+        self.enterContext(
+            patch.object(workload_uid.grp, "getgrall", return_value=[])
+        )
 
     def _pw(self, uid):
         import types
@@ -1472,6 +1475,27 @@ class TestGetNextUid(unittest.TestCase):
             first = workload_uid.get_next_uid()
             second = workload_uid.get_next_uid()
         self.assertNotEqual(first, second)
+
+    def test_skips_a_uid_whose_gid_a_group_holds(self):
+        # 2026-10-16, on the proving host: a hand-made group took the next
+        # GID, sysusers gave the workload's user system UID 980, and enable
+        # failed with "UID 980 is below minimum workload UID 10000".
+        import types
+        group = types.SimpleNamespace(gr_gid=workload_addr.UID_MIN)
+        with patch.object(workload_uid, '_allocated_uids', set()), \
+             patch.object(workload_uid.pwd, 'getpwall', return_value=[]), \
+             patch.object(workload_uid.grp, 'getgrall', return_value=[group]):
+            uid = workload_uid.get_next_uid()
+        self.assertEqual(uid, workload_addr.UID_MIN + 1)
+
+    def test_getgrall_failure_still_counts_passwd(self):
+        live = [self._pw(workload_addr.UID_MIN)]
+        with patch.object(workload_uid, '_allocated_uids', set()), \
+             patch.object(workload_uid.pwd, 'getpwall', return_value=live), \
+             patch.object(workload_uid.grp, 'getgrall',
+                          side_effect=OSError("boom")):
+            uid = workload_uid.get_next_uid()
+        self.assertEqual(uid, workload_addr.UID_MIN + 1)
 
     def test_getpwall_failure_falls_back_to_allocated_set_only(self):
         with patch.object(workload_uid, '_allocated_uids', set()), \
@@ -1510,6 +1534,9 @@ class TestClaimUid(unittest.TestCase):
                 workload_uid, "_reserved_uids_in_pending_sysusers",
                 return_value=set(),
             )
+        )
+        self.enterContext(
+            patch.object(workload_uid.grp, "getgrall", return_value=[])
         )
         self.enterContext(patch.object(workload_uid, "_allocated_uids", set()))
         self.enterContext(
@@ -1656,7 +1683,8 @@ class TestReservedUidsInPendingSysusers(unittest.TestCase):
         )
         with patch.object(workload_uid, "subid_lock", contextlib.nullcontext), \
              patch.object(workload_uid, "_allocated_uids", set()), \
-             patch.object(workload_uid.pwd, "getpwall", return_value=[]):
+             patch.object(workload_uid.pwd, "getpwall", return_value=[]), \
+             patch.object(workload_uid.grp, "getgrall", return_value=[]):
             uid = workload_uid.get_next_uid()
         self.assertEqual(uid, workload_addr.UID_MIN + 1)
 
