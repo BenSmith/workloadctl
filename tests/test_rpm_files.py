@@ -31,7 +31,10 @@ workload-generate is a libexec-dir helper -- so the check is "installed
 somewhere and packaged at that same path", not a fixed directory.
 """
 
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -112,6 +115,46 @@ class TestSpecInstallsEveryHelper(unittest.TestCase):
         dests = [dest for _, dest in self.installs]
         dupes = {d for d in dests if dests.count(d) > 1}
         self.assertFalse(dupes, f"duplicate %install destinations: {dupes}")
+
+
+BRP_MANGLE = Path("/usr/lib/rpm/redhat/brp-mangle-shebangs")
+
+
+class TestBundleShebangsSurviveTheBuild(unittest.TestCase):
+    """Fedora's build rewrites #!/bin/bash to #!/usr/bin/bash in every
+    executable it packages. The bundles' scripts are copied into their
+    images, and the Alpine ones (pihole-vpn, proxy-stack) have no
+    /usr/bin/bash: found on 2026-10-16, when both failed to start from an
+    installed package with catatonit's "failed to exec pid1"."""
+
+    def exclusion(self):
+        m = re.search(
+            r"(?m)^%global __brp_mangle_shebangs_exclude_from (\S+)$",
+            SPEC.read_text())
+        self.assertIsNotNone(m, "the spec excludes nothing from the rewrite")
+        return m.group(1).replace("%{_datadir}", "/usr/share")
+
+    def test_the_exclusion_covers_the_bundles(self):
+        self.assertRegex("/usr/share/workloadctl/workloads/pihole-vpn/"
+                         "entrypoint.sh", self.exclusion())
+        self.assertNotRegex("/usr/libexec/workloadctl/workload-ensure-user",
+                            self.exclusion())
+
+    @unittest.skipUnless(BRP_MANGLE.exists(), "redhat-rpm-config absent")
+    def test_the_build_leaves_a_bundle_script_alone(self):
+        with tempfile.TemporaryDirectory() as root:
+            script = Path(root, "usr/share/workloadctl/workloads/b/run.sh")
+            host = Path(root, "usr/libexec/h")
+            for path in (script, host):
+                path.parent.mkdir(parents=True)
+                path.write_text("#!/bin/bash\ntrue\n")
+                path.chmod(0o755)
+            subprocess.run([str(BRP_MANGLE), "--files", self.exclusion()],
+                           env={**os.environ, "RPM_BUILD_ROOT": root},
+                           check=True, capture_output=True)
+            self.assertEqual(script.read_text(), "#!/bin/bash\ntrue\n")
+            # The control: the rewrite ran, and an unexcluded file got it.
+            self.assertEqual(host.read_text(), "#!/usr/bin/bash\ntrue\n")
 
 
 if __name__ == "__main__":

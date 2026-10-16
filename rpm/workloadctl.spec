@@ -1,4 +1,7 @@
 %global source_date_epoch_from_changelog 0
+# The bundles' scripts run inside their images, not on this host, and the
+# Alpine ones have no /usr/bin/bash: the shebang rewrite would break them.
+%global __brp_mangle_shebangs_exclude_from ^%{_datadir}/workloadctl/workloads/
 
 Name:           workloadctl
 Version:        0.1.0
