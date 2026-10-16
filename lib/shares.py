@@ -19,8 +19,10 @@ processes hold beside their workload's pair, so a workload outside the
 share is refused them by SELinux whatever their modes (audit F3). A file a
 writer creates takes the directory's level, so new files keep the
 category. Writers are in the share's group, which owns the tree; readers
-get a read ACL and their mount is read-only, so a reader cannot plant a
-file in it (audit F14).
+are in its read group, which has a read ACL, and their mount is read-only,
+so a reader cannot plant a file in it (audit F14). Groups, not users: a
+process keeps its supplementary groups whatever uid it runs as in the
+container, so a reader serving files as container root is still let in.
 
 Shares are for container workloads.
 
@@ -40,8 +42,9 @@ from workload_mcs import CATEGORIES, WORKLOAD_CATEGORIES
 SHARES_FILE_NAME = "shares.toml"
 ACCESS = ("read", "write")
 GROUP_PREFIX = "wl-share-"
+READ_GROUP_SUFFIX = "-ro"
 # A group name is at most 32 characters.
-MAX_SHARE_NAME = 32 - len(GROUP_PREFIX)
+MAX_SHARE_NAME = 32 - len(GROUP_PREFIX) - len(READ_GROUP_SUFFIX)
 
 
 class Share(NamedTuple):
@@ -63,6 +66,10 @@ def shares_file() -> Path:
 
 def share_group(name: str) -> str:
     return f"{GROUP_PREFIX}{name}"
+
+
+def share_read_group(name: str) -> str:
+    return f"{share_group(name)}{READ_GROUP_SUFFIX}"
 
 
 def derived_category(name: str) -> int:
@@ -197,8 +204,9 @@ def share_categories(config: dict, shares: dict[str, Share]) -> list[int]:
 
 def resolve(config: dict, shares: dict[str, Share], warn=None) -> dict:
     """The workload as its units run it: each share mounted in every
-    container (read-only for a reader), the writers' groups added, and the
-    share categories recorded for its label (security.share_categories).
+    container (read-only for a reader), the share's group or read group
+    added, and the share categories recorded for its label
+    (security.share_categories).
     A share shares.toml does not declare is left out, with a warning."""
     joined = memberships(config)
     if not joined:
@@ -214,8 +222,8 @@ def resolve(config: dict, shares: dict[str, Share], warn=None) -> dict:
             continue
         suffix = ":ro" if m.access == "read" else ""
         volumes.append(f"{membership_source(share, m)}:{m.target}{suffix}")
-        if m.access == "write":
-            groups.append(share_group(m.name))
+        groups.append(share_group(m.name) if m.access == "write"
+                      else share_read_group(m.name))
     holders = (config.get("containers") or []) if "containers" in config \
         else [config]
     for holder in holders:

@@ -1834,8 +1834,9 @@ volumes = [
 #   path = "/var/mnt/downloads"
 #   category = 512          # optional, 300-1023; derived from the name
 # Its files carry the share's own SELinux category, which every member holds;
-# writers join the group wl-share-<name>, readers get a read ACL and a
-# read-only mount. Every container of the workload mounts it.
+# writers join the group wl-share-<name>, readers the group
+# wl-share-<name>-ro, which has a read ACL, and get a read-only mount.
+# Every container of the workload mounts it.
 [[shares]]
 name = "downloads"          # a share shares.toml declares
 target = "/downloads"       # where the containers see it

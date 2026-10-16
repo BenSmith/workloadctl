@@ -3,8 +3,8 @@
 
 A share is a host directory some workloads use: its files carry a
 category its members hold, so no other workload reaches them; writers are
-in its group and readers have a read ACL and a read-only mount, so a reader
-cannot plant a file. Each piece fails silently when missing: a mount
+in its group and readers in its read group, which has a read ACL, with a
+read-only mount, so a reader cannot plant a file. Each piece fails silently when missing: a mount
 without the category, a writer without the group, a reader with write.
 """
 import re
@@ -41,6 +41,11 @@ class Declaring(unittest.TestCase):
         self.assertTrue(WORKLOAD_CATEGORIES <= share.category < CATEGORIES)
         self.assertEqual(share.category, shares.derived_category("downloads"))
 
+    def test_the_longest_name_gives_a_read_group_a_group_name_can_hold(self):
+        name = "a" * shares.MAX_SHARE_NAME
+        self.assertIn(name, parsed({"shares": {name: {"path": "/a"}}}))
+        self.assertEqual(len(shares.share_read_group(name)), 32)
+
     def test_a_category_can_be_given(self):
         doc = {"shares": {"a": {"path": "/a", "category": 700}}}
         self.assertEqual(parsed(doc)["a"].category, 700)
@@ -52,6 +57,7 @@ class Declaring(unittest.TestCase):
                  "category must be"),
                 ({"shares": {"Bad": {"path": "/a"}}}, "share name"),
                 ({"shares": {"a" * 30: {"path": "/a"}}}, "share name"),
+                ({"shares": {"a" * 21: {"path": "/a"}}}, "share name"),
                 ({"shares": {"a": {"path": "/a", "mode": 1}}}, "unknown"),
                 ({"shares": {"a": {"path": "/a", "category": 600},
                              "b": {"path": "/b", "category": 600}}},
@@ -102,14 +108,15 @@ class Joining(unittest.TestCase):
 
 class Resolving(unittest.TestCase):
 
-    def test_a_reader_mounts_read_only_and_joins_no_group(self):
+    def test_a_reader_mounts_read_only_in_the_read_group(self):
         doc = {"workload": {"name": "j"}, "container": {"image": "x"},
                "shares": [{"name": "downloads", "target": "/media",
                            "access": "read", "subpath": "media"}]}
         got = shares.resolve(doc, parsed())
         self.assertEqual(got["storage"]["volumes"],
                          ["/var/mnt/downloads/media:/media:ro"])
-        self.assertEqual(got["security"]["extra_groups"], [])
+        self.assertEqual(got["security"]["extra_groups"],
+                         ["wl-share-downloads-ro"])
         self.assertEqual(got["security"]["share_categories"],
                          [parsed()["downloads"].category])
         self.assertNotIn("storage", doc)
@@ -194,8 +201,9 @@ class Generated(unittest.TestCase):
             self.assertTrue(level.endswith(f",c{category}"), level)
         writer = (Path(users) / "workload-torrent.conf").read_text()
         reader = (Path(users) / "workload-jelly.conf").read_text()
-        self.assertIn("m _wl-torrent wl-share-downloads", writer)
-        self.assertNotIn("wl-share-downloads", reader)
+        self.assertIn("m _wl-torrent wl-share-downloads\n", writer)
+        self.assertIn("m _wl-jelly wl-share-downloads-ro\n", reader)
+        self.assertNotIn("wl-share-downloads\n", reader)
 
 
 class HostSetup(unittest.TestCase):
@@ -225,12 +233,13 @@ class HostSetup(unittest.TestCase):
                                        config=self.member(name, access))
         shares_setup.apply_shares(
             config, action, run=self.run, shares=parsed(),
-            configs={n: self.member(n, a) for n, a in others.items()})
+            configs={n: self.member(n, a) for n, a in others.items()},
+            members=lambda group: [])
 
     def has(self, *prefix):
         return [c for c in self.calls if c[:len(prefix)] == list(prefix)]
 
-    def test_enable_labels_owns_and_gives_every_reader_its_acl(self):
+    def test_enable_labels_owns_and_gives_the_read_group_its_acl(self):
         self.apply("torrent", "write", "enable",
                    {"jelly": "read", "smb": "read"})
         category = parsed()["downloads"].category
@@ -239,25 +248,35 @@ class HostSetup(unittest.TestCase):
                           "container_file_t", "-r", f"s0:c{category}",
                           "/mnt/downloads(/.*)?"])
         self.assertTrue(self.has("restorecon", "-RF", "/var/mnt/downloads"))
+        self.assertTrue(self.has("systemd-sysusers", "--inline",
+                                 "g wl-share-downloads -",
+                                 "g wl-share-downloads-ro -"))
         self.assertTrue(self.has("chgrp", "-R", "wl-share-downloads"))
         self.assertTrue(self.has("chmod", "-R", "g+rwX,o-rwx"))
         acls = {c[3] for c in self.has("setfacl", "-R", "-m")}
-        self.assertEqual(acls, {"u:_wl-jelly:rX", "u:_wl-smb:rX"})
+        self.assertEqual(acls, {"g:wl-share-downloads-ro:rX"})
         defaults = {c[4] for c in self.has("setfacl", "-R", "-d", "-m")}
         self.assertEqual(defaults, acls)
 
-    def test_a_reader_enabled_first_gets_its_own_acl(self):
-        self.apply("jelly", "read", "enable", {})
-        self.assertEqual({c[3] for c in self.has("setfacl", "-R", "-m")},
-                         {"u:_wl-jelly:rX"})
+    def test_no_user_gets_an_acl(self):
+        # A reader serving files as container root runs as a subordinate
+        # uid, not the workload user: only a group reaches it.
+        for name, access in (("jelly", "read"), ("torrent", "write")):
+            self.apply(name, access, "enable", {"smb": "read"})
+        self.assertFalse([c for c in self.calls
+                          if c[0] == "setfacl" and "u:" in " ".join(c)])
 
-    def test_a_writer_never_gets_a_read_acl(self):
-        self.apply("torrent", "write", "enable", {"other": "write"})
-        self.assertEqual(self.has("setfacl", "-R", "-m"), [])
-
-    def test_disabling_a_reader_takes_its_acl_away(self):
-        self.apply("jelly", "read", "disable", {"torrent": "write"})
-        self.assertTrue(self.has("setfacl", "-R", "-x", "u:_wl-jelly"))
+    def test_disabling_a_member_takes_it_out_of_the_groups(self):
+        groups = {"wl-share-downloads-ro": ["_wl-jelly", "_wl-smb"]}
+        config = types.SimpleNamespace(name="jelly",
+                                       config=self.member("jelly", "read"))
+        shares_setup.apply_shares(
+            config, "disable", run=self.run, shares=parsed(),
+            configs={"torrent": self.member("torrent", "write")},
+            members=lambda g: groups.get(g, []))
+        self.assertEqual(self.has("gpasswd"),
+                         [["gpasswd", "-d", "_wl-jelly",
+                           "wl-share-downloads-ro"]])
         self.assertEqual(self.has("semanage", "fcontext", "-d"), [])
 
     def test_the_last_member_out_removes_the_rule(self):

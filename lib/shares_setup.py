@@ -5,7 +5,8 @@ recreated or disabled (shares.py says what a share is).
 - Its tree carries the share's category: an fcontext rule, then a relabel.
 - Its group owns the tree, group-writable, directories setgid, nothing for
   others: the writers are in the group.
-- Each reader has a read ACL, and a default one so new files carry it.
+- Its read group has a read ACL, and a default one so new files carry it:
+  the readers are in that group.
 
 Whole-tree passes, so at enable and recreate only, never at each start.
 Best-effort, like the other fcontext steps: a host without semanage or
@@ -14,6 +15,7 @@ setfacl is warned about, not refused.
 Installed to /usr/libexec/workloadctl/shares_setup.py.
 """
 
+import grp
 import shutil
 import subprocess
 import tomllib
@@ -22,7 +24,7 @@ from pathlib import Path
 from cli_log import info, warn
 from shares import (
     load_shares, memberships, membership_source, readers_and_writers,
-    share_group,
+    share_group, share_read_group,
 )
 from workload_lib import (
     ENABLED_MARKER_NAME, iter_workloads, workload_username,
@@ -120,9 +122,10 @@ def _label(share, run):
     _run(["restorecon", "-RF", share.path], run)
 
 
-def _own(share, readers, former_readers, run):
-    group = share_group(share.name)
-    _run(["systemd-sysusers", "--inline", f"g {group} -"], run)
+def _own(share, run):
+    group, readers = share_group(share.name), share_read_group(share.name)
+    _run(["systemd-sysusers", "--inline", f"g {group} -", f"g {readers} -"],
+         run)
     _run(["chgrp", "-R", group, share.path], run)
     _run(["chmod", "-R", "g+rwX,o-rwx", share.path], run)
     _run(["find", share.path, "-type", "d", "-exec", "chmod", "g+s", "{}",
@@ -131,25 +134,32 @@ def _own(share, readers, former_readers, run):
         warn(f"  WARNING: no setfacl: share {share.name}'s readers get no "
              f"read access")
         return
-    for workload in former_readers:
-        user = workload_username(workload)
-        _run(["setfacl", "-R", "-x", f"u:{user}", share.path], run)
-        _run(["setfacl", "-R", "-d", "-x", f"u:{user}", share.path], run)
-    for workload in readers:
-        user = workload_username(workload)
-        _run(["setfacl", "-R", "-m", f"u:{user}:rX", share.path], run)
-        _run(["setfacl", "-R", "-d", "-m", f"u:{user}:rX", share.path], run)
+    _run(["setfacl", "-R", "-m", f"g:{readers}:rX", share.path], run)
+    _run(["setfacl", "-R", "-d", "-m", f"g:{readers}:rX", share.path], run)
+
+
+def _members(group):
+    try:
+        return grp.getgrnam(group).gr_mem
+    except KeyError:
+        return []
+
+
+def _leave(share, user, run, members=_members):
+    """Take a disabled workload's user out of the share's groups."""
+    for group in (share_group(share.name), share_read_group(share.name)):
+        if user in members(group):
+            _run(["gpasswd", "-d", user, group], run)
 
 
 def apply_shares(config, action: str, run=subprocess.run,
-                 configs=None, shares=None):
+                 configs=None, shares=None, members=_members):
     """Set up (enable) or retire this workload's part in its shares.
 
     `config` is the workload's WorkloadConfig. At enable every share it is
-    in is labelled, owned and given its readers' ACLs, all members' at once,
-    so a reader enabled before the writer is still served. At disable its
-    own ACL goes, and a share left with no member keeps its files and loses
-    its rule.
+    in is labelled, owned and given its read group's ACL. At disable its
+    user leaves the share's groups, and a share left with no member keeps its
+    files and loses its rule.
     """
     own = memberships(config.config)
     if not own:
@@ -158,26 +168,23 @@ def apply_shares(config, action: str, run=subprocess.run,
         shares, errors = load_shares()
         for e in errors:
             warn(f"  WARNING: {e}")
-    if configs is None:
-        configs = enabled_configs(skip=config.name)
-    others = {n: c for n, c in configs.items() if n != config.name}
     for m in own:
         share = shares.get(m.name)
         if share is None:
             warn(f"  WARNING: share {m.name!r} is not declared; "
                  f"nothing set up for it")
             continue
-        readers, writers = readers_and_writers(share.name, others)
         if action == "disable":
-            if m.access == "read":
-                _own(share, readers, [config.name], run)
+            _leave(share, workload_username(config.name), run, members)
+            if configs is None:
+                configs = enabled_configs(skip=config.name)
+            readers, writers = readers_and_writers(
+                share.name, {n: c for n, c in configs.items()
+                             if n != config.name})
             if not readers and not writers and shutil.which("semanage"):
                 _run(["semanage", "fcontext", "-d",
                       fcontext_pattern(share.path)], run)
             continue
-        source = membership_source(share, m)
-        _run(["mkdir", "-p", source], run)
-        if m.access == "read":
-            readers = sorted({*readers, config.name})
+        _run(["mkdir", "-p", membership_source(share, m)], run)
         _label(share, run)
-        _own(share, readers, [], run)
+        _own(share, run)

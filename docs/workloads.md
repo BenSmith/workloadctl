@@ -1481,12 +1481,17 @@ subpath = "media"
 The share's files carry a category of their own, which its members hold
 beside their pair, so a workload outside it is refused them; a file a
 writer creates takes the category from its directory. Writers join the
-share's group (`wl-share-<name>`), which owns the tree; readers get a read
-ACL and a read-only mount, so a reader cannot plant a file a writer then
-trusts. `enable` and `recreate` of a member label the tree, set its group
-and ACLs, and `disable` takes a reader's ACL away. The category comes from
-the name; two shares that draw the same one are refused until one is given
-a `category` (300 to 1023). Shares are for container workloads, and every
+share's group (`wl-share-<name>`), which owns the tree; readers join its
+read group (`wl-share-<name>-ro`), which has a read ACL, and get a read-only
+mount, so a reader cannot plant a file a writer then trusts. Access is by
+group, not user, because a process keeps its groups whatever uid it runs as
+in the container: a reader that serves files as container root under
+`userns = "keep-id"` runs as a subordinate uid and is still let in.
+`enable` and `recreate` of a member label the tree, set its group and the
+read group's ACL, and `disable` takes the member out of the groups. The
+category comes from the name; two shares that draw the same one are refused
+until one is given a `category` (300 to 1023). A share's name is at most 20
+characters. Shares are for container workloads, and every
 container of a workload mounts them. `diagnose` reports a share's label
 (`share[<name>]`).
 
