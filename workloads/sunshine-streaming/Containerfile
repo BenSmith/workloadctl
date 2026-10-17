@@ -701,7 +701,8 @@ WantedBy=multi-user.target
 UNIT
 
 # --- wayvnc systemd service ---
-# Disabled by default (no auth, binds all interfaces). Start manually for debugging:
+# Disabled by default; loopback only, reached over ssh. Start it by hand
+# for debugging:
 #   systemctl start wayvnc
 
 RUN cat > /usr/lib/systemd/system/wayvnc.service <<'UNIT'
@@ -722,7 +723,7 @@ StandardOutput=journal+console
 StandardError=journal+console
 
 ExecStart=/usr/bin/setpriv --reuid=${CONTAINER_UID} --regid=${CONTAINER_GID} --keep-groups -- \
-    /bin/sh -c '. /run/wayland-display.env && export HOME=/home/${CONTAINER_USER} XDG_RUNTIME_DIR=/run/user/${CONTAINER_UID} WAYLAND_DISPLAY && cd && exec /usr/bin/wayvnc 0.0.0.0 5900'
+    /bin/sh -c '. /run/wayland-display.env && export HOME=/home/${CONTAINER_USER} XDG_RUNTIME_DIR=/run/user/${CONTAINER_UID} WAYLAND_DISPLAY && cd && exec /usr/bin/wayvnc 127.0.0.1 5900'
 
 [Install]
 WantedBy=multi-user.target

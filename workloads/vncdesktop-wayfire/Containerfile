@@ -1,7 +1,7 @@
 # Headless Wayfire Desktop (VNC)
 #
 # Wayfire runs headlessly (WLR_BACKENDS=headless). Access via wayvnc on
-# port 5900.
+# 127.0.0.1:5900, over ssh (host network: the host's loopback).
 #
 # Build:
 #   sudo workloadctl build vncdesktop-wayfire
@@ -517,8 +517,8 @@ WantedBy=multi-user.target
 UNIT
 
 # --- wayvnc launcher ---
-# Writes wayvnc auth config from VNC_PASSWORD/VNC_USERNAME (if set) before
-# spawning wayvnc. With no VNC_PASSWORD, wayvnc runs unauthenticated.
+# wayvnc asks for no login: it listens on loopback only (the host's, under
+# host networking) and is reached over ssh.
 
 RUN cat > /usr/local/bin/start-wayvnc <<'SCRIPT'
 #!/bin/sh
@@ -528,22 +528,8 @@ export WAYLAND_DISPLAY
 export HOME="/home/${CONTAINER_USER}"
 export XDG_RUNTIME_DIR="/run/user/${CONTAINER_UID}"
 
-mkdir -p "$HOME/.config/wayvnc"
-if [ -n "${VNC_PASSWORD:-}" ]; then
-    cat > "$HOME/.config/wayvnc/config" <<CFG
-enable_auth=true
-username=${VNC_USERNAME:-desktop}
-password=${VNC_PASSWORD}
-CFG
-    chmod 600 "$HOME/.config/wayvnc/config"
-    echo "wayvnc: authentication enabled (username: ${VNC_USERNAME:-desktop})"
-else
-    rm -f "$HOME/.config/wayvnc/config"
-    echo "wayvnc: WARNING — no authentication. Set VNC_PASSWORD to enable."
-fi
-
 cd
-exec /usr/bin/wayvnc 0.0.0.0 5900
+exec /usr/bin/wayvnc 127.0.0.1 5900
 SCRIPT
 
 RUN chmod +x /usr/local/bin/start-wayvnc
@@ -558,7 +544,7 @@ Requires=set-resolution.service
 Type=simple
 Restart=on-failure
 RestartSec=3
-PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER VNC_PASSWORD VNC_USERNAME
+PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER
 
 # See wayfire.service above for why both of these are set.
 SyslogIdentifier=wayvnc

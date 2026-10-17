@@ -1,9 +1,9 @@
 # Headless Sway Desktop (VNC)
 #
 # Sway runs headlessly (WLR_BACKENDS=headless). Access via wayvnc on
-# port 5900, or VNC_PORT if set -- the other vncdesktop-* bundles default to
-# 5900 too, so anything sharing a network namespace with them needs one moved.
-# Set VNC_PASSWORD to enable authentication.
+# 127.0.0.1:5900 over ssh, or VNC_PORT if set -- the other vncdesktop-*
+# bundles default to 5900 too, so anything sharing a network namespace with
+# them needs one moved.
 #
 # Build:
 #   sudo workloadctl build vncdesktop-sway
@@ -639,8 +639,8 @@ WantedBy=multi-user.target
 UNIT
 
 # --- wayvnc launcher ---
-# Writes wayvnc auth config from VNC_PASSWORD/VNC_USERNAME (if set) before
-# spawning wayvnc. With no VNC_PASSWORD, wayvnc runs unauthenticated.
+# wayvnc asks for no login: it listens on loopback only (the host's, under
+# host networking) and is reached over ssh.
 
 RUN cat > /usr/local/bin/start-wayvnc <<'SCRIPT'
 #!/bin/sh
@@ -650,23 +650,9 @@ export WAYLAND_DISPLAY
 export HOME="/home/${CONTAINER_USER}"
 export XDG_RUNTIME_DIR="/run/user/${CONTAINER_UID}"
 
-mkdir -p "$HOME/.config/wayvnc"
-if [ -n "${VNC_PASSWORD:-}" ]; then
-    cat > "$HOME/.config/wayvnc/config" <<CFG
-enable_auth=true
-username=${VNC_USERNAME:-desktop}
-password=${VNC_PASSWORD}
-CFG
-    chmod 600 "$HOME/.config/wayvnc/config"
-    echo "wayvnc: authentication enabled (username: ${VNC_USERNAME:-desktop})"
-else
-    rm -f "$HOME/.config/wayvnc/config"
-    echo "wayvnc: WARNING — no authentication. Set VNC_PASSWORD to enable."
-fi
-
 cd
 
-exec /usr/bin/wayvnc 0.0.0.0 "${VNC_PORT:-5900}"
+exec /usr/bin/wayvnc 127.0.0.1 "${VNC_PORT:-5900}"
 SCRIPT
 
 RUN chmod +x /usr/local/bin/start-wayvnc
@@ -680,7 +666,7 @@ Requires=set-resolution.service
 [Service]
 ExecStart=/usr/bin/setpriv --reuid=${CONTAINER_UID} --regid=${CONTAINER_GID} --keep-groups -- \
     /usr/local/bin/start-wayvnc
-PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER VNC_PASSWORD VNC_USERNAME VNC_PORT
+PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER VNC_PORT
 Restart=on-failure
 RestartSec=3
 Type=simple

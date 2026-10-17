@@ -587,7 +587,8 @@ EOF
 
 # --- Entrypoint script ---
 # Starts a per-session D-Bus, the labwc compositor on the headless backend,
-# sizes the virtual output, then starts wayvnc on 0.0.0.0:5900.
+# sizes the virtual output, then starts wayvnc on 127.0.0.1:5900 (reached
+# over ssh).
 
 RUN cat > /usr/local/bin/start-desktop.sh <<'STARTUP' && chmod 0755 /usr/local/bin/start-desktop.sh
 #!/bin/bash
@@ -601,20 +602,6 @@ ls /dev/dri/renderD* >/dev/null 2>&1 || {
     export WLR_RENDERER=pixman
     export LIBGL_ALWAYS_SOFTWARE=1
 }
-
-# Configure wayvnc auth before the compositor starts (read at wayvnc spawn).
-mkdir -p "$HOME/.config/wayvnc"
-if [ -n "${VNC_PASSWORD:-}" ]; then
-    cat > "$HOME/.config/wayvnc/config" <<CFG
-enable_auth=true
-username=${VNC_USERNAME:-desktop}
-password=${VNC_PASSWORD}
-CFG
-    chmod 600 "$HOME/.config/wayvnc/config"
-    echo "wayvnc: authentication enabled (username: ${VNC_USERNAME:-desktop})"
-else
-    echo "wayvnc: WARNING — no authentication. Set VNC_PASSWORD to enable."
-fi
 
 # Launch labwc under a private D-Bus session (waybar/mako/clipboard need it).
 dbus-run-session labwc &
@@ -640,7 +627,7 @@ fi
 # Set the headless output resolution (HEADLESS-1 is wlroots' default name).
 wlr-randr --output HEADLESS-1 --custom-mode "${DESKTOP_RESOLUTION:-1920x1080}@60" || true
 
-wayvnc 0.0.0.0 5900 &
+wayvnc 127.0.0.1 5900 &
 WAYVNC_PID=$!
 
 cleanup() {

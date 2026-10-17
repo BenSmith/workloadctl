@@ -29,20 +29,12 @@
 #   2. Enable the workload:
 #        sudo workloadctl enable vncdesktop-sway
 #
-#   3. Configure firewall (port 5900):
-#        sudo firewall-cmd --add-port=5900/tcp --permanent
-#        sudo firewall-cmd --reload
-#
-#      Or restrict to local network only:
-#        sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="203.0.113.0/24" port port="5900" protocol="tcp" accept'
-#        sudo firewall-cmd --reload
-#
-#   4. Connect from any VNC client:
-#        vncviewer <host-ip>:5900
-#
-# Security note:
-#   VNC is unencrypted. For remote access over untrusted networks, tunnel
-#   over SSH:  ssh -L 5900:localhost:5900 user@hypervisor
+#   3. Connect over ssh. wayvnc listens on the host's loopback only and
+#      asks for no login; ssh is the login and the encryption:
+#        vncviewer -via user@hypervisor localhost:5900
+#      or, for any VNC client:
+#        ssh -L 5900:localhost:5900 user@hypervisor
+#        vncviewer localhost:5900
 
 [workload]
 name = "vncdesktop-sway"
@@ -58,16 +50,11 @@ CONTAINER_UID = "1000"
 CONTAINER_GID = "1000"
 LANG = "C.UTF-8"
 NO_AT_BRIDGE = "1"
-# Set a VNC password (recommended). Without this, VNC has no authentication.
-# VNC_PASSWORD = "changeme"
-# Or use an encrypted secret:
-# VNC_PASSWORD = "${SECRET:vncdesktop-sway-password}"
-# VNC_USERNAME = "desktop"
 # DESKTOP_RESOLUTION = "1920x1080"
 # Port wayvnc listens on inside the container. Only needed when this shares a
 # network namespace with another wayvnc bundle (vncdesktop-wayfire/-labwc also
-# default to 5900) -- i.e. under [network] mode = "host". With an isolated mode
-# the collision is better solved by publishing to a different host port.
+# default to 5900) -- i.e. under [network] mode = "host", which wayvnc's
+# loopback-only listener needs to be reachable over ssh.
 # VNC_PORT = "5901"
 
 [container.health]
