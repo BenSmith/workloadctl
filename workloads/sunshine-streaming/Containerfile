@@ -147,16 +147,6 @@ ARG SUNSHINE_RPM_URL
 RUN dnf install -y "${SUNSHINE_RPM_URL}" && \
     dnf clean all
 
-# Sunshine system-wide defaults. The user can override in ~/.config/sunshine/.
-# encoder + adapter_name are appended at startup by sunshine-prestart.
-# output_name: wayfire headless virtual output (set by wlr-randr in autostart).
-RUN mkdir -p /etc/sunshine && \
-    cat > /etc/sunshine/sunshine.conf <<'CONF'
-output_name=HEADLESS-1
-# Don't bake the cursor into the video frame; Moonlight renders it client-side.
-capture_cursor=false
-CONF
-
 # --- Polkit stub ---
 # Required for Steam's logind D-Bus PowerOff call (Power menu → Turn Off).
 # polkitd cannot start in a rootless container (requires CAP_SYS_ADMIN for PID

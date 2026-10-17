@@ -100,6 +100,14 @@ class TestFirstVisitors(unittest.TestCase):
                 for line in opened:
                     self.assertNotIn("SUNSHINE_WEB_PORT", line)
 
+    def test_no_image_writes_a_conf_sunshine_never_reads(self):
+        """Sunshine reads only the user's sunshine.conf: the images'
+        /etc/sunshine/sunshine.conf (output_name, capture_cursor) did
+        nothing, and was dropped (2026-10-17)."""
+        for bundle, text, _ in self.sunshine_bundles():
+            with self.subTest(bundle=bundle.name):
+                self.assertNotIn("/etc/sunshine/sunshine.conf", text)
+
     def test_sunshines_login_comes_from_the_workloads_secret(self):
         # The prestart writes the login before Sunshine first answers; the
         # unit passes the variables in and keeps them from the games.

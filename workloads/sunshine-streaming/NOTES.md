@@ -448,7 +448,6 @@ direct file reads work fine.
 
 | Path | Purpose |
 |------|---------|
-| `/etc/sunshine/sunshine.conf` | In the image; Sunshine does not read it |
 | `/home/desktop/.config/sunshine/sunshine.conf` | Read by Sunshine (persistent volume) |
 
 ---
