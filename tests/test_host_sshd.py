@@ -9,19 +9,26 @@ sshd would answer. The user chose passwords from the LAN, keys from
 anywhere. On the proving host, sshd -T over Fedora's drop-ins and
 workloadctl's gave passwords to 192.168.0.50 and fe80::1 and not to
 10.0.0.5; the jail, live, banned the proving client after its fifth
-invalid user, through firewalld.
+invalid user, through firewalld. The addresses are a build argument
+(SSHD_PASSWORD_ADDRESSES), the user's LAN by default.
 
 Skipped in a standalone workloadctl checkout, where the image half is absent.
 """
 import configparser
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests import REPO_ROOT
 
 GIT_ROOT = REPO_ROOT.parent
 CONTAINERFILE = GIT_ROOT / "hypervisor.Containerfile"
 DROPIN = GIT_ROOT / "security" / "sshd-lan-passwords.conf"
+FILL = GIT_ROOT / "security" / "sshd-password-addresses"
+PLACEHOLDER = "@SSHD_PASSWORD_ADDRESSES@"
 JAIL = GIT_ROOT / "security" / "fail2ban-sshd.local"
 
 
@@ -32,19 +39,57 @@ def installed_as(source):
     return m and m.group(1)
 
 
+def settings(text):
+    return [line.strip() for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+
+
 @unittest.skipUnless(CONTAINERFILE.exists(), "image half absent")
 class TestSshdPasswordsFromTheLan(unittest.TestCase):
 
-    def test_passwords_are_off_except_from_the_lan(self):
-        lines = [line for line in DROPIN.read_text().splitlines()
-                 if line.strip() and not line.lstrip().startswith("#")]
-        self.assertEqual(lines[0], "PasswordAuthentication no")
-        self.assertEqual(lines[1].split()[0], "Match")
-        self.assertEqual(lines[1].split()[1], "Address")
-        self.assertIn("192.168.0.0/24", lines[1].split()[2].split(","))
-        # The Match holds to the end of the file: nothing after it is global.
-        self.assertEqual([line.strip() for line in lines[2:]],
-                         ["PasswordAuthentication yes"])
+    def fill(self, addresses):
+        """The drop-in after the build step, and the step's result."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dropin = Path(tmp) / DROPIN.name
+            shutil.copy(DROPIN, dropin)
+            run = subprocess.run([str(FILL), addresses, str(dropin)],
+                                 capture_output=True, text=True)
+            return dropin.read_text(), run
+
+    def test_passwords_are_off_except_from_the_listed_addresses(self):
+        text, run = self.fill("192.168.0.0/24,fe80::/10")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(settings(text), [
+            "PasswordAuthentication no",
+            "Match Address 192.168.0.0/24,fe80::/10",
+            # The Match holds to the end of the file: nothing after it is
+            # global.
+            "PasswordAuthentication yes"])
+
+    def test_no_addresses_means_no_passwords(self):
+        text, run = self.fill("")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(settings(text), ["PasswordAuthentication no"])
+
+    def test_a_value_that_is_not_addresses_is_refused(self):
+        for value in ("10.0.0.0/8\nPermitRootLogin yes", "10.0.0.0/8 *",
+                      "host.example"):
+            with self.subTest(value=value):
+                text, run = self.fill(value)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertNotIn("PermitRootLogin", text)
+
+    def test_the_build_fills_the_installed_drop_in_from_the_argument(self):
+        containerfile = CONTAINERFILE.read_text()
+        default = re.search(r"^ARG SSHD_PASSWORD_ADDRESSES=(\S+)$",
+                            containerfile, re.MULTILINE)
+        self.assertIsNotNone(default)
+        self.assertEqual(default.group(1), "192.168.0.0/24,fe80::/10")
+        step = re.search(r"^COPY security/%s (\S+)$" % FILL.name,
+                         containerfile, re.MULTILINE).group(1)
+        self.assertRegex(containerfile, r"RUN %s \\\n\s+\"\$SSHD_PASSWORD_ADDRESSES\" %s\n"
+                         % (re.escape(step), re.escape(installed_as(DROPIN.name))))
+        self.assertIn(PLACEHOLDER, DROPIN.read_text())
 
     def test_the_image_puts_it_before_the_drop_ins_that_follow(self):
         target = installed_as(DROPIN.name)
