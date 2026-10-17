@@ -19,7 +19,6 @@ from egress_policy import (
     INSPECT_POLICY_FILE, POLICY_DIR, container_inspect_policy_text,
     vm_inspect_policy_text, vm_uses_inspect,
 )
-from config_parser import SOCKET_DIR
 from container_network_config import container_uses_inspect
 from workload_lib import workload_config_dir, workload_config_path
 from run_files import GENERATED_BY_RE, RUN_TREE_SCANS

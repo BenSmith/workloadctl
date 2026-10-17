@@ -84,13 +84,14 @@ class TestSshdRefusesWorkloadUsers(unittest.TestCase):
         # Proven on the proving host (2026-10-13): with DenyUsers removed, a
         # key planted in a workload user's home was refused with the block
         # and accepted without it; sshd -T for other users was unchanged.
-        lines = [l.strip() for l in SSHD.read_text().splitlines()
-                 if l.strip() and not l.lstrip().startswith("#")]
-        matches = [i for i, l in enumerate(lines)
-                   if l.lower().startswith("match ")]
+        lines = [line.strip() for line in SSHD.read_text().splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        matches = [i for i, line in enumerate(lines)
+                   if line.lower().startswith("match ")]
         self.assertEqual(len(matches), 1, lines)
         self.assertEqual(lines[matches[0]].split()[1:], ["User", "_wl-*"])
-        block = dict(l.split(None, 1) for l in lines[matches[0] + 1:])
+        block = dict(line.split(None, 1)
+                     for line in lines[matches[0] + 1:])
         self.assertEqual(block, {
             "AuthorizedKeysFile": "none",
             "AuthorizedPrincipalsFile": "none",

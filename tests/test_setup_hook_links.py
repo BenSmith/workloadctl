@@ -14,7 +14,6 @@ it points at is left alone; the control runs the same hook on a clean tree
 and sees it write.
 """
 
-import os
 import shutil
 import stat
 import subprocess
