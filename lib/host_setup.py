@@ -77,8 +77,9 @@ HOST_SETUP_ARTIFACTS_ACTION = "artifacts"
 # Kinds map to checks the diagnostics already know how to run. Deliberately
 # short: anything richer (mode, owner, content) belongs to the script, which is
 # the thing that created the artifact and the only thing that can say what
-# correct looks like.
-HOST_ARTIFACT_KINDS = ("unit", "file")
+# correct looks like. A `cert` is a certificate the workload depends on,
+# checked for its expiry as well as its presence.
+HOST_ARTIFACT_KINDS = ("unit", "file", "cert")
 
 # Sunshine's script shells out to python3 to read a port out of the instance
 # TOML before it dispatches, so this is not instant; it is still a read run by
@@ -88,7 +89,7 @@ HOST_SETUP_ARTIFACTS_TIMEOUT = 15
 
 class HostArtifact(NamedTuple):
     kind: str   # one of HOST_ARTIFACT_KINDS
-    ref: str    # a unit name for "unit", an absolute path for "file"
+    ref: str    # a unit name for "unit", an absolute path otherwise
 
 
 class HostArtifacts(NamedTuple):

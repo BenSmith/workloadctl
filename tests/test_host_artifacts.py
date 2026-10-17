@@ -38,7 +38,12 @@ from host_setup import (
     HostArtifact,
     HostArtifacts,
 )
-from diagnose_provisioning import collect_host_artifact_checks, host_artifact_check
+from diagnose_provisioning import (
+    _cert_days_left,
+    CERT_WARN_DAYS,
+    collect_host_artifact_checks,
+    host_artifact_check,
+)
 
 from tests import REPO_ROOT
 
@@ -239,6 +244,7 @@ class ParseHostArtifactsTest(unittest.TestCase):
 
 _UNIT = HostArtifact("unit", "games-udev-relay.service")
 _FILE = HostArtifact("file", "/etc/avahi/services/games-sunshine.service")
+_CERT = HostArtifact("cert", "/var/lib/workloads/web/data/pki/ica.crt")
 
 
 class HostArtifactCheckTest(unittest.TestCase):
@@ -295,6 +301,52 @@ class HostArtifactCheckTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn(_FILE.ref, message)
         self.assertIn("workloadctl enable games", fix)
+
+    def test_a_cert_fails_when_unreadable_expired_or_near_expiry(self):
+        for days in (None, -1, 0, CERT_WARN_DAYS - 1):
+            with self.subTest(days=days):
+                passed, message, fix = host_artifact_check(_CERT, days, "web")
+                self.assertFalse(passed)
+                self.assertIn(_CERT.ref, message)
+                self.assertTrue(fix)
+
+    def test_a_cert_with_time_left_passes(self):
+        passed, message, _ = host_artifact_check(_CERT, CERT_WARN_DAYS + 1,
+                                                 "web")
+        self.assertTrue(passed)
+        self.assertIn(f"{CERT_WARN_DAYS + 1} more days", message)
+
+
+@unittest.skipUnless(shutil.which("openssl"), "needs openssl")
+class CertDaysLeftTest(unittest.TestCase):
+    def _cert(self, directory, *days_args):
+        path = Path(directory) / "c.crt"
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "ec",
+             "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
+             "-keyout", str(Path(directory) / "c.key"), "-subj", "/CN=t",
+             "-out", str(path), *days_args],
+            check=True, capture_output=True)
+        return str(path)
+
+    def test_days_left_is_read_off_the_certificate(self):
+        with tempfile.TemporaryDirectory() as d:
+            days = _cert_days_left(self._cert(d, "-days", "40"))
+        self.assertGreater(days, 39)
+        self.assertLess(days, 40.01)
+
+    def test_an_expired_certificate_has_negative_days(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self._cert(d, "-not_before", "20200101000000Z",
+                              "-not_after", "20200102000000Z")
+            self.assertLess(_cert_days_left(path), 0)
+
+    def test_a_missing_or_non_certificate_file_is_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            junk = Path(d) / "junk"
+            junk.write_text("not a certificate\n")
+            self.assertIsNone(_cert_days_left(str(junk)))
+            self.assertIsNone(_cert_days_left(str(Path(d) / "absent")))
 
 
 # ── the diagnose battery ────────────────────────────────────────────────────
@@ -362,6 +414,16 @@ class CollectHostArtifactChecksTest(unittest.TestCase):
         self.assertFalse(checks[0]["passed"])
         self.assertEqual(checks[0]["check"],
                          "host_artifact[games-udev-relay.service]")
+
+    def test_declared_cert_is_probed_for_its_expiry(self):
+        with _Bundle(_script(f'echo "cert {_CERT.ref}"')) as cfg:
+            with patch.object(diagnose_provisioning, "_cert_days_left",
+                              return_value=3.5) as days:
+                checks = self._collect(cfg)
+        days.assert_called_once_with(_CERT.ref)
+        self.assertEqual(len(checks), 1)
+        self.assertFalse(checks[0]["passed"])
+        self.assertIn("expires in 3 days", checks[0]["message"])
 
     def test_unparsed_output_fails_alongside_the_artifacts_it_did_parse(self):
         body = 'printf "chatter\\nfile /nonexistent/x.conf\\n"'

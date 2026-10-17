@@ -78,31 +78,37 @@ volumes = [
     "./Caddyfile:/etc/caddy/Caddyfile:ro",
     "./caddy:/var/lib/caddy",
     "./config:/etc/caddy/config",
-    # Shared homelab CA (see README "Shared homelab CA"). Both files live in the
-    # workload dir so they carry a container_file_t label caddy can read under
-    # keep-id. The public root (./homelab-root.crt) is copied from the image
-    # trust store by [setup] required_files above; the private key
-    # (./homelab-root.key) is a per-host 0400 file you place yourself, owned by
-    # the workload user — NOT shipped in the image or repo. Remove these lines
-    # and the Caddyfile import to use a per-host self-signed CA instead.
+    # Shared homelab CA (see README "Shared homelab CA"). The public root
+    # (./homelab-root.crt) is copied from the image trust store by [setup]
+    # required_files above, into the workload dir so it carries a
+    # container_file_t label caddy can read under keep-id. It only completes
+    # the chain: the root's private key is never mounted. Remove this line and
+    # the Caddyfile import to use a per-host self-signed CA instead.
     "./homelab-root.crt:/etc/caddy/homelab-root.crt:ro",
-    "./homelab-root.key:/etc/caddy/homelab-root.key:ro",
-    # PKI snippet dir. setup.sh writes homelab-ca.caddyfile here (shared-root
-    # block when the key is present, comment-only when absent); the Caddyfile
-    # imports it. The snippet is root-owned 0644 (same as ./homelab-root.crt
-    # above), so the keep-id container reads it world-readable. This is what
-    # lets caddy keep running when the CA key is missing. (No :U — a rootless
-    # user can't chown the root-written file.)
+    # PKI dir. setup.sh writes homelab-ca.caddyfile here (the intermediate
+    # block when this host holds one, comment-only otherwise); the Caddyfile
+    # imports it. The intermediate's certificate, homelab-intermediate.crt,
+    # goes here too. Both are root-owned 0644, so the keep-id container reads
+    # them world-readable. (No :U — a rootless user can't chown root's files.)
     "./pki:/etc/caddy/pki:ro",
 ]
+
+# The homelab intermediate's private key, from a secret (README "Shared
+# homelab CA"). Uncomment once the secret exists and
+# data/pki/homelab-intermediate.crt is in place; setup.sh reads this entry
+# and refuses one without the other.
+# [secrets]
+# files = [
+#     { credential = "homelab-intermediate-key", path = "/etc/caddy/homelab-intermediate.key" },
+# ]
 
 [security]
 userns = "keep-id"
 
 [host]
-# Generates the Caddy PKI snippet from the presence of the shared Homelab CA
-# key, so caddy degrades to its own internal CA (still serving) instead of
-# crash-looping when the key is absent. See setup.sh.
+# Generates the Caddy PKI snippet from whether this host holds a homelab
+# intermediate, so caddy degrades to its own internal CA (still serving)
+# instead of crash-looping when it does not. See setup.sh.
 setup = "setup.sh"
 
 [network]

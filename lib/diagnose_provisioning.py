@@ -8,6 +8,7 @@ guest the host cannot see, so its outcome is read from the marker the
 provisioning watch writes. Both verdict functions are pure; the probes are
 kept beside them.
 """
+from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 
@@ -43,12 +44,38 @@ def _unit_props(unit: str) -> dict | None:
     return props
 
 
+# A declared certificate this close to its notAfter fails the check: caddy
+# keeps serving past its intermediate's expiry and says nothing.
+CERT_WARN_DAYS = 30
+
+
+def _cert_days_left(path: str) -> float | None:
+    """Days until a PEM certificate's notAfter; None if it cannot be read."""
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-noout", "-enddate", "-in", path],
+            capture_output=True, text=True,
+        )
+    except OSError:
+        return None
+    field = result.stdout.strip()
+    if result.returncode != 0 or not field.startswith("notAfter="):
+        return None
+    try:
+        end = datetime.strptime(field.split("=", 1)[1], "%b %d %H:%M:%S %Y %Z")
+    except ValueError:
+        return None
+    end = end.replace(tzinfo=timezone.utc)
+    return (end - datetime.now(timezone.utc)).total_seconds() / 86400
+
+
 def host_artifact_check(artifact, state, name: str) -> tuple[bool, str, str | None]:
     """Verdict for one declared host artifact.
 
     `state` is whatever the probe for this kind produced: the `systemctl show`
     property dict for a unit (None when the unit file is absent), a bool for a
-    file. Pure, so the verdicts are testable without a host — same split as
+    file, the days left for a cert (None when it cannot be read). Pure, so
+    the verdicts are testable without a host — same split as
     selinux_label_check().
 
     NRestarts > 0 is a failure in its own right and is the reason this check
@@ -81,6 +108,20 @@ def host_artifact_check(artifact, state, name: str) -> tuple[bool, str, str | No
         return (True,
                 f"Host unit active: {artifact.ref} "
                 f"({active}/{state.get('SubState', '')})", None)
+
+    if artifact.kind == "cert":
+        renew = "renew it; the workload's README says how"
+        if state is None:
+            return (False, f"Declared certificate is missing or unreadable: "
+                           f"{artifact.ref}", fix)
+        if state < 0:
+            return (False, f"Declared certificate has expired: {artifact.ref}",
+                    renew)
+        if state < CERT_WARN_DAYS:
+            return (False, f"Declared certificate expires in {int(state)} "
+                           f"days: {artifact.ref}", renew)
+        return (True, f"Certificate valid for {int(state)} more days: "
+                      f"{artifact.ref}", None)
 
     if state:
         return (True, f"Host file present: {artifact.ref}", None)
@@ -136,8 +177,12 @@ def collect_host_artifact_checks(config, _check) -> None:
         return
 
     for artifact in declared.artifacts:
-        state = (_unit_props(artifact.ref) if artifact.kind == "unit"
-                 else Path(artifact.ref).exists())
+        if artifact.kind == "unit":
+            state = _unit_props(artifact.ref)
+        elif artifact.kind == "cert":
+            state = _cert_days_left(artifact.ref)
+        else:
+            state = Path(artifact.ref).exists()
         passed, message, fix = host_artifact_check(artifact, state, config.name)
         _check(f"host_artifact[{artifact.ref}]", passed, message, fix=fix)
 

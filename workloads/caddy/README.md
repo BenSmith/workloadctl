@@ -284,63 +284,110 @@ By default each host's Caddy generates its own self-signed root, so clients must
 trust a different root per host — and they are all confusingly named
 `Caddy Local Authority`, which makes a mismatched one fail with
 `SEC_ERROR_BAD_SIGNATURE` rather than a clear "untrusted" error. To trust ONE
-root for every host's `*.local` services, point every Caddy at a shared homelab
-root via the `pki` block (already wired into the sample `Caddyfile` and
-`workload.toml`).
+root for every host's `*.local` services, give every Caddy an intermediate
+signed by a shared homelab root via the `pki` block (already wired into the
+sample `Caddyfile` and `workload.toml`).
 
-The shared-root `pki` block is **generated host-side** by `setup.sh` (the
-`[host] setup` hook) into `/etc/caddy/pki/homelab-ca.caddyfile`, which the
-Caddyfile imports. It keys off whether the private root key is present:
+The `pki` block is **generated host-side** by `setup.sh` (the `[host] setup`
+hook) into `/etc/caddy/pki/homelab-ca.caddyfile`, which the Caddyfile imports.
+It keys off whether this host holds an intermediate:
 
-- **Key present** → the snippet roots Caddy's `local` CA at the shared homelab
-  root (below).
-- **Key absent** → the snippet is comment-only, so Caddy falls back to its own
+- **Intermediate** (its certificate at `data/pki/homelab-intermediate.crt`,
+  its key mounted from a secret by the instance's `[secrets]`) → Caddy issues
+  every leaf from it.
+- **Neither** → the snippet is comment-only, so Caddy falls back to its own
   auto-generated internal CA. Caddy **still starts and serves HTTPS** (clients
-  just won't trust it until you set up the shared CA) — it does *not* crash-loop
-  on a missing key. Place the key later and re-run enable (see "Per host") to
-  switch over.
+  just won't trust it until you set up the shared CA).
+- **One without the other**, or the root's private key at
+  `data/homelab-root.key` → `enable` refuses.
 
-- **Public root cert** — provided by the image trust store. The Forgejo build
+The parts:
+
+- **Root certificate** — provided by the image trust store. The Forgejo build
   injects it from the `HOMELAB_ROOT_CA` secret into
   `/etc/pki/ca-trust/source/anchors/homelab-root.crt` (see `ca-trust-inject/` at
   the repo root). `[setup] required_files` copies it from there into the workload
   dir as `./homelab-root.crt` so it gets a `container_file_t` label the container
   can read — mounting the trust anchor directly fails (`cert_t` is SELinux-denied
   to `container_t`, surfacing as `open …homelab-root.crt: permission denied`).
-- **Private root key** — a per-host `0400` file at
-  `/var/lib/workloads/caddy/data/homelab-root.key`, owned by the workload user.
-  Never shipped in the image or committed. caddy runs as that user under
-  `keep-id`, so it can read it (no `userns=host` needed).
+  It only completes the chain.
+- **Intermediate** — one per host, signed by the root, valid for a year and
+  name-constrained to `.local` and `.internal`: a leaf for any other name fails
+  at every client, so the key Caddy holds can only vouch for homelab names, and
+  only until it expires. The certificate is a root-owned `0644` file; the key
+  is the `homelab-intermediate-key` secret.
+- **Root private key** — never on Caddy's side. Keep it as a credential no
+  workload references (`homelab-root-key`) on the host where you mint
+  intermediates, and a passphrase-encrypted copy somewhere else: the credential
+  is sealed to that host's TPM and dies with it, and losing the root means a
+  new one and re-trusting every client.
 
-Each Caddy still mints its own intermediate signed by the shared root, so leaf
-certs rotate normally; only the root is shared.
+Caddy never renews the intermediate. Past its expiry it keeps running and
+serving, issuing leaves that end when the intermediate did, with no error. So
+`enable` warns, and `workloadctl doctor` fails, 30 days ahead; renew yearly.
 
-### One-time CA generation (once for the whole homelab)
+### One-time root generation (once for the whole homelab)
 ```
 openssl ecparam -name prime256v1 -genkey -noout -out homelab-root.key
 openssl req -x509 -new -key homelab-root.key -sha256 -days 3650 \
     -subj "/CN=Homelab Root CA/O=asdf" -out homelab-root.crt
+sudo workloadctl secret create homelab-root-key --file homelab-root.key
+sudo workloadctl secret export homelab-root-key -o homelab-root-key.secret
+shred -u homelab-root.key
 ```
-Set the Forgejo `HOMELAB_ROOT_CA` secret to the contents of `homelab-root.crt`,
-and back up `homelab-root.key` offline — it is the homelab CA key.
+Set the Forgejo `HOMELAB_ROOT_CA` secret to the contents of `homelab-root.crt`.
+Move `homelab-root-key.secret` (passphrase-encrypted, portable) off the host.
+
+### Minting an intermediate (per host, yearly)
+As root on the host holding `homelab-root-key`, in a tmpfs so no key reaches
+disk:
+```
+umask 077
+d=$(mktemp -d /dev/shm/ica.XXXXXX) && cd "$d"
+workloadctl secret show homelab-root-key > root.key
+cat > ext.cnf <<'CNF'
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+nameConstraints = critical, permitted;DNS:.local, permitted;DNS:.internal
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+CNF
+openssl ecparam -name prime256v1 -genkey -noout -out ica.key
+openssl req -new -key ica.key -subj "/CN=Homelab Intermediate <host>" \
+    -out ica.csr
+openssl x509 -req -in ica.csr -days 365 -sha256 -extfile ext.cnf \
+    -CA /etc/pki/ca-trust/source/anchors/homelab-root.crt -CAkey root.key \
+    -out ica.crt
+shred -u root.key
+```
+For another host, carry `ica.crt` and `ica.key` there and install them the
+same way.
 
 ### Per host
+As root, from the directory above:
 ```
-sudo install -m 0400 -o _wl-caddy -g _wl-caddy homelab-root.key \
-    /var/lib/workloads/caddy/data/homelab-root.key
-# Re-run enable (not recreate) so the [host] setup hook regenerates the PKI
-# snippet now that the key is present. recreate does NOT re-run host setup.
+install -m 0644 ica.crt \
+    /var/lib/workloads/caddy/data/pki/homelab-intermediate.crt
+workloadctl secret create homelab-intermediate-key --file ica.key
+shred -u ica.key && cd / && rm -rf "$d"
+```
+Uncomment the `[secrets]` block in `/etc/workloads.d/caddy/workload.toml`,
+then re-run enable (not recreate) so the `[host] setup` hook regenerates the
+snippet. recreate does NOT re-run host setup.
+```
 sudo workloadctl disable caddy && sudo workloadctl enable caddy
 ```
-If you enabled caddy *before* placing the key, the bind-mount source may be an
-empty placeholder file — `install` overwrites it fine. (An older build could
-have left a *directory* there; `sudo rm -rf
-/var/lib/workloads/caddy/data/homelab-root.key` first if so.)
 
-### Switching an existing self-signed Caddy to the shared root
-Caddy reuses an existing on-disk `local` CA in preference to the configured
-root, so clear the stale authority + cached leaf certs first or it keeps serving
-the old root:
+**Renewing**: mint a new one as above, install the certificate, replace the
+key with `workloadctl secret create --force homelab-intermediate-key --file
+ica.key`, clear the cached leaves as below so none outlives the old
+intermediate, and restart caddy; it copies the secret afresh at each start.
+
+### Switching an existing Caddy to the intermediate
+Caddy reuses an existing on-disk `local` CA and its cached leaves, so clear
+them first or it keeps serving the old chain. A Caddy that was handed the
+root's key also minted an intermediate of its own into that directory, with its
+key: signed by the root and not name-constrained.
 ```
 sudo systemctl stop workload-caddy.service
 # Caddy's data dir is /var/lib/caddy/caddy (XDG_DATA_HOME=/var/lib/caddy + its
@@ -349,9 +396,11 @@ sudo systemctl stop workload-caddy.service
 sudo rm -rf /var/lib/workloads/caddy/data/caddy/caddy/pki/authorities/local \
             /var/lib/workloads/caddy/data/caddy/caddy/certificates
 sudo systemctl start workload-caddy.service
-# served chain should now be issued by "Homelab - ECC Intermediate":
+# served chain should now be issued by "Homelab Intermediate <host>":
 echo | openssl s_client -connect zot.local:443 -servername zot.local 2>/dev/null | grep ^issuer=
 ```
+Then delete the root's key from the data dir (`shred -u` it): `enable`
+refuses while it is there.
 
 ### Clients
 Hosts built from the internal image already trust the root (CI-injected). Other

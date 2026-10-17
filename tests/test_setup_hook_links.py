@@ -50,10 +50,14 @@ class _Hook(unittest.TestCase):
 class TestCaddyHook(_Hook):
 
     def _enable(self):
+        instance = self.tmp / "instance"
+        instance.mkdir(exist_ok=True)
+        shutil.copy(CADDY.parent / "workload.toml", instance)
         env = {
             "PATH": "/usr/bin:/bin",
             "WORKLOAD_NAME": "zzinstance",
             "WORKLOAD_DATA_DIR": str(self.data),
+            "WORKLOAD_INSTANCE_DIR": str(instance),
         }
         return subprocess.run([str(CADDY), "enable"], env=env,
                               capture_output=True, text=True, timeout=30)
@@ -78,11 +82,18 @@ class TestCaddyHook(_Hook):
         self._victim_untouched()
 
     def test_a_dangling_key_link_is_not_created_through(self):
-        """The keyless branch makes an empty placeholder at the key's path;
-        `: >` on a dangling link creates the file it names."""
         (self.data / "homelab-root.key").symlink_to(self.outside / "made")
         result = self._enable()
         self.assertNotEqual(result.returncode, 0)
+        self._victim_untouched()
+
+    def test_a_linked_intermediate_certificate_is_refused(self):
+        (self.data / "pki").mkdir()
+        (self.data / "pki" / "homelab-intermediate.crt").symlink_to(
+            self.victim)
+        result = self._enable()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
         self._victim_untouched()
 
 

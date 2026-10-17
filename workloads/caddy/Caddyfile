@@ -31,21 +31,19 @@
     local_certs
 
     # Shared homelab CA (see README "Shared homelab CA"). The PKI snippet below
-    # is generated host-side by setup.sh based on whether this host has the
-    # shared CA private key:
-    #   key present -> snippet roots Caddy's internal `local` CA at the shared
-    #                  homelab root, so clients trust ONE root for every host's
-    #                  *.local services (Caddy still mints its own per-host
-    #                  intermediate). The public root comes from the image trust
-    #                  store (CI-injected); the private key is a per-host 0400 file.
-    #   key absent  -> the snippet is comment-only, so this import is a no-op and
-    #                  `local_certs` falls back to Caddy's own auto-generated
-    #                  internal CA. Sites still serve HTTPS (untrusted until you
-    #                  set up the shared CA) instead of Caddy crash-looping on a
-    #                  missing key file.
+    # is generated host-side by setup.sh from whether this host holds a
+    # homelab intermediate:
+    #   intermediate -> Caddy issues every leaf from it, so clients trust ONE
+    #                   root for every host's *.local services. The root's
+    #                   certificate comes from the image trust store
+    #                   (CI-injected); its private key is never on this side.
+    #   none         -> the snippet is comment-only, so this import is a no-op
+    #                   and `local_certs` falls back to Caddy's own
+    #                   auto-generated internal CA. Sites still serve HTTPS
+    #                   (untrusted until you set up the shared CA).
     # The glob never errors when the dir is empty; setup.sh also always writes a
     # snippet, so this resolves regardless. Drop this import (and the [storage]
-    # mounts in caddy.toml) to hard-wire a per-host self-signed CA.
+    # mounts in workload.toml) to hard-wire a per-host self-signed CA.
     import /etc/caddy/pki/*.caddyfile
 }
 
