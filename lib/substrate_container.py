@@ -22,7 +22,8 @@ from pathlib import Path
 from backup import backup_impl, print_backup_size
 from cli_log import error, info, warn
 from provisioning import ImageTransferError, transfer_one_image
-from podman import PodmanError
+from diagnose_image_age import image_created
+from podman import Podman, PodmanError
 from service_runtime import ensure_runtime_dir, restart_workload_service
 from substrate import (
     LifecycleError,
@@ -82,6 +83,22 @@ def _accessible_at_config(config) -> list:
             else:
                 result.append({"host": f"localhost:{parts[0]}", "container": None})
     return result
+
+
+def _warn_registry_not_asked(config, cname: str, image: str) -> None:
+    """Say that root's store, not the registry, supplied a self-built image.
+
+    The override channel takes root's copy as is, and `update` then reads as
+    though the registry had nothing newer. A copy left from an old local
+    build hides every newer one the registry serves.
+    """
+    found = Podman.for_root().image_info(image)
+    built = image_created(found) if found else None
+    when = f" (built {built:%Y-%m-%d})" if built else ""
+    label = f"{config.name}/{cname}" if config.is_multi else config.name
+    warn(f"  ⚠ {label}: '{image}' came from root's image store{when}, "
+         f"not the registry. To take the registry's instead: "
+         f"sudo podman rmi {image}")
 
 
 class ContainerSubstrate(Substrate):
@@ -430,6 +447,8 @@ class ContainerSubstrate(Substrate):
             except ImageTransferError as e:
                 error(f"  ✗ {e}")
                 raise ProvisionFailed(f"transfer failed for {image}")
+            if handled and pull != "never" and not image.startswith("localhost/"):
+                _warn_registry_not_asked(self.config, cname, image)
             if not handled:
                 if pull == "never":
                     continue

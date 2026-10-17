@@ -2557,6 +2557,36 @@ pull = "never"
         self.for_root.return_value.image_id.assert_not_called()
         pod.pull.assert_called_once()
 
+    def _warnings(self, toml, handled):
+        substrate, manager = self._substrate(toml=toml)
+        manager.podman.return_value.image_id.return_value = 'same-id'
+        self.for_root.return_value.image_info.return_value = {
+            "Created": "2026-08-06T10:00:00.123456789Z"}
+        with patch.object(_container_mod, 'transfer_one_image',
+                          return_value=handled), \
+             patch.object(_container_mod, 'warn') as mock_warn:
+            substrate.reprovision()
+        return [c.args[0] for c in mock_warn.call_args_list]
+
+    def test_root_copy_supplying_a_registry_image_is_said(self):
+        """A root-store copy left from an old local build kept the services
+        host's smb-server on it while `update` said "Already up to date"
+        (2026-10-17): the registry is never asked, so say whose copy it is,
+        how old, and how to let the registry supply it."""
+        said = self._warnings(self.BUILDABLE_TOML, handled=True)
+        self.assertEqual(len(said), 1)
+        self.assertIn("root's image store (built 2026-08-06)", said[0])
+        self.assertIn("sudo podman rmi example.com/test:latest", said[0])
+
+    def test_a_pulled_image_says_nothing_of_root(self):
+        said = self._warnings(self.BUILDABLE_TOML, handled=False)
+        self.assertFalse(any("root's image store" in s for s in said))
+
+    def test_a_local_only_image_says_nothing_of_root(self):
+        toml = self.BUILDABLE_TOML.replace(
+            "example.com/test:latest", "localhost/test:latest")
+        self.assertEqual(self._warnings(toml, handled=True), [])
+
     def test_root_override_transfer_failure_raises_provision_failed(self):
         from substrate import ProvisionFailed
         substrate, manager = self._substrate(toml=self.BUILDABLE_TOML)
