@@ -153,7 +153,6 @@ RUN dnf install -y "${SUNSHINE_RPM_URL}" && \
 RUN mkdir -p /etc/sunshine && \
     cat > /etc/sunshine/sunshine.conf <<'CONF'
 output_name=HEADLESS-1
-origin_web_ui_allowed=lan
 # Don't bake the cursor into the video frame; Moonlight renders it client-side.
 capture_cursor=false
 CONF
@@ -606,13 +605,16 @@ UNIT
 # Restart=on-failure ensures it recovers from network drops and crashes.
 
 # --- Sunshine prestart ---
-# Runs as ExecStartPre in sunshine.service. Three jobs, all run on every start
-# because the inputs (visible GPU, host IPs) can change between restarts:
+# Runs as ExecStartPre in sunshine.service. Sunshine reads only the user's
+# sunshine.conf, so the settings it must hold are written there, on every
+# start because the inputs (visible GPU, host IPs) can change between restarts:
 #   1. Pick adapter_name + encoder from the visible render node's PCI vendor.
 #      With gpu = "nvidia:<UUID>" / "amd" in the workload TOML, only one
 #      /dev/dri/renderD* is mounted, so the loop selects exactly that GPU.
 #   2. Refresh csrf_allowed_origins so Sunshine's web UI accepts the host's
 #      current IPs (network is up by this point so `hostname -I` returns them).
+#   3. Hold the web UI to this machine (origin_web_ui_allowed=pc): it is
+#      reached over `ssh -L`, so nobody on the LAN sets the first credentials.
 RUN cat > /usr/local/bin/sunshine-prestart <<'SCRIPT'
 #!/bin/bash
 set -e
@@ -628,9 +630,11 @@ SUNSHINE_PORT="${SUNSHINE_PORT:-47989}"
 WEB_PORT=$((SUNSHINE_PORT + 1))
 
 # Wipe the lines we're about to rewrite.
-sed -i '/^port=/d;/^adapter_name=/d;/^encoder=/d;/^csrf_allowed_origins=/d' "$CONF" 2>/dev/null || true
+sed -i -e '/^port=/d;/^adapter_name=/d;/^encoder=/d;/^csrf_allowed_origins=/d' \
+    -e '/^origin_web_ui_allowed=/d' "$CONF" 2>/dev/null || true
 
 echo "port=${SUNSHINE_PORT}" >> "$CONF"
+echo "origin_web_ui_allowed=pc" >> "$CONF"
 
 # Detect adapter + encoder from PCI vendor of the visible render node.
 # 0x10de = NVIDIA → nvenc; 0x1002 = AMD, 0x8086 = Intel → vaapi (mesa).

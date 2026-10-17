@@ -3,9 +3,11 @@
 Audit L19 step 2b (2026-10-17) read every bundle as shipped. Apps that
 ask for no login were published on every host interface (F44: SwarmUI's
 Server tab starts backends, registry:2 takes anonymous pushes); smb-server's default share
-was guest-writable; Sunshine's web UI took any origin while its first
-visitor set the admin (F45); and the Pi-hole bundles set v5 variables
-v6 ignores, WEBPASSWORD and PIHOLE_DNS_ (F46).
+was guest-writable; Sunshine's web UI answered the LAN while its first
+visitor set the admin (F45; the image's origin_web_ui_allowed=wan sat in
+/etc/sunshine/sunshine.conf, which Sunshine never reads, so its default,
+lan, held); and the Pi-hole bundles set v5 variables v6 ignores,
+WEBPASSWORD and PIHOLE_DNS_ (F46).
 """
 import re
 import tomllib
@@ -72,9 +74,20 @@ class TestGuestsOnlyRead(unittest.TestCase):
 
 class TestFirstVisitors(unittest.TestCase):
 
-    def test_sunshines_web_ui_answers_the_lan_only(self):
-        text = (WORKLOADS / "sunshine-streaming" / "Containerfile").read_text()
-        self.assertIn("origin_web_ui_allowed=lan\n", text)
+    def test_sunshines_web_ui_answers_this_machine_only(self):
+        # Sunshine reads only the user's sunshine.conf, which the prestart
+        # rewrites; a line in /etc/sunshine/sunshine.conf does nothing.
+        bundle = WORKLOADS / "sunshine-streaming"
+        text = (bundle / "Containerfile").read_text()
+        script = text.split("sunshine-prestart <<'SCRIPT'\n", 1)[1]
+        script = script.split("\nSCRIPT\n", 1)[0]
+        self.assertIn("/^origin_web_ui_allowed=/d", script)
+        self.assertIn('echo "origin_web_ui_allowed=pc" >> "$CONF"', script)
+        setup = (bundle / "setup.sh").read_text()
+        opened = [line for line in setup.splitlines() if "--add-port" in line]
+        self.assertTrue(opened)
+        for line in opened:
+            self.assertNotIn("SUNSHINE_WEB_PORT", line)
 
 
 class TestPiHoleSix(unittest.TestCase):

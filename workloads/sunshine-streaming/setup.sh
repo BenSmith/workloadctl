@@ -214,14 +214,17 @@ UNIT
     echo ""
     echo "  NOTE: Sunshine runs on base port ${SUNSHINE_PORT}. Open the firewall ports:"
     echo "    sudo firewall-cmd --permanent \\"
-    echo "      --add-port={${SUNSHINE_HTTPS_PORT},${SUNSHINE_PORT},${SUNSHINE_WEB_PORT},${SUNSHINE_RTSP_PORT}}/tcp \\"
+    echo "      --add-port={${SUNSHINE_HTTPS_PORT},${SUNSHINE_PORT},${SUNSHINE_RTSP_PORT}}/tcp \\"
     echo "      --add-port=${SUNSHINE_UDP_LO}-${SUNSHINE_UDP_HI}/udp"
     echo "    sudo firewall-cmd --reload"
     echo "        (the udp range carries video/audio/input — pairing succeeds"
     echo "         without it, then the stream dies)"
-    echo "        Finish setup at https://<host>:${SUNSHINE_WEB_PORT} — Sunshine has no"
-    echo "        credentials until you create them there, and the pairing PIN"
-    echo "        page is unreachable until you do."
+    echo "        The web UI answers this machine only. Reach it over ssh:"
+    echo "          ssh -L ${SUNSHINE_WEB_PORT}:localhost:${SUNSHINE_WEB_PORT} \\"
+    echo "            <host>"
+    echo "        then https://localhost:${SUNSHINE_WEB_PORT}. Create the"
+    echo "        credentials there first: Sunshine has none until"
+    echo "        then, and the pairing PIN page is unreachable until you do."
 }
 
 disable() {

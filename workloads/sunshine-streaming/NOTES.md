@@ -155,8 +155,9 @@ runs at `After=sysinit.target`, before the network is fully up.
 `ExecStartPre` in `sunshine.service`. At that point the network is guaranteed up
 (sunshine starts well after boot). Every input it reads can change between
 restarts, so it rewrites rather than appends — it strips the lines it owns
-(`port=`, `adapter_name=`, `encoder=`, `csrf_allowed_origins=`, `cert=`,
-`pkey=`) from the user's sunshine.conf and re-derives them:
+(`port=`, `adapter_name=`, `encoder=`, `csrf_allowed_origins=`,
+`origin_web_ui_allowed=`, `cert=`, `pkey=`) from the user's sunshine.conf and
+re-derives them:
 
 - **origins** from `hostname -I`, plus localhost and hostname variants
 - **adapter_name + encoder** from the PCI vendor of the visible render node
@@ -181,10 +182,16 @@ The web UI port is not a constant: it is `SUNSHINE_PORT + 1`, and
 `SUNSHINE_PORT` is settable per instance so two Sunshine hosts can share a
 machine's port space (host networking).
 
-**Config file hierarchy**:
-- System defaults: `/etc/sunshine/sunshine.conf` (baked into image, read-only)
-- User overrides: `/home/desktop/.config/sunshine/sunshine.conf` (persistent volume)
-- Sunshine merges both; user config takes precedence
+**Config file**: Sunshine reads one file,
+`/home/desktop/.config/sunshine/sunshine.conf` (persistent volume). It does
+not read `/etc/sunshine/sunshine.conf`, so a setting it must hold is written
+by the prestart.
+
+**Web UI access**: the prestart writes `origin_web_ui_allowed=pc`, so the web
+UI answers 127.0.0.1 and ::1 only, before it asks for credentials. Reach it
+with `ssh -L 47990:localhost:47990 <host>` and `https://localhost:47990`
+(keep the local port equal to the web port: the CSRF origins name it).
+Moonlight's pairing and streaming ports are separate and stay on the LAN.
 
 ---
 
@@ -434,8 +441,8 @@ direct file reads work fine.
 
 | Path | Purpose |
 |------|---------|
-| `/etc/sunshine/sunshine.conf` | System defaults (in image, read-only) |
-| `/home/desktop/.config/sunshine/sunshine.conf` | User overrides (persistent volume) |
+| `/etc/sunshine/sunshine.conf` | In the image; Sunshine does not read it |
+| `/home/desktop/.config/sunshine/sunshine.conf` | Read by Sunshine (persistent volume) |
 
 ---
 
