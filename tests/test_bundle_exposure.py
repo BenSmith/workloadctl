@@ -77,17 +77,23 @@ class TestFirstVisitors(unittest.TestCase):
     def test_sunshines_web_ui_answers_this_machine_only(self):
         # Sunshine reads only the user's sunshine.conf, which the prestart
         # rewrites; a line in /etc/sunshine/sunshine.conf does nothing.
-        bundle = WORKLOADS / "sunshine-streaming"
-        text = (bundle / "Containerfile").read_text()
-        script = text.split("sunshine-prestart <<'SCRIPT'\n", 1)[1]
-        script = script.split("\nSCRIPT\n", 1)[0]
-        self.assertIn("/^origin_web_ui_allowed=/d", script)
-        self.assertIn('echo "origin_web_ui_allowed=pc" >> "$CONF"', script)
-        setup = (bundle / "setup.sh").read_text()
-        opened = [line for line in setup.splitlines() if "--add-port" in line]
-        self.assertTrue(opened)
-        for line in opened:
-            self.assertNotIn("SUNSHINE_WEB_PORT", line)
+        marker = "sunshine-prestart <<'SCRIPT'\n"
+        bundles = [path.parent for path in WORKLOADS.glob("*/Containerfile")
+                   if marker in path.read_text()]
+        self.assertIn(WORKLOADS / "sunshine-streaming", bundles)
+        for bundle in bundles:
+            with self.subTest(bundle=bundle.name):
+                text = (bundle / "Containerfile").read_text()
+                script = text.split(marker, 1)[1].split("\nSCRIPT\n", 1)[0]
+                self.assertIn("/^origin_web_ui_allowed=/d", script)
+                self.assertIn(
+                    'echo "origin_web_ui_allowed=pc" >> "$CONF"', script)
+                setup = (bundle / "setup.sh").read_text()
+                opened = [line for line in setup.splitlines()
+                          if "--add-port" in line]
+                self.assertTrue(opened)
+                for line in opened:
+                    self.assertNotIn("SUNSHINE_WEB_PORT", line)
 
 
 class TestPiHoleSix(unittest.TestCase):
