@@ -89,9 +89,12 @@ policy lists, through the egress inspector, and none of the host's own
 addresses. [Network Modes](workloads.md#network-modes) and the
 [egress architecture](egress-and-broker-architecture.md) have the rest.
 
-**Where it stops:** a host-network workload shares the host's network,
-loopback included. A bridged VM takes a real address on the bridge, and no
-egress policy reaches it.
+**Where it stops:** an unfiltered pasta workload reaches every host
+listener bound to all addresses, through the host's mapped address
+(`host.containers.internal`), whatever the firewall closes to the LAN; only
+loopback-only listeners are out of its reach. A host-network workload
+shares the host's network, loopback included. A bridged VM takes a real
+address on the bridge, and no egress policy reaches it.
 
 ## The unit around a workload
 
@@ -147,4 +150,8 @@ too, report only, and the hypervisor image stages its updates for a reboot
 the operator chooses.
 
 **Where it stops:** a running workload keeps the image it was created from
-until it is recreated.
+until it is recreated. Every job on the forge's runner can read the signing
+key and the registry login, so a signature says only that an image came from
+a job there; the runner takes jobs from the repositories of the user,
+organisation or repository it is created for (`forgejo-runner`'s
+`FORGEJO_RUNNER_SCOPE`), never the whole forge.

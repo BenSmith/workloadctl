@@ -87,22 +87,22 @@ sudo mount -t cifs //<host-ip>/handoff /mnt/handoff \
 
 ## Sharing a host path another workload writes
 
-To export a tree that lives outside this workload — say a media library another
-workload writes into — bind-mount the host path and join a group that both
-workload users are in:
+To export a tree that lives outside this workload (say downloads another
+workload writes), declare it as a share in `/etc/workloads.d/shares.toml`
+(see "A directory several workloads use is a share" in `docs/workloads.md`)
+and join it read-only:
 
 ```toml
-[storage]
-volumes = [
-    "./exports:/exports",
-    "/var/mnt/downloads/complete:/downloads:ro",
-    # … the rest unchanged
-]
-
-[security]
-userns = "keep-id"
-extra_groups = ["wl-downloads"]
+[[shares]]
+name = "downloads"
+target = "/downloads"
+access = "read"
+subpath = "complete"
 ```
+
+`enable` and `recreate` put the workload in the share's read group
+(`wl-share-downloads-ro`) and mount the tree read-only; the tree carries the
+share's SELinux category, which smbd holds beside the workload's own pair.
 
 Then add a stanza in `smb.conf` pointing at the container path. Keep the mount
 *outside* `/exports`, so each tree keeps its own stanza and its own access.
@@ -116,10 +116,6 @@ Then add a stanza in `smb.conf` pointing at the container path. Keep the mount
     guest ok = yes
     force user = root
 ```
-
-The group must exist on the host *before* enable — the generator resolves
-`extra_groups` to GIDs when it writes the units — and the host directory needs
-to be group-readable and traversable by it (2770 root:wl-downloads works).
 
 `force user = root` is not a privilege grant: under `userns = "keep-id"` the
 container's uid 0 is the unprivileged `_wl-smb-server` host user. It has to be

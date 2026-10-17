@@ -3,12 +3,13 @@ set -euo pipefail
 
 mkdir -p /var/lib/samba/private /var/lib/samba/lock
 
-# Make the workload's [security].extra_groups usable by smbd.
+# Make the workload's supplementary groups ([security].extra_groups, a
+# share's groups) usable by smbd.
 #
 # Under userns=keep-id the container's uid 0 IS the unprivileged _wl-smb-server
 # host user, and podman's --group-add=keep-groups hands this process the host
 # user's supplementary GIDs — so the *inherited* credentials can already read a
-# shared tree like /var/mnt/downloads (mode 2770, group wl-downloads).
+# share's tree through the share's read group (shares.py).
 #
 # smbd does not use the inherited credentials. `force user` rebuilds the session
 # token from scratch via getpwnam + getgrouplist against the CONTAINER's
