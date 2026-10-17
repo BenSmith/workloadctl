@@ -1,8 +1,9 @@
 # SMB Server Container
 
-Samba guest-only file share running rootless. All file access runs as the
-workload user — no per-client UID mapping. Guests read and never write: a
-guest is anyone on the LAN, so files go in from the host
+Samba file share running rootless, guest-only unless the instance names
+users (see "Named users"). All file access runs as the workload user — no
+per-client UID mapping. Guests read and never write: a guest is anyone on
+the LAN, so files go in from the host
 (`/var/lib/workloads/<name>/data/exports/`).
 
 ## Setup
@@ -46,6 +47,43 @@ sudo mount -t cifs //<host-ip>/exports /mnt/share \
 ```
 
 The `uid`/`gid` options make the files appear as yours on the client.
+
+## Named users
+
+A share that is not for every guest on the LAN needs users. Name them in the
+instance's `workload.toml` and keep each password in a secret:
+
+```bash
+openssl rand -base64 24 | tr -d '\n' | sudo workloadctl secret create smb-writer
+openssl rand -base64 24 | tr -d '\n' | sudo workloadctl secret create smb-reader
+```
+
+```toml
+[container.environment]
+SMB_USERS = "writer reader"
+SMB_PASSWORD_WRITER = "${SECRET:smb-writer}"
+SMB_PASSWORD_READER = "${SECRET:smb-reader}"
+```
+
+At each start the container makes exactly these users (`smb-users`): a
+nologin account each and a Samba password. A user taken off the list loses
+its password at the next start. smbd itself starts without the passwords in
+its environment. The shipped `smb.conf` has a commented `[handoff]` share for
+them: no guests, `writer` writes, `reader` only reads, encrypted.
+
+A client logs in with a credentials file (root's, mode 0600):
+
+```
+username=reader
+password=<the smb-reader password>
+```
+
+```bash
+sudo mount -t cifs //<host-ip>/handoff /mnt/handoff \
+    -o credentials=/etc/samba/reader.cred,seal,vers=3.1.1,uid=$(id -u),gid=$(id -g)
+```
+
+`seal` asks for the encryption the share requires.
 
 ## Sharing a host path another workload writes
 

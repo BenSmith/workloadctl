@@ -1,6 +1,7 @@
 # SMB/CIFS File Server - Samba running rootless
 #
-# Guest-only simple share: all file access runs as the workload user.
+# Guest-only unless the instance names users (SMB_USERS, below): all file
+# access runs as the workload user.
 # No per-client UID mapping; suitable for shared storage where ownership
 # doesn't need to reflect individual client users.
 #
@@ -81,6 +82,15 @@ volumes = [
 
 [security]
 userns = "keep-id"
+
+# Named users, for a share that is not guest (see README "Named users").
+# SMB_USERS lists them; each password is SMB_PASSWORD_<NAME> (upper case,
+# `-` as `_`), from a secret:
+#   openssl rand -base64 24 | tr -d '\n' | sudo workloadctl secret create smb-writer
+# [container.environment]
+# SMB_USERS = "writer reader"
+# SMB_PASSWORD_WRITER = "${SECRET:smb-writer}"
+# SMB_PASSWORD_READER = "${SECRET:smb-reader}"
 
 [network]
 # Host networking: SMB clients connect to the real host IP anyway.

@@ -33,4 +33,9 @@ for gid in $(id -G); do
     fi
 done
 
+# The instance's named users (none: guest-only). Their passwords go no
+# further than this: smbd is started without them.
+/usr/local/bin/smb-users
+unset SMB_USERS "${!SMB_PASSWORD_@}"
+
 exec smbd --foreground --no-process-group --debug-stdout

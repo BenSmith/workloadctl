@@ -1,0 +1,51 @@
+#!/bin/bash
+# Make the Samba users the instance names, and only those.
+#
+# SMB_USERS lists them; SMB_PASSWORD_<NAME> holds each one's password (the
+# name upper-cased, `-` as `_`), normally a ${SECRET:...} in the instance's
+# [container.environment]. Each becomes a nologin account here, which Samba
+# needs to map the login to, and a passdb entry. The passdb is in the
+# persistent samba-state volume, so a user no longer listed is removed from
+# it: otherwise a password once set would outlive the instance's config.
+#
+# Sessions still run as each share's `force user`; these accounts only
+# authenticate. With no SMB_USERS the server stays guest-only.
+set -euo pipefail
+
+MARK="smb-server user"
+
+wanted=" "
+for user in ${SMB_USERS:-}; do
+    if ! [[ $user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        echo "smb-users: '$user' is not a valid user name" >&2
+        exit 1
+    fi
+    if entry=$(getent passwd "$user"); then
+        gecos=$(cut -d: -f5 <<<"$entry")
+        if [ "$gecos" != "$MARK" ]; then
+            echo "smb-users: $user is an account of the image's own" >&2
+            exit 1
+        fi
+    fi
+    var="SMB_PASSWORD_$(tr 'a-z-' 'A-Z_' <<<"$user")"
+    if [ -z "${!var:-}" ]; then
+        echo "smb-users: $var is not set for $user" >&2
+        exit 1
+    fi
+    wanted+="$user "
+done
+
+for user in $(pdbedit -L 2>/dev/null | cut -d: -f1); do
+    if [[ $wanted != *" $user "* ]]; then
+        pdbedit -x -u "$user" >/dev/null
+    fi
+done
+
+for user in $wanted; do
+    var="SMB_PASSWORD_$(tr 'a-z-' 'A-Z_' <<<"$user")"
+    if ! getent passwd "$user" >/dev/null; then
+        useradd --system --no-create-home --shell /sbin/nologin \
+            --comment "$MARK" "$user"
+    fi
+    printf '%s\n%s\n' "${!var}" "${!var}" | smbpasswd -s -a "$user" >/dev/null
+done

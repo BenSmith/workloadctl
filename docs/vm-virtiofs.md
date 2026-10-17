@@ -259,10 +259,12 @@ looks like it worked. The label has to come from the mount:
 ```
 //server/share  /var/mnt/agentic  cifs  \
     context=system_u:object_r:svirt_image_t:s0,uid=_wl-<name>,gid=_wl-<name>,\
-    forceuid,forcegid,file_mode=0700,dir_mode=0700,mfsymlinks,sfu,guest  0 0
+    forceuid,forcegid,file_mode=0700,dir_mode=0700,mfsymlinks,sfu,\
+    credentials=/etc/samba/<name>.cred,seal  0 0
 ```
 
-Three groups of options, each load-bearing:
+Three groups of options, each load-bearing (the last line is the login;
+see the smb-server README's "Named users"):
 
 - **`context=`** gives the share the one type `wlvfsd_t` is already granted. It
   sets the type on the **superblock** as well as on every inode, which is why
