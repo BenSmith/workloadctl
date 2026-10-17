@@ -81,6 +81,10 @@ volumes = [
     # tries to mkdir /etc/lgtm and dies with EACCES otherwise (non-fatal but
     # noisy in the journal).
     "./lgtm-etc:/etc/lgtm",
+    # Tempo's live-store and backend-scheduler write under /var/tempo, which
+    # the image creates only when run as root. Without it Tempo exits, and the
+    # image's launcher stops the whole stack when Tempo is not ready.
+    "./tempo-var:/var/tempo",
 ]
 
 [network]

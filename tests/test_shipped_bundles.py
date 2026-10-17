@@ -226,6 +226,24 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
         self.assertRegex(unit, r'CADDY_ADMIN="?unix//')
 
 
+class TestOtelLgtmRunsUnprivileged(unittest.TestCase):
+    """The grafana/otel-lgtm image expects root and creates its working
+    directories itself; as the workload user it cannot. Tempo 3 failed with
+    `mkdir /var/tempo: permission denied` on the services host, and launcher
+    v0.37.0 stopped the whole stack for it (2026-10-17). Checked in the
+    rendered unit, where the mount has to arrive."""
+
+    def test_every_directory_the_image_creates_is_mounted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            unit = (svc / "workload-otel-lgtm.service").read_text()
+        for target in ("/data", "/etc/lgtm", "/var/tempo"):
+            with self.subTest(target=target):
+                self.assertRegex(unit, rf'--volume "[^"]+":"{target}"')
+
+
 class TestTheHostJournalSocket(unittest.TestCase):
     """A container given the host's journal socket writes entries under any
     identifier, at any priority (audit F13, measured 2026-10-11); journald
