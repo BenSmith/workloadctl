@@ -193,6 +193,13 @@ with `ssh -L 47990:localhost:47990 <host>` and `https://localhost:47990`
 (keep the local port equal to the web port: the CSRF origins name it).
 Moonlight's pairing and streaming ports are separate and stay on the LAN.
 
+**Web UI login**: with `SUNSHINE_WEB_PASSWORD` set from a secret (see
+`workload.toml`), the prestart runs `sunshine --creds` on every start, so
+the login exists before the web UI first answers. The secret stays the
+password: one changed in the web UI goes back on restart; rotate the secret
+and restart instead. The ExecStart unsets both variables, so the games
+Sunshine launches do not inherit them.
+
 ---
 
 ## Input from Moonlight Clients

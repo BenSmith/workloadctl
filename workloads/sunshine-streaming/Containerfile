@@ -615,6 +615,8 @@ UNIT
 #      current IPs (network is up by this point so `hostname -I` returns them).
 #   3. Hold the web UI to this machine (origin_web_ui_allowed=pc): it is
 #      reached over `ssh -L`, so nobody on the LAN sets the first credentials.
+#   4. Write the web UI's login from SUNSHINE_WEB_PASSWORD when the workload
+#      sets it, so the secret, not the web UI, holds the password.
 RUN cat > /usr/local/bin/sunshine-prestart <<'SCRIPT'
 #!/bin/bash
 set -e
@@ -669,6 +671,11 @@ if [ -f /etc/sunshine/tls/cert.pem ] && [ -f /etc/sunshine/tls/pkey.pem ]; then
     echo "cert=/etc/sunshine/tls/cert.pem" >> "$CONF"
     echo "pkey=/etc/sunshine/tls/pkey.pem" >> "$CONF"
 fi
+
+if [ -n "${SUNSHINE_WEB_PASSWORD:-}" ]; then
+    /usr/bin/sunshine --creds "${SUNSHINE_WEB_USER:-admin}" \
+        "$SUNSHINE_WEB_PASSWORD"
+fi
 SCRIPT
 
 RUN cat > /usr/lib/systemd/system/sunshine.service <<'UNIT'
@@ -681,7 +688,8 @@ Requires=wayfire-wayland-ready.service
 Type=simple
 Restart=on-failure
 RestartSec=3
-PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER SUNSHINE_PORT
+PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER SUNSHINE_PORT \
+    SUNSHINE_WEB_USER SUNSHINE_WEB_PASSWORD
 
 # See wayfire.service above for why both of these are set.
 SyslogIdentifier=sunshine
@@ -698,7 +706,7 @@ LimitNOFILE=524288
 ExecStartPre=/usr/bin/setpriv --reuid=${CONTAINER_UID} --regid=${CONTAINER_GID} --keep-groups -- \
     /bin/sh -c 'export HOME=/home/${CONTAINER_USER} && exec /usr/local/bin/sunshine-prestart'
 ExecStart=/usr/bin/setpriv --reuid=${CONTAINER_UID} --regid=${CONTAINER_GID} --keep-groups -- \
-    /bin/sh -c '. /run/wayland-display.env && export HOME=/home/${CONTAINER_USER} XDG_RUNTIME_DIR=/run/user/${CONTAINER_UID} WAYLAND_DISPLAY && cd && exec /usr/bin/sunshine'
+    /bin/sh -c '. /run/wayland-display.env && export HOME=/home/${CONTAINER_USER} XDG_RUNTIME_DIR=/run/user/${CONTAINER_UID} WAYLAND_DISPLAY && unset SUNSHINE_WEB_USER SUNSHINE_WEB_PASSWORD && cd && exec /usr/bin/sunshine'
 
 [Install]
 WantedBy=multi-user.target

@@ -222,9 +222,9 @@ UNIT
     echo "        The web UI answers this machine only. Reach it over ssh:"
     echo "          ssh -L ${SUNSHINE_WEB_PORT}:localhost:${SUNSHINE_WEB_PORT} \\"
     echo "            <host>"
-    echo "        then https://localhost:${SUNSHINE_WEB_PORT}. Create the"
-    echo "        credentials there first: Sunshine has none until"
-    echo "        then, and the pairing PIN page is unreachable until you do."
+    echo "        then https://localhost:${SUNSHINE_WEB_PORT}. Its login"
+    echo "        comes from SUNSHINE_WEB_PASSWORD (workload.toml); unset,"
+    echo "        create one there first: the pairing PIN page needs it."
 }
 
 disable() {

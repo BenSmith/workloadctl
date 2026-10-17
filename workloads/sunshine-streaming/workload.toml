@@ -17,6 +17,13 @@ DESKTOP_RESOLUTION = "1920x1080"
 # setup.sh advertises this host over mDNS on whatever base port is set here, so
 # Moonlight still discovers it automatically even when the port is shifted.
 # SUNSHINE_PORT = "48989"
+# The web UI's login. Unset, Sunshine has none until you create one in the
+# web UI over ssh -L. Set, every start writes it, so a password changed in
+# the web UI goes back to the secret's on restart:
+#   openssl rand -base64 24 | tr -d '\n' | \
+#     sudo workloadctl secret create sunshine-web
+# SUNSHINE_WEB_USER = "admin"
+# SUNSHINE_WEB_PASSWORD = "${SECRET:sunshine-web}"
 
 [container.health]
 cmd = "pgrep -x sunshine > /dev/null || exit 1"

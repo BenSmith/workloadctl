@@ -74,17 +74,22 @@ class TestGuestsOnlyRead(unittest.TestCase):
 
 class TestFirstVisitors(unittest.TestCase):
 
+    MARKER = "sunshine-prestart <<'SCRIPT'\n"
+
+    def sunshine_bundles(self):
+        bundles = [path.parent for path in WORKLOADS.glob("*/Containerfile")
+                   if self.MARKER in path.read_text()]
+        self.assertIn(WORKLOADS / "sunshine-streaming", bundles)
+        for bundle in bundles:
+            text = (bundle / "Containerfile").read_text()
+            script = text.split(self.MARKER, 1)[1].split("\nSCRIPT\n", 1)[0]
+            yield bundle, text, script
+
     def test_sunshines_web_ui_answers_this_machine_only(self):
         # Sunshine reads only the user's sunshine.conf, which the prestart
         # rewrites; a line in /etc/sunshine/sunshine.conf does nothing.
-        marker = "sunshine-prestart <<'SCRIPT'\n"
-        bundles = [path.parent for path in WORKLOADS.glob("*/Containerfile")
-                   if marker in path.read_text()]
-        self.assertIn(WORKLOADS / "sunshine-streaming", bundles)
-        for bundle in bundles:
+        for bundle, _, script in self.sunshine_bundles():
             with self.subTest(bundle=bundle.name):
-                text = (bundle / "Containerfile").read_text()
-                script = text.split(marker, 1)[1].split("\nSCRIPT\n", 1)[0]
                 self.assertIn("/^origin_web_ui_allowed=/d", script)
                 self.assertIn(
                     'echo "origin_web_ui_allowed=pc" >> "$CONF"', script)
@@ -94,6 +99,31 @@ class TestFirstVisitors(unittest.TestCase):
                 self.assertTrue(opened)
                 for line in opened:
                     self.assertNotIn("SUNSHINE_WEB_PORT", line)
+
+    def test_sunshines_login_comes_from_the_workloads_secret(self):
+        # The prestart writes the login before Sunshine first answers; the
+        # unit passes the variables in and keeps them from the games.
+        for bundle, text, script in self.sunshine_bundles():
+            with self.subTest(bundle=bundle.name):
+                self.assertIn(
+                    'if [ -n "${SUNSHINE_WEB_PASSWORD:-}" ]; then', script)
+                self.assertIn(
+                    '/usr/bin/sunshine --creds "${SUNSHINE_WEB_USER:-admin}"',
+                    script)
+                unit = text.split("sunshine.service <<'UNIT'\n", 1)[1]
+                unit = unit.split("\nUNIT\n", 1)[0].replace("\\\n", " ")
+                lines = unit.splitlines()
+                passed = [word for line in lines
+                          if line.startswith("PassEnvironment=")
+                          for word in line.split("=", 1)[1].split()]
+                self.assertIn("SUNSHINE_WEB_USER", passed)
+                self.assertIn("SUNSHINE_WEB_PASSWORD", passed)
+                start = [line for line in lines
+                         if line.startswith("ExecStart=")]
+                self.assertEqual(len(start), 1)
+                self.assertIn(
+                    "unset SUNSHINE_WEB_USER SUNSHINE_WEB_PASSWORD &&",
+                    start[0])
 
 
 class TestPiHoleSix(unittest.TestCase):
