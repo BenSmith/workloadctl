@@ -45,6 +45,21 @@ def _publish_host_port(port_spec: str) -> str | None:
         return None  # random host port, or a range we can't probe as one port
     return host
 
+def _publish_bind_address(port_spec: str) -> str:
+    """Return the address a podman `--publish` spec's host port answers on:
+    its bind address, or localhost when it binds every address. A port bound
+    to one address does not answer on loopback, so it is probed where bound.
+    """
+    spec = port_spec.split('/', 1)[0]
+    if spec.startswith('['):
+        address = spec[1:].partition(']')[0]
+    else:
+        parts = spec.split(':')
+        address = parts[0] if len(parts) == 3 else ''
+    if address in ('', '0.0.0.0', '::'):
+        return 'localhost'
+    return address
+
 def _multi_container_health(config, manager, only_container):
     """Per-container health summary for a multi-container workload.
 
@@ -250,11 +265,13 @@ def cmd_health(args, manager: WorkloadManager):
             port = _publish_host_port(port_spec)
             if port is None:
                 continue  # no single fixed host port to probe
+            address = _publish_bind_address(port_spec)
+            family = socket.AF_INET6 if ':' in address else socket.AF_INET
             try:
                 port_num = int(port)
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock = socket.socket(family, socket.SOCK_STREAM)
                 sock.settimeout(2)
-                rc = sock.connect_ex(('localhost', port_num))
+                rc = sock.connect_ex((address, port_num))
                 sock.close()
 
                 port_accessible = rc == 0

@@ -1331,6 +1331,53 @@ class TestCmdHealthMore(unittest.TestCase):
             self.assertEqual(checks['port_accessibility']['details']['port'], '18080')
             self.assertEqual(cm.exception.code, 0)
 
+    def test_health_probes_a_bound_port_on_its_address(self):
+        """A port published on one address does not answer on loopback, so
+        `192.0.2.10:2222:2222` is probed at 192.0.2.10, not localhost
+        (forgejo's SSH on the services host read as down, 2026-10-17)."""
+        toml = PORTS_HEALTH_TOML.replace(
+            'ports = ["8080:80"]', 'ports = ["192.0.2.10:2222:2222"]')
+
+        def fake_run(cmd, **kw):
+            if cmd[:2] == ['systemctl', 'is-active']:
+                return _ok(stdout='active\n', returncode=0)
+            return _ok()
+
+        with _WorkloadDir(toml):
+            manager = MagicMock()
+            manager.user_exists.return_value = True
+            manager.podman.return_value.container_status.return_value = 'running'
+            manager.podman.return_value.container_health.return_value = 'healthy'
+            buf = io.StringIO()
+            with patch.object(WorkloadConfig, 'uid', new_callable=PropertyMock,
+                               return_value=10045):
+                with patch.object(cmd_health, 'manager_active', return_value=False):
+                    with patch('socket.socket') as sock_cls:
+                        sock_cls.return_value.connect_ex.return_value = 0  # open
+                        with patch('subprocess.run', side_effect=fake_run):
+                            with patch('sys.stdout', buf):
+                                with self.assertRaises(SystemExit) as cm:
+                                    cmd_health.cmd_health(
+                                        _args(json=True, workload='test-wl'), manager)
+            self.assertEqual(
+                [c.args[0] for c in sock_cls.return_value.connect_ex.call_args_list],
+                [('192.0.2.10', 2222)])
+            self.assertEqual(cm.exception.code, 0)
+
+    def test_publish_bind_address_parsing(self):
+        cases = {
+            "8080:80": "localhost",
+            "0.0.0.0:8080:80/tcp": "localhost",
+            "::80": "localhost",
+            "127.0.0.1:8080:80": "127.0.0.1",
+            "192.0.2.10:2222:2222": "192.0.2.10",
+            "[::1]:8080:80": "::1",
+            "[::]:8080:80": "localhost",
+        }
+        for spec, expected in cases.items():
+            with self.subTest(spec=spec):
+                self.assertEqual(cmd_health._publish_bind_address(spec), expected)
+
     def test_health_random_host_port_publish_not_probed(self):
         """A bare container port (`80`) has podman pick a random host port, so
         there is no deterministic port to probe — the check is skipped, not run
