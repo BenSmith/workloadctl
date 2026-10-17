@@ -38,9 +38,9 @@ The host hypervisor system manages the container as a workload:
 - Dedicated `_wl-sunshine-streaming` system user (UID 10000+)
 - Rootless podman with `userns=keep-id`
 - Persistent home volume at `/var/lib/workloads/sunshine-streaming/data/home`
-- Host `setup.sh` loads the uinput module, installs the udev relay, mints the
-  web UI's TLS cert, and advertises the host over mDNS. SELinux policy is loaded
-  by `workloadctl enable` from `[security].selinux_policy`, not by the script.
+- Host `setup.sh` loads the uinput module, installs the udev relay and
+  advertises the host over mDNS. SELinux policy is loaded by
+  `workloadctl enable` from `[security].selinux_policy`, not by the script.
 
 ---
 
@@ -163,8 +163,8 @@ re-derives them:
 - **adapter_name + encoder** from the PCI vendor of the visible render node
   (`0x10de` → nvenc, `0x1002`/`0x8086` → vaapi). With `gpu` pinned in the TOML
   only one `/dev/dri/renderD*` is mounted, so the loop selects that GPU.
-- **cert/pkey** when `setup.sh` minted a Homelab-CA-signed pair (mounted
-  read-only at `/etc/sunshine/tls`); absent, Sunshine self-signs.
+- **cert/pkey** are only removed: Sunshine serves the self-signed
+  certificate it generated, which Moonlight pins at pairing.
 
 ```bash
 # /usr/local/bin/sunshine-prestart (ExecStartPre in sunshine.service)
@@ -355,7 +355,7 @@ type must be attributed into `container_init_domain`
 systemd-as-PID1 exits 255 with *no AVCs* (it's a missing attribute, not a denied
 rule). `(blockinherit container)` alone gives a `container_t`-equivalent, which
 is not init-capable. `setup.sh` handles only the non-SELinux prerequisites: the
-uinput module load, the udev relay, the TLS cert, and the mDNS advertisement.
+uinput module load, the udev relay and the mDNS advertisement.
 The `/dev/uinput` group-access udev rule and the module autoload config are
 image-owned (`/usr/lib/udev/rules.d/72-uinput-input.rules`,
 `/usr/lib/modules-load.d/uinput.conf`), so they persist across bootc upgrades.

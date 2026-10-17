@@ -155,5 +155,18 @@ class TestCaddyIntermediate(unittest.TestCase):
             result.stdout)
 
 
+
+class TestOnlyCaddyNamesTheRoot(unittest.TestCase):
+    """sunshine-streaming's setup.sh signed its web UI's leaf with the root's
+    key from caddy's data dir; the leaf went (2026-10-17) so the key could
+    leave the host. A bundle naming that path would need it back."""
+
+    def test_no_other_bundle_names_the_roots_key(self):
+        for path in sorted(BUNDLE.parent.rglob("*")):
+            if not path.is_file() or path.is_relative_to(BUNDLE):
+                continue
+            with self.subTest(path=str(path.relative_to(BUNDLE.parent))):
+                self.assertNotIn(b"homelab-root.key", path.read_bytes())
+
 if __name__ == "__main__":
     unittest.main()

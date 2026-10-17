@@ -135,8 +135,8 @@ def collect_host_artifact_checks(config, _check) -> None:
     generator output only, so a `setup.sh` sidecar is invisible to every verb
     built on it. The set is read from the script rather than inferred, because
     the script is the only thing that knows: half of these are installed
-    conditionally (sunshine mints a TLS leaf only where the homelab CA is
-    readable, publishes mDNS only where avahi's service dir exists), and a
+    conditionally (sunshine publishes mDNS only where avahi's service dir
+    exists, caddy declares its intermediate only once one is placed), and a
     declaration made anywhere else would report those correct absences as
     faults.
 

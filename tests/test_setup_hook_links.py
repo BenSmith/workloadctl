@@ -25,7 +25,6 @@ from pathlib import Path
 from tests import REPO_ROOT
 
 CADDY = REPO_ROOT / "workloads" / "caddy" / "setup.sh"
-SUNSHINE = REPO_ROOT / "workloads" / "sunshine-streaming" / "setup.sh"
 
 
 class _Hook(unittest.TestCase):
@@ -95,69 +94,6 @@ class TestCaddyHook(_Hook):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("symlink", result.stderr)
         self._victim_untouched()
-
-
-@unittest.skipUnless(shutil.which("openssl") and shutil.which("hostname"),
-                     "openssl and hostname are needed to mint a leaf")
-class TestSunshineHook(_Hook):
-
-    def setUp(self):
-        super().setUp()
-        self.ca = self.tmp / "ca"
-        self.ca.mkdir()
-        subprocess.run(
-            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-             "-keyout", str(self.ca / "ca.key"), "-out",
-             str(self.ca / "ca.crt"), "-subj", "/CN=test-ca", "-days", "1"],
-            check=True, capture_output=True, timeout=60)
-        self.instance = self.tmp / "instance"
-        self.instance.mkdir()
-        shutil.copy(SUNSHINE.parent / "workload.toml",
-                    self.instance / "workload.toml")
-
-    def _mint(self):
-        """mint_tls_cert alone: enable also installs a host unit and runs
-        systemctl, which a test cannot. The functions are sourced without
-        the dispatch at the bottom of the script."""
-        env = {
-            "PATH": "/usr/bin:/bin",
-            "WORKLOAD_NAME": "zzinstance",
-            "WORKLOAD_USER": "_wl-zzinstance",
-            "WORKLOAD_INSTANCE_DIR": str(self.instance),
-            "WORKLOAD_BUNDLE_DIR": str(SUNSHINE.parent),
-            "WORKLOAD_DATA_DIR": str(self.data),
-            "HOMELAB_CA_CERT": str(self.ca / "ca.crt"),
-            "HOMELAB_CA_KEY": str(self.ca / "ca.key"),
-        }
-        body = SUNSHINE.read_text()
-        body = body[:body.rindex('\ncase "${1:-}" in')]
-        return subprocess.run(
-            ["bash", "-c", body + "\nmint_tls_cert\n"], env=env,
-            capture_output=True, text=True, timeout=60)
-
-    def test_control_a_clean_tree_gets_its_leaf(self):
-        result = self._mint()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.data / "tls" / "cert.pem").is_file())
-        self.assertTrue((self.data / "tls" / "pkey.pem").is_file())
-
-    def test_a_linked_tls_dir_is_refused(self):
-        (self.data / "tls").symlink_to(self.outside)
-        result = self._mint()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("symlink", result.stderr)
-        self._victim_untouched()
-
-    def test_linked_outputs_are_neither_written_nor_chmodded(self):
-        for name in ("pkey.pem", "cert.pem", "ca.srl"):
-            with self.subTest(output=name):
-                tls = self.data / "tls"
-                shutil.rmtree(tls, ignore_errors=True)
-                tls.mkdir()
-                (tls / name).symlink_to(self.victim)
-                result = self._mint()
-                self.assertNotEqual(result.returncode, 0)
-                self._victim_untouched()
 
 
 if __name__ == "__main__":

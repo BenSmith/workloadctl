@@ -596,11 +596,6 @@ class ShippedSetupScriptsTest(unittest.TestCase):
             "WORKLOAD_ROOT_DIR": f"/var/lib/workloads/{name}",
             "WORKLOAD_STATE_DIR": f"/var/lib/workloads/{name}/state",
             "WORKLOAD_DATA_DIR": f"/var/lib/workloads/{name}/data",
-            # Point the homelab CA at nothing, so the conditional branches take
-            # their "not on this host" path deterministically rather than
-            # depending on whether the test runner has a CA installed.
-            "HOMELAB_CA_CERT": "/nonexistent/ca.crt",
-            "HOMELAB_CA_KEY": "/nonexistent/ca.key",
         }
 
 

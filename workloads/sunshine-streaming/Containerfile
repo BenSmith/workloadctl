@@ -663,14 +663,9 @@ done
 ORIGINS="${ORIGINS},https://localhost:${WEB_PORT},https://$(hostname):${WEB_PORT}"
 echo "csrf_allowed_origins=${ORIGINS}" >> "$CONF"
 
-# Serve a Homelab-CA-signed cert when the host minted one (setup.sh mounts it
-# read-only at /etc/sunshine/tls), so the web UI is browser-trusted with no
-# warning. Absent → Sunshine generates its own self-signed cert as before.
+# Sunshine serves the certificate it generated itself: a cert= or pkey=
+# line would point it at a file the container may not have.
 sed -i '/^cert=/d;/^pkey=/d' "$CONF" 2>/dev/null || true
-if [ -f /etc/sunshine/tls/cert.pem ] && [ -f /etc/sunshine/tls/pkey.pem ]; then
-    echo "cert=/etc/sunshine/tls/cert.pem" >> "$CONF"
-    echo "pkey=/etc/sunshine/tls/pkey.pem" >> "$CONF"
-fi
 
 if [ -n "${SUNSHINE_WEB_PASSWORD:-}" ]; then
     /usr/bin/sunshine --creds "${SUNSHINE_WEB_USER:-admin}" \
