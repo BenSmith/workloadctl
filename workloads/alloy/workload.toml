@@ -58,6 +58,10 @@ ROLE_LABEL   = "CHANGE_ME"   # Role tag (gaming, ai, nas, networking, thin-clien
 volumes = [
     # Alloy config (edit /var/lib/workloads/alloy/data/alloy-config.alloy)
     "./alloy-config.alloy:/etc/alloy/config.alloy:ro",
+    # The image's --storage.path, where loki.source.journal keeps its position.
+    # The container is removed on stop; without this every restart re-sends up
+    # to max_age of journal it has already sent.
+    "./alloy-data:/var/lib/alloy/data",
     # Journal access (read-only)
     "/run/log/journal:/run/log/journal:ro",
     "/var/log/journal:/var/log/journal:ro",

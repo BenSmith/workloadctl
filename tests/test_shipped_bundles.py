@@ -244,6 +244,22 @@ class TestOtelLgtmRunsUnprivileged(unittest.TestCase):
                 self.assertRegex(unit, rf'--volume "[^"]+":"{target}"')
 
 
+class TestAlloyKeepsItsJournalPosition(unittest.TestCase):
+    """alloy runs with --rm and keeps loki.source.journal's position under
+    --storage.path. In the container's own layer the position went with each
+    restart, and alloy re-sent up to max_age of journal, which Loki refused
+    as a burst of push failures (services host, 2026-10-17). Checked in the
+    rendered unit, where the mount has to arrive."""
+
+    def test_the_storage_path_is_mounted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = Path(tmp) / "svc"
+            svc.mkdir()
+            generate_all(svc)
+            unit = (svc / "workload-alloy.service").read_text()
+        self.assertRegex(unit, r'--volume "[^"]+":"/var/lib/alloy/data"')
+
+
 class TestTheHostJournalSocket(unittest.TestCase):
     """A container given the host's journal socket writes entries under any
     identifier, at any priority (audit F13, measured 2026-10-11); journald
