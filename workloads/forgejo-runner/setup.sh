@@ -12,9 +12,9 @@
 # WHY THIS EXISTS: a Forgejo registration token is one-shot — the first
 # registration consumes it — so a rebuilt VM cannot replay a stored one. Minting
 # fresh on every provision (and feeding it to the seed through the credstore) is
-# what makes `disable --purge` + `enable` a working reset. The Forgejo *admin*
-# credential never leaves the host; the guest receives only the consumable
-# registration token.
+# what makes `disable --purge` + `enable` a working reset. The Forgejo API
+# token never leaves the host; the guest receives only the runner's own
+# uuid and token.
 set -euo pipefail
 
 WORKLOAD_NAME="${WORKLOAD_NAME:?not set — run via workloadctl enable/disable}"
@@ -42,6 +42,30 @@ print(tv.get("FORGEJO_ADMIN_URL", ""))
 PY
 }
 
+runner_scope() {
+  # Where the runner is created, as the API path between /api/v1/ and
+  # /actions/runners. FORGEJO_RUNNER_SCOPE: empty for the token's own user,
+  # NAME for an organisation, OWNER/REPO for one repository. Never the
+  # instance (/admin/...): an instance runner takes jobs from every repo on
+  # the forge, a stranger's included, and a job there reaches the signing key.
+  python3 - "$WORKLOAD_INSTANCE_DIR/workload.toml" <<'PY'
+import re, sys, tomllib
+d = tomllib.load(open(sys.argv[1], "rb"))
+tv = d.get("vm", {}).get("cloud_init", {}).get("template_vars", {})
+scope = tv.get("FORGEJO_RUNNER_SCOPE", "")
+name = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+if scope == "":
+    print("user")
+elif re.fullmatch(name, scope):
+    print("orgs/" + scope)
+elif re.fullmatch(name + "/" + name, scope):
+    print("repos/" + scope)
+else:
+    sys.exit("ERROR: FORGEJO_RUNNER_SCOPE %r is not empty, NAME or OWNER/REPO"
+             % scope)
+PY
+}
+
 network_shape() {
   # FORGEJO_URL (empty = same-host forge) and SAME_HOST_HOSTNAMES. Same read as
   # forgejo_admin_url, both values on one line space-separated.
@@ -59,7 +83,7 @@ PY
 prune_stale() {
   # The admin token travels via the environment, never argv: argv is visible
   # in `ps` to every user on the host, /proc/<pid>/environ is root-only.
-  ADMIN_TOKEN="$ADMIN_TOKEN" python3 - "$FORGEJO_ADMIN_URL" "$RUNNER_NAME" <<'PY' || echo "  (could not prune stale runners)"
+  ADMIN_TOKEN="$ADMIN_TOKEN" python3 - "$RUNNERS_URL" "$RUNNER_NAME" <<'PY' || echo "  (could not prune stale runners)"
 import json, os, sys, urllib.request
 url, name = sys.argv[1], sys.argv[2]
 token = os.environ["ADMIN_TOKEN"]
@@ -71,7 +95,7 @@ def call(req):
 
 try:
     runners = json.loads(call(urllib.request.Request(
-        url + "/api/v1/admin/actions/runners", headers=auth)))
+        url, headers=auth)))
 except Exception as e:
     print("  list runners failed: %s" % e)
     raise SystemExit(0)
@@ -80,7 +104,7 @@ for run in runners if isinstance(runners, list) else []:
     if run.get("name") == name:
         try:
             call(urllib.request.Request(
-                "%s/api/v1/admin/actions/runners/%s" % (url, run["id"]),
+                "%s/%s" % (url, run["id"]),
                 method="DELETE", headers=auth))
             print("  pruned stale runner id=%s" % run["id"])
         except Exception as e:
@@ -94,7 +118,7 @@ case "${1:-}" in
       {
         echo "WARNING: no Forgejo admin API token at $ADMIN_CRED"
         echo "  The VM will provision, but the runner cannot register and will"
-        echo "  sit idle. Create a Forgejo token with admin scope, then:"
+        echo "  sit idle. Create a Forgejo token for the runner's scope, then:"
         echo "    workloadctl secret create forgejo-admin-token"
         echo "    workloadctl enable $WORKLOAD_NAME      # re-run to mint"
       } >&2
@@ -120,12 +144,14 @@ case "${1:-}" in
       echo "  Forgejo's action URLs." >&2
       exit 1
     fi
+    RUNNER_PATH="$(runner_scope)"
+    RUNNERS_URL="${FORGEJO_ADMIN_URL}/api/v1/${RUNNER_PATH}/actions/runners"
     ADMIN_TOKEN="$(systemd-creds decrypt "$ADMIN_CRED" -)"
 
     prune_stale
 
     # Create the runner on the server and take its credentials back. This is
-    # the modern flow: POST /admin/actions/runners {name, ephemeral} ->
+    # the modern flow: POST .../actions/runners {name, ephemeral} ->
     # {id, uuid, token}. Both predecessors are deprecated — the
     # GET .../registration-token endpoint, and `forgejo-runner register` itself
     # (v13: "declare connections in the runner configuration instead") — so
@@ -137,7 +163,7 @@ case "${1:-}" in
                 curl -fsS -X POST -H @- \
                   -H "Content-Type: application/json" \
                   -d "{\"name\": \"${RUNNER_NAME}\", \"ephemeral\": false}" \
-                  "${FORGEJO_ADMIN_URL}/api/v1/admin/actions/runners")"
+                  "$RUNNERS_URL")"
     uuid="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("uuid",""))')"
     token="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')"
     if [ -z "$uuid" ] || [ -z "$token" ]; then
@@ -156,7 +182,8 @@ case "${1:-}" in
     printf '%s' "$uuid"  | systemd-creds encrypt --name=forgejo-runner-uuid  - "$UUID_CRED"
     printf '%s' "$token" | systemd-creds encrypt --name=forgejo-runner-token - "$TOKEN_CRED"
     chmod 0600 "$UUID_CRED" "$TOKEN_CRED"
-    echo "  registered runner ${RUNNER_NAME} on ${FORGEJO_ADMIN_URL} (connection declared in the seed)"
+    echo "  registered runner ${RUNNER_NAME} for ${RUNNER_PATH} on" \
+         "${FORGEJO_ADMIN_URL} (connection declared in the seed)"
     ;;
 
   disable)

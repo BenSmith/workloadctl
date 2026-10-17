@@ -33,15 +33,21 @@ provision, and the seed declares the connection from it.
    (`198.18.x.y` from its uid — the only door a passt guest has onto its own
    host) at the forge's published HTTP port; the forge need only publish that
    port (wildcard is fine). See "Reaching the forge from the VM" below.
-2. A **Forgejo admin API token**. The host setup hook uses it to create the
-   runner; it never enters the VM.
+2. A **Forgejo API token** for the runner's scope. The host setup hook uses
+   it to create the runner; it never enters the VM. `FORGEJO_RUNNER_SCOPE`
+   in the instance TOML says whose jobs the runner takes: empty for the
+   token's own user (the token needs `write:user`), `NAME` for an
+   organisation (`write:organization`), `OWNER/REPO` for one repository
+   (`write:repository`). The runner is never created for the whole forge:
+   an instance runner takes any repository's jobs, and a job here has sudo
+   on the VM that holds the signing key and the registry login.
 
    ```sh
    sudo workloadctl secret create forgejo-admin-token
    ```
 
 3. `FORGEJO_ADMIN_URL` in the instance TOML set to where this host reaches
-   that forge's admin API (localhost, or the forge's LAN port).
+   that forge's API (localhost, or the forge's LAN port).
 
 ## Provisioning
 
@@ -64,7 +70,7 @@ declares the connection):
 sudo workloadctl exec forgejo-runner -- tail -f /var/log/forgejo-runner-bootstrap.log
 ```
 
-If the admin token is absent, `enable` warns and continues — the VM provisions
+If the token is absent, `enable` warns and continues — the VM provisions
 but the runner stays unregistered. Create the token and re-run `enable` to create
 the runner.
 
@@ -115,7 +121,8 @@ Both are provision-time: the seed bakes `capacity` into
 ## Caveats
 
 - **Registration flow.** The runner is created server-side
-  (`POST /api/v1/admin/actions/runners`) and its uuid+token declared as a
+  (`POST /api/v1/{user,orgs/NAME,repos/OWNER/REPO}/actions/runners`) and its
+  uuid+token declared as a
   `server.connections` entry in `config.yml` — the modern flow. Neither the
   deprecated `GET .../registration-token` endpoint nor the deprecated
   `forgejo-runner register` command is used. This requires **runner v13+** (pinned

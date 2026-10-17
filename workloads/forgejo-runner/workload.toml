@@ -15,8 +15,9 @@
 # `disable --purge` + `enable`: a total rebuild that re-runs the hook.
 #
 # Configure before enabling:
-#   - FORGEJO_ADMIN_URL below: where this host reaches the forge's admin API
-#   - a Forgejo admin API token, so `setup.sh` can mint registration tokens:
+#   - FORGEJO_ADMIN_URL below: where this host reaches the forge's API
+#   - FORGEJO_RUNNER_SCOPE below: whose repositories the runner serves
+#   - a Forgejo API token for that scope, so `setup.sh` can create the runner:
 #       workloadctl secret create forgejo-admin-token
 #   - REGISTRY_CA_URL if CI pushes to a Caddy-fronted registry.local
 #
@@ -59,6 +60,12 @@ RUNNER_VERSION = "13.1.0"
 # be on this host: that is the whole shape, a runner VM whose only door onto
 # its host is its own derived address.
 FORGEJO_ADMIN_URL = "http://localhost:3000"
+# Whose jobs the runner takes: empty for the token's own user (a token with
+# write:user), NAME for an organisation (write:organization), OWNER/REPO for
+# one repository (write:repository). Never the whole forge: an instance
+# runner runs any repository's workflow, a stranger's included, and its jobs
+# have sudo on this VM, where the signing key and the registry login are.
+FORGEJO_RUNNER_SCOPE = ""
 # The forge's published HTTP port — the guest's SAME-HOST connection (when
 # FORGEJO_URL below is empty) is composed from this and the guest's own
 # derived address (WORKLOADCTL_VM_INSPECT_ADDR).
