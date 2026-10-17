@@ -11,8 +11,10 @@ Runs every workload TOML through the generator and validates the output:
 These tests catch regressions from editing workload configs or the generator.
 """
 
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -482,6 +484,27 @@ class TestWorkloadGeneration(unittest.TestCase):
                     self.assertNotIn("--health-cmd", service,
                                      f"Unexpected --health-cmd for {name}")
 
+    def test_an_array_health_check_reaches_podman_as_an_array(self):
+        """A health cmd written as a JSON array reaches podman as that array,
+        so podman runs it without a shell: a distroless image has none."""
+        arrays = 0
+        for filename, config in self.configs.items():
+            cmd = config.get("container", {}).get("health", {}).get("cmd", "")
+            if not cmd.startswith("["):
+                continue
+            arrays += 1
+            name = config["workload"]["name"]
+            with self.subTest(workload=name):
+                exec_start = next(
+                    line for line in self._read_service(name).splitlines()
+                    if line.startswith("ExecStart="))
+                argv = shlex.split(exec_start.removeprefix("ExecStart="))
+                value = json.loads(argv[argv.index("--health-cmd") + 1])
+                self.assertEqual(value, json.loads(cmd))
+                # podman runs a one-element array under /bin/sh -c.
+                self.assertGreater(len(value), 1)
+        self.assertTrue(arrays, "no bundle writes its health cmd as an array")
+
     def test_all_http_workloads_have_health_checks(self):
         """Workloads with HTTP ports should have health checks configured."""
         http_workloads_with_ports = set()
@@ -765,7 +788,8 @@ def _toml_value(value):
     elif isinstance(value, int):
         return str(value)
     elif isinstance(value, str):
-        return f'"{value}"'
+        # A JSON string is a TOML basic string: quotes and backslashes escaped.
+        return json.dumps(value)
     elif isinstance(value, list):
         if all(isinstance(i, dict) for i in value):
             # Array of inline tables

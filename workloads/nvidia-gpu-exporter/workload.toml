@@ -35,7 +35,7 @@
 name = "nvidia-gpu-exporter"
 
 [container]
-image = "docker.io/utkuozdemir/nvidia_gpu_exporter:1.10.0"
+image = "docker.io/utkuozdemir/nvidia_gpu_exporter:1.15.1"
 # The tag above is a real version pin, so `newer` would rarely fire — but the
 # house rule is uniform: no workload re-pulls on its own at service start.
 # Upgrades come from editing the tag, or from `workloadctl update`.
@@ -44,10 +44,11 @@ pull = "missing"
 # 0.0.0.0:9835 and calls nvidia-smi (injected below) on each scrape.
 
 [container.health]
-# The exporter image is Ubuntu-based (bash present); probe the metrics port
-# without needing curl. If a future image drops bash, switch to a curl/wget
-# probe or drop this block.
-cmd = "bash -c 'exec 3<>/dev/tcp/localhost/9835' || exit 1"
+# The image is distroless: no shell and no HTTP client, so the metrics port
+# cannot be probed from inside. The check runs nvidia-smi, what the exporter
+# reads on every scrape, as an argument vector (a JSON array runs without a
+# shell). An exporter that dies ends the container on its own.
+cmd = '["/usr/bin/nvidia-smi", "-L"]'
 interval = "30s"
 start_period = "20s"
 on_failure = "kill"
