@@ -14,8 +14,10 @@ sudo workloadctl build comfyui      # only if you are not consuming the CI image
 sudo workloadctl enable comfyui
 ```
 
-Then open `http://<host-ip>:8188`. The UI loads an empty graph — load a workflow
-JSON with the Load button, or POST one to `http://<host-ip>:8188/api/prompt`.
+ComfyUI asks for no login, so it is published on the host's loopback only.
+Over `ssh -L 8188:localhost:8188 <host>`, open `http://localhost:8188`. The
+UI loads an empty graph — load a workflow JSON with the Load button, or POST
+one to `http://localhost:8188/api/prompt`.
 See https://docs.comfy.org for the API reference.
 
 ## Choosing a GPU vendor

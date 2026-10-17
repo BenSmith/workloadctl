@@ -153,7 +153,7 @@ RUN dnf install -y "${SUNSHINE_RPM_URL}" && \
 RUN mkdir -p /etc/sunshine && \
     cat > /etc/sunshine/sunshine.conf <<'CONF'
 output_name=HEADLESS-1
-origin_web_ui_allowed=wan
+origin_web_ui_allowed=lan
 # Don't bake the cursor into the video frame; Moonlight renders it client-side.
 capture_cursor=false
 CONF

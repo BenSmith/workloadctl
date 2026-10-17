@@ -11,7 +11,8 @@
 #
 #   sudo workloadctl build comfyui     # only if not consuming the CI image
 #   sudo workloadctl enable comfyui
-#   # then open http://<host-ip>:8188
+#   # then, from your machine: ssh -L 8188:localhost:8188 <host>
+#   # and open http://localhost:8188
 #
 # GPU: there is no cross-vendor image. The VENDOR IS FIXED AT BUILD TIME by the
 # PyTorch wheel index; gpu = "auto" below then passes through whatever the host
@@ -115,7 +116,10 @@ volumes = [
 
 [network]
 mode = "pasta"
-ports = ["8188:8188"]
+# Published on the host's loopback only: ComfyUI asks for no login, so it is
+# reached over ssh (`ssh -L 8188:localhost:8188 <host>`). Publishing it
+# wider gives it to every machine that reaches the port.
+ports = ["127.0.0.1:8188:8188"]
 
 [resources]
 # Never swap — a diffusion model that starts paging will thrash the host far

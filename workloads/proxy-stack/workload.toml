@@ -63,9 +63,10 @@ on_failure = "kill"
 WG_INTERFACE = "wg0"
 SOCKS_PORT = "1080"
 
-# Leave empty to disable Pi-hole web interface auth, or use a secret:
-WEBPASSWORD = ""
-# WEBPASSWORD = "${SECRET:proxy-stack-webpassword}"
+# The admin password. Unset, Pi-hole makes a random one and prints it in the
+# log (`workloadctl logs proxy-stack`); set it from a secret. An empty string
+# turns the login off, so never set it to "".
+# FTLCONF_webserver_api_password = "${SECRET:proxy-stack-webpassword}"
 
 # Override the DNS server from wg0.conf if needed:
 # UPSTREAM_DNS = "10.5.0.1"
@@ -81,7 +82,17 @@ volumes = [
 
 [network]
 mode = "pasta"
-ports = ["3128:3128/tcp", "1080:1080/tcp", "53:53/udp", "53:53/tcp", "80:80/tcp"]
+# microsocks takes no login, so SOCKS stays on the host's loopback: an open
+# SOCKS proxy on the LAN would carry anyone through the tunnel and onto
+# whatever the pod reaches. Squid and DNS answer the LAN (Squid allows only
+# private source ranges).
+ports = [
+    "3128:3128/tcp",
+    "127.0.0.1:1080:1080/tcp",
+    "53:53/udp",
+    "53:53/tcp",
+    "80:80/tcp",
+]
 
 [security]
 # keep-id:uid=0,gid=0: wg-quick, Pi-hole's entrypoint, and Squid all require root.

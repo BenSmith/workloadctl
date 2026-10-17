@@ -28,12 +28,16 @@
 #      mounts, so files can be added over SMB — see the [storage] section
 #      below.
 #
-#   3. Configure the firewall (LAN-only — recommended):
+#   3. Complete first-run setup BEFORE opening the firewall: whoever finishes
+#      the wizard is the admin. From your machine:
+#        ssh -L 8096:localhost:8096 <host>   # then http://localhost:8096
+#      Add a library pointing at /media, then go on to step 4.
+#
+#   4. Configure the firewall (LAN-only — recommended):
 #        sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="203.0.113.0/24" port port="8096" protocol="tcp" accept'
 #        sudo firewall-cmd --reload
 #
-#   4. Open http://<host-ip>:8096 and complete first-run setup. Add a library
-#      pointing at /media. Then under Dashboard > Playback > Transcoding:
+#   5. Open http://<host-ip>:8096. Under Dashboard > Playback > Transcoding:
 #        - Hardware acceleration: Video Acceleration API (VAAPI)
 #        - VA-API device:        /dev/dri/renderD128
 #        - Enable the HEVC / H.264 hardware decoders & encoders you want.

@@ -1,23 +1,20 @@
 # Container Registry - Docker Registry v2 for local image storage
-# Serves container images on your local network
-# Access at http://<host>:5000
+# Serves container images on this host's loopback, at http://localhost:5000
+#
+# It has no authentication: anyone who reaches it can pull AND push, and so
+# replace any image a client pulls from it. To serve the LAN, give it
+# htpasswd auth (REGISTRY_AUTH=htpasswd and a mounted htpasswd file) before
+# publishing the port wider and opening the firewall. The zot-registry
+# bundle does both.
 #
 # Setup:
 #   1. Enable the workload (volume directories are created automatically):
 #        sudo workloadctl enable registry
 #
-#   2. Configure firewall to allow registry port:
-#        sudo firewall-cmd --add-port=5000/tcp --permanent
-#        sudo firewall-cmd --reload
+#   2. Test the registry:
+#        curl http://localhost:5000/v2/_catalog
 #
-#      Or restrict to local network only (more secure):
-#        sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="203.0.113.0/24" port port="5000" protocol="tcp" accept'
-#        sudo firewall-cmd --reload
-#
-#   3. Test the registry:
-#        curl http://<host>:5000/v2/_catalog
-#
-#   4. Configure clients to use the registry:
+#   3. Configure clients to use the registry:
 #        Add to /etc/containers/registries.conf or ~/.config/containers/registries.conf:
 #
 #        [[registry]]
@@ -57,7 +54,7 @@ volumes = [
 
 [network]
 mode = "pasta"
-ports = ["5000:5000"]
+ports = ["127.0.0.1:5000:5000"]
 
 [resources]
 # Registry doesn't send systemd ready notifications, use simple type

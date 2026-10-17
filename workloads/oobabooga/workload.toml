@@ -23,7 +23,9 @@
 #   3. Enable:
 #        sudo workloadctl enable oobabooga
 #
-#   4. Open http://<host-ip>:7860 (UI) or use the API at :5000/v1.
+#   4. From your machine:
+#        ssh -L 7860:localhost:7860 -L 5000:localhost:5000 <host>
+#      then open http://localhost:7860 (UI) or use the API at :5000/v1.
 
 [workload]
 name = "oobabooga"
@@ -60,9 +62,12 @@ volumes = ["./models:/app/text-generation-webui/models"]
 
 [network]
 mode = "pasta"
+# Published on the host's loopback only: neither the UI nor the API asks for
+# a login (--api-key unset), so both are reached over ssh. Publishing them
+# wider gives them to every machine that reaches the ports.
 ports = [
-    "7860:7860",   # Gradio UI
-    "5000:5000",   # OpenAI-compatible API
+    "127.0.0.1:7860:7860",   # Gradio UI
+    "127.0.0.1:5000:5000",   # OpenAI-compatible API
 ]
 
 [resources]

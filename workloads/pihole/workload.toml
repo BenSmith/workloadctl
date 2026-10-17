@@ -22,7 +22,7 @@
 #   2. (Optional) Create an encrypted admin password:
 #        echo -n "your-password" | \
 #          sudo workloadctl secret create pihole-webpassword
-#      Then set WEBPASSWORD = "${SECRET:pihole-webpassword}"
+#      Then set FTLCONF_webserver_api_password = "${SECRET:pihole-webpassword}"
 #      in [container.environment] below.
 #
 #   3. Enable (volume directories are created automatically):
@@ -62,12 +62,13 @@ on_failure = "kill"
 [container.environment]
 # TZ = "America/Los_Angeles"  # Uncomment and set to your timezone
 
-# Leave empty to disable web interface authentication, or use a secret:
-WEBPASSWORD = ""
-# WEBPASSWORD = "${SECRET:pihole-webpassword}"
+# The admin password. Unset, Pi-hole makes a random one and prints it in the
+# log (`workloadctl logs pihole`); set it from a secret. An empty string
+# turns the login off, so never set it to "".
+# FTLCONF_webserver_api_password = "${SECRET:pihole-webpassword}"
 
-# Upstream DNS servers (Cloudflare — change as desired)
-PIHOLE_DNS_ = "1.1.1.1;1.0.0.1"
+# Upstream DNS servers (Cloudflare — change as desired), semicolon-separated
+FTLCONF_dns_upstreams = "1.1.1.1;1.0.0.1"
 
 [storage]
 volumes = [

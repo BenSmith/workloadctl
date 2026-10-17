@@ -21,7 +21,9 @@
 #   3. Enable (volume directories are created automatically):
 #        sudo workloadctl enable example-multi-container
 #
-#   4. Open http://<host-ip>:3000 to complete Forgejo's first-time setup.
+#   4. Complete Forgejo's first-time setup over ssh before the port is open
+#      to the LAN: whoever finishes the install page is the admin.
+#        ssh -L 3000:localhost:3000 <host>   # then http://localhost:3000
 #
 # Useful commands once running:
 #   workloadctl status example-multi-container        # umbrella + both containers

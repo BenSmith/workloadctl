@@ -38,7 +38,6 @@ LAN clients and the proxy services themselves.
    sudo firewall-cmd --add-service=dns --permanent
    sudo firewall-cmd --add-service=http --permanent
    sudo firewall-cmd --add-port=3128/tcp --permanent
-   sudo firewall-cmd --add-port=1080/tcp --permanent
    sudo firewall-cmd --reload
    ```
 
@@ -58,10 +57,11 @@ export https_proxy=http://<host-ip>:3128
 proxy=http://<host-ip>:3128  # in /etc/dnf/dnf.conf
 ```
 
-**SOCKS5 proxy** (microsocks):
+**SOCKS5 proxy** (microsocks, no login, so on the host's loopback only; from
+another machine, over `ssh -L 1080:localhost:1080 <host>`):
 ```bash
-curl --socks5 <host-ip>:1080 https://ipinfo.io/ip
-export https_proxy=socks5h://<host-ip>:1080
+curl --socks5 localhost:1080 https://ipinfo.io/ip
+export https_proxy=socks5h://localhost:1080
 ```
 
 **DNS**: point clients to `<host-ip>`.
@@ -87,8 +87,8 @@ echo -n "your-password" | sudo workloadctl secret create proxy-stack-webpassword
 workloadctl logs proxy-stack
 workloadctl status proxy-stack
 
-# Verify VPN exit IP
-curl --socks5 <host-ip>:1080 https://ipinfo.io/ip
+# Verify VPN exit IP (on the host)
+curl --socks5 localhost:1080 https://ipinfo.io/ip
 
 # Check Squid config syntax
 sudo workloadctl exec proxy-stack squid -k parse

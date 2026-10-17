@@ -1,8 +1,9 @@
 # SMB Server Container
 
 Samba guest-only file share running rootless. All file access runs as the
-workload user — no per-client UID mapping. Suitable for shared storage on a
-trusted LAN.
+workload user — no per-client UID mapping. Guests read and never write: a
+guest is anyone on the LAN, so files go in from the host
+(`/var/lib/workloads/<name>/data/exports/`).
 
 ## Setup
 
@@ -44,7 +45,7 @@ sudo mount -t cifs //<host-ip>/exports /mnt/share \
     -o guest,uid=$(id -u),gid=$(id -g),file_mode=0664,dir_mode=0775
 ```
 
-The `uid`/`gid` options are required for non-root writes.
+The `uid`/`gid` options make the files appear as yours on the client.
 
 ## Sharing a host path another workload writes
 
@@ -66,8 +67,7 @@ extra_groups = ["wl-downloads"]
 ```
 
 Then add a stanza in `smb.conf` pointing at the container path. Keep the mount
-*outside* `/exports`: that share is writable, and nesting the bind inside it
-would expose the whole tree as writable through it.
+*outside* `/exports`, so each tree keeps its own stanza and its own access.
 
 ```ini
 [downloads]

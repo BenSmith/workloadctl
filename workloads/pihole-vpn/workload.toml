@@ -50,9 +50,10 @@ on_failure = "kill"
 # TZ = "America/Los_Angeles"  # Uncomment and set to your timezone
 WG_INTERFACE = "wg0"
 
-# Leave empty to disable web interface authentication, or use a secret:
-WEBPASSWORD = ""
-# WEBPASSWORD = "${SECRET:pihole-vpn-webpassword}"
+# The admin password. Unset, Pi-hole makes a random one and prints it in the
+# log (`workloadctl logs pihole-vpn`); set it from a secret. An empty string
+# turns the login off, so never set it to "".
+# FTLCONF_webserver_api_password = "${SECRET:pihole-vpn-webpassword}"
 
 # Override the DNS server from wg0.conf if needed:
 # UPSTREAM_DNS = "10.5.0.1"

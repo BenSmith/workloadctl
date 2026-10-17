@@ -48,7 +48,9 @@ To set an admin password:
 ```bash
 echo -n "your-password" | sudo workloadctl secret create pihole-vpn-webpassword
 ```
-Then set `WEBPASSWORD = "${SECRET:pihole-vpn-webpassword}"` in the workload config.
+Then set `FTLCONF_webserver_api_password = "${SECRET:pihole-vpn-webpassword}"`
+in the workload config. Unset, Pi-hole makes a random password and prints it
+in the log; an empty string turns the login off.
 
 ## Troubleshooting
 

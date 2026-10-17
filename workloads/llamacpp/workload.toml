@@ -18,7 +18,8 @@
 #   3. Enable:
 #        sudo workloadctl enable llamacpp
 #
-#   4. Open http://<host-ip>:8080 (chat UI + API at /v1/chat/completions).
+#   4. From your machine: ssh -L 8080:localhost:8080 <host>, then open
+#      http://localhost:8080 (chat UI + API at /v1/chat/completions).
 
 [workload]
 name = "llamacpp"
@@ -54,7 +55,11 @@ volumes = ["./models:/models:ro"]
 
 [network]
 mode = "pasta"
-ports = ["8080:8080"]
+# Published on the host's loopback only: llama-server without --api-key asks
+# for no login, so it is reached over ssh (`ssh -L 8080:localhost:8080
+# <host>`). Publishing it wider gives it to every machine that reaches the
+# port.
+ports = ["127.0.0.1:8080:8080"]
 
 [resources]
 memory_swap_max = "0"

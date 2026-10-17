@@ -18,7 +18,7 @@ both costs ~20 GB of disk for nothing. Pick one.
 ```bash
 sudo workloadctl build swarmui
 sudo workloadctl enable swarmui
-# then open http://<host-ip>:7801
+# then, over ssh -L 7801:localhost:7801 <host>, open http://localhost:7801
 ```
 
 ## Version

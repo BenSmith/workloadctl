@@ -14,7 +14,8 @@
 #
 #   sudo workloadctl build swarmui
 #   sudo workloadctl enable swarmui
-#   # then open http://<host-ip>:7801
+#   # then, from your machine: ssh -L 7801:localhost:7801 <host>
+#   # and open http://localhost:7801
 #
 # RELATIONSHIP TO THE comfyui BUNDLE: they are alternatives, not layers. Both can
 # run (ports 7801 and 8188 do not clash) but each carries its own PyTorch — the
@@ -121,8 +122,8 @@ volumes = [
 
 [network]
 mode = "pasta"
-ports = ["7801:7801"]
-# NO AUTHENTICATION BY DEFAULT, and this publishes on all host interfaces —
+ports = ["127.0.0.1:7801:7801"]
+# NO AUTHENTICATION BY DEFAULT, so this publishes on the host's loopback only —
 # the same caveat that applies to llama-swap on :8080. Anyone who can reach the
 # host can generate, browse every image in Output, and read Settings. That is
 # fine on a trusted LAN and NOT fine if the host is ever reachable beyond it.
