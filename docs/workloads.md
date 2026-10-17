@@ -1256,7 +1256,7 @@ The SSH key is injected via cloud-init on first boot, and `exec`/`shell` resolve
 
 #### Address resolution
 
-Every VM is wired with a `qemu-guest-agent` channel (a virtio-serial port named `org.qemu.guest_agent.0`), and that agent is the **first** source consulted for the guest's address. It is the only one that asks the guest itself, so it is equally correct on the managed bridge and on a custom LAN bridge, and it cannot go stale. Install and enable `qemu-guest-agent` in the guest to benefit — the shipped `virtual-forgejo` bundle's cloud-init does.
+Every VM is wired with a `qemu-guest-agent` channel (a virtio-serial port named `org.qemu.guest_agent.0`), and that agent is the **first** source consulted for the guest's address. It is the only one that asks the guest itself, so it is equally correct on the managed bridge and on a custom LAN bridge, and it cannot go stale. Install and enable `qemu-guest-agent` in the guest to benefit — the shipped `forgejo-runner` bundle's cloud-init does.
 
 Only the interface bearing the VM's derived MAC is trusted from the agent's reply. A guest reports every interface it has — podman/docker bridges, VPN tunnels, a nested VM's bridge — and none of those is reachable from the host; handing one back would be worse than returning nothing, since a non-empty answer stops the fallback chain. A guest that re-homes its NIC's address behind a MAC of its own (a bond, a macvlan) therefore falls through to the sources below, which key off the same MAC and would not have found it either.
 
@@ -2118,7 +2118,7 @@ sudo chmod 0600 /etc/credstore.encrypted/runner-token
 
 The decrypted value is baked into the seed ISO at build time. The ISO lives in the workload's home dir (root-only path, mode 0640), so the secret is at rest on disk for the lifetime of the VM — rotate by re-encrypting and re-running `workloadctl enable` (the seed rebuilds when the user-data file's mtime changes).
 
-A complete worked example lives at [`workloads/virtual-forgejo/`](../workloads/virtual-forgejo/README.md) (workload TOML at [`workloads/virtual-forgejo/workload.toml`](../workloads/virtual-forgejo/workload.toml)): a Fedora 44 VM that boots, installs workloadctl from source, runs Forgejo + Caddy + Avahi as containerized sidecars, and registers a native `forgejo-runner` against the in-VM Forgejo. Everything for the bundle is co-located under `workloads/virtual-forgejo/` — the workload TOML alongside its cloud-init bootstrap content.
+A complete worked example lives at [`workloads/forgejo-runner/`](../workloads/forgejo-runner/README.md) (workload TOML at [`workloads/forgejo-runner/workload.toml`](../workloads/forgejo-runner/workload.toml)): a Fedora VM that registers with a Forgejo instance as a native Actions runner. Everything for the bundle is co-located under `workloads/forgejo-runner/` — the workload TOML alongside its cloud-init bootstrap content.
 
 ---
 

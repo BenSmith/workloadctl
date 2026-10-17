@@ -8,7 +8,7 @@ shaped this way. This document is the other cut through the same material: one
 VM, followed end to end, from the TOML through unit start to a packet leaving
 the host.
 
-Neither shipped VM bundle is filtered — `vm-base` and `virtual-forgejo` are both
+Neither shipped VM bundle is filtered — `vm-base` and `forgejo-runner` are both
 `egress = "open"`, with their reasons stated inline — so the config below is one
 an operator writes. Call the workload `web`, with uid 10004:
 

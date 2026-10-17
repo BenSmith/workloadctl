@@ -1,8 +1,8 @@
 # forgejo-runner — a Fedora VM that registers with a Forgejo instance as a
 # native Actions runner.
 #
-# Split out of virtual-forgejo: the forge can now be a host *container*
-# workload, and this VM exists only to run jobs natively — so `podman build`
+# The forge is a host *container* workload (the `forgejo` bundle), and this
+# VM exists only to run jobs natively — so `podman build`
 # works without container-in-container — and to host the nested-KVM gate rung
 # (bootc-image-builder + swtpm + OVMF).
 #

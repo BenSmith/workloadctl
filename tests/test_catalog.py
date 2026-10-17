@@ -49,11 +49,11 @@ class TestDiscovery(CatalogTestBase):
     def test_list_bundles_includes_known(self):
         bundles = cmd_catalog.list_bundles()
         self.assertIn("alloy", bundles)
-        self.assertIn("virtual-forgejo", bundles)
+        self.assertIn("forgejo-runner", bundles)
         self.assertEqual(bundles, sorted(bundles))
 
     def test_bundle_kind(self):
-        self.assertEqual(cmd_catalog._bundle_kind("virtual-forgejo"), "vm")
+        self.assertEqual(cmd_catalog._bundle_kind("forgejo-runner"), "vm")
         self.assertEqual(cmd_catalog._bundle_kind("alloy"), "container")
 
     def test_list_bundles_includes_vm_base(self):
@@ -523,7 +523,7 @@ class CatalogListTest(CatalogTestBase):
         self.assertIn("Available bundles", out)
         self.assertIn("alloy", out)
         self.assertIn("container", out)              # alloy's kind
-        self.assertIn("virtual-forgejo", out)
+        self.assertIn("forgejo-runner", out)
         self.assertIn("vm", out)                     # the forge bundle's kind
 
     def test_json_emits_bundle_kind_records(self):
@@ -532,7 +532,7 @@ class CatalogListTest(CatalogTestBase):
             cmd_catalog.cmd_catalog(_ns(json=True), self.manager)
         by_name = {r["bundle"]: r["kind"] for r in json.loads(buf.getvalue())}
         self.assertEqual(by_name.get("alloy"), "container")
-        self.assertEqual(by_name.get("virtual-forgejo"), "vm")
+        self.assertEqual(by_name.get("forgejo-runner"), "vm")
 
     def test_empty_dir_reports_none(self):
         with mock.patch.object(cmd_catalog, "BUNDLES_DIR", self.tmp / "empty"):

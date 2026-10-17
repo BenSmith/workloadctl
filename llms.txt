@@ -155,7 +155,7 @@ A TOML with a top-level `[vm]` section (mutually exclusive with `[container]`/`[
 - **Shares** — virtiofs `volumes`, every guest id squashed to the workload user on the host (`docs/vm-virtiofs.md`).
 - **Size** — `vcpus`, `memory`, a virtio-balloon so the host can reclaim idle guest memory, and a `restart` policy.
 
-`workloads/virtual-forgejo/` is the live example and `workloads/vm-base/` the minimal one; `docs/schema-reference.toml` documents `[vm]`, `[vm.cloud_init]` and `[vm.network]` and is written in valid file order.
+`workloads/forgejo-runner/` is the live example and `workloads/vm-base/` the minimal one; `docs/schema-reference.toml` documents `[vm]`, `[vm.cloud_init]` and `[vm.network]` and is written in valid file order.
 
 ### Three network stances, and they are peers
 
@@ -531,7 +531,7 @@ tests/                             # Unit suite + tests/manual/ rigs + tests/run
 
 33 bundles under `workloads/`, each a directory with `workload.toml` at minimum. `workloadctl catalog` lists them; `workloadctl init <bundle>` stamps one into `/etc/workloads.d/`. By shape:
 
-- **VM** — `virtual-forgejo` (the live filtered-VM example), `vm-base` (the minimal one)
+- **VM** — `forgejo-runner` (the live example), `vm-base` (the minimal one)
 - **Multi-container** — `proxy-stack`, `pihole-vpn`, `webproxy-demo` (smallest bridge-mode example), `example-multi-container`
 - **Network / VPN** — `wireguard-vpn`, `socks5-vpn`, `dns-vpn`, `squid`, `caddy`, `avahi`, `pihole`
 - **Registry / forge** — `registry`, `zot-registry`, `forgejo`

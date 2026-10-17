@@ -58,7 +58,7 @@ RETIRED_ENV_VARS = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
 # reasons that have nothing to do with VM egress.
 CODE_DIRS = ("bin", "lib", "generators", "libexec", "nftables", "security",
              "rpm")
-VM_BUNDLES = ("workloads/vm-base", "workloads/virtual-forgejo")
+VM_BUNDLES = ("workloads/vm-base", "workloads/forgejo-runner")
 
 
 def _tracked_files():

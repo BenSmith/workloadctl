@@ -14,9 +14,8 @@ also carries the nested-KVM tooling (`qemu-kvm`, `swtpm`, `edk2-ovmf`) so the
 hypervisor's own gate rung — a real bootc image under a swtpm-backed vTPM — runs
 here too.
 
-Split out of the `virtual-forgejo` bundle: the forge itself can be a host
-container workload (see the sibling `forgejo` bundle), and this VM exists only to
-run jobs.
+The forge itself is a host container workload (see the sibling `forgejo`
+bundle), and this VM exists only to run jobs.
 
 ## No data disk
 

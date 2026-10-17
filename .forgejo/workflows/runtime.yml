@@ -24,7 +24,7 @@
 # so this file can only ever run on the Forgejo runner. (The .github/ twin
 # carries a gate because Forgejo *does* fall back to reading .github/workflows.)
 #
-# The native runner lives inside the virtual-forgejo VM, which exposes nested
+# The native runner lives inside the forgejo-runner VM, which exposes nested
 # KVM (workloadctl launches it with `-cpu host`; verified live 2026-07-10) and
 # whose cloud-init bakes the gate toolchain (qemu-kvm, swtpm, edk2-ovmf). The
 # /dev/kvm probe below is a capability check, not a host list: any runner
