@@ -35,9 +35,7 @@ def published(bundle):
 class TestNoLoginMeansLoopback(unittest.TestCase):
 
     def test_each_is_published_on_loopback_only(self):
-        present = [b for b in NO_LOGIN if (WORKLOADS / b).is_dir()]
-        self.assertGreaterEqual(len(present), 6)
-        for bundle in present:
+        for bundle in NO_LOGIN:
             for spec in published(bundle):
                 container_port = spec.split("/")[0].rsplit(":", 1)[-1]
                 if container_port in NO_LOGIN[bundle]:
@@ -45,7 +43,7 @@ class TestNoLoginMeansLoopback(unittest.TestCase):
                         self.assertTrue(spec.startswith("127.0.0.1:"))
 
     def test_every_one_is_still_published(self):
-        for bundle in (b for b in NO_LOGIN if (WORKLOADS / b).is_dir()):
+        for bundle in NO_LOGIN:
             ports = {s.split("/")[0].rsplit(":", 1)[-1]
                      for s in published(bundle)}
             with self.subTest(bundle=bundle):

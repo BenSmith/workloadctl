@@ -1510,7 +1510,7 @@ characters. Shares are for container workloads, and every container of a
 workload mounts them unless the membership names the ones that do:
 
 ```toml
-# a pod's download client sees the downloads; its DNS and proxy do not
+# only the app container sees the files, not the pod's sidecars
 [[shares]]
 name = "downloads"
 target = "/downloads"
