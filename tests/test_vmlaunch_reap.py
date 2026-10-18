@@ -18,6 +18,8 @@ vmlaunch is harness code under tests/runtime/ rather than a lib/ module, so it i
 loaded by path.
 """
 
+import os
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -76,8 +78,7 @@ class TestReapReportsOnlyWhatItRemoved(unittest.TestCase):
 
     def test_a_removed_dir_is_reaped(self):
         d = self._run_dir("gone")
-        reaped, stuck = vmlaunch.reap_stale_runs()
-        self.assertEqual((reaped, stuck), ([d], []))
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([d], [], []))
         self.assertFalse(d.exists())
 
     def test_a_surviving_dir_is_reported_stuck_not_reaped(self):
@@ -87,8 +88,8 @@ class TestReapReportsOnlyWhatItRemoved(unittest.TestCase):
         d = self._run_dir("stubborn")
         with mock.patch.object(vmlaunch.shutil, "rmtree"), \
              mock.patch.object(vmlaunch.subprocess, "run") as sudo_run:
-            reaped, stuck = vmlaunch.reap_stale_runs()
-        self.assertEqual((reaped, stuck), ([], [d]))
+            got = vmlaunch.reap_stale_runs()
+        self.assertEqual(got, ([], [d], []))
         self.assertTrue(d.exists(), "sanity: the dir was meant to survive")
         # And it did try to escalate before giving up.
         argv = sudo_run.call_args.args[0]
@@ -102,8 +103,8 @@ class TestReapReportsOnlyWhatItRemoved(unittest.TestCase):
         with mock.patch.object(vmlaunch.shutil, "rmtree"), \
              mock.patch.object(vmlaunch, "_is_run_dir", return_value=False), \
              mock.patch.object(vmlaunch.subprocess, "run") as sudo_run:
-            reaped, stuck = vmlaunch.reap_stale_runs()
-        self.assertEqual((reaped, stuck), ([], [d]))
+            got = vmlaunch.reap_stale_runs()
+        self.assertEqual(got, ([], [d], []))
         sudo_run.assert_not_called()
 
     def test_mixed_sweep_splits_the_two_lists(self):
@@ -118,11 +119,67 @@ class TestReapReportsOnlyWhatItRemoved(unittest.TestCase):
 
         with mock.patch.object(vmlaunch.shutil, "rmtree", picky_rmtree), \
              mock.patch.object(vmlaunch.subprocess, "run"):
-            reaped, stuck = vmlaunch.reap_stale_runs()
-        self.assertEqual((reaped, stuck), ([ok], [bad]))
+            got = vmlaunch.reap_stale_runs()
+        self.assertEqual(got, ([ok], [bad], []))
 
     def test_nothing_stale_is_not_an_error(self):
-        self.assertEqual(vmlaunch.reap_stale_runs(), ([], []))
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([], [], []))
+
+
+class TestReapLeavesARunningHarnessAlone(unittest.TestCase):
+    """The dev and gate rungs are separate workflows on a runner that takes
+    two jobs at once, so one's pre-flight sweep can run while the other's VM
+    is up. A run is stale only when the harness that launched it is gone."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.enterContext(mock.patch.object(vmlaunch, "RUN_ROOT", self.root))
+        self.enterContext(mock.patch.object(vmlaunch, "Path", _PathAt(self.root)))
+        # A run's VM is killed through its pidfiles; none may be signalled
+        # here, whatever the outcome.
+        self.kill = self.enterContext(mock.patch.object(vmlaunch.os, "kill"))
+
+    def _run_dir(self, suffix, owner=None):
+        d = self.root / f"{vmlaunch.RUN_PREFIX}{suffix}"
+        d.mkdir()
+        (d / "vm.pid").write_text("999999\n")
+        if owner is not None:
+            (d / vmlaunch.OWNER_FILE).write_text(owner)
+        return d
+
+    @staticmethod
+    def _dead_pid():
+        """The pid of a process that has exited and been reaped."""
+        child = subprocess.Popen(["true"])
+        child.wait()
+        return child.pid
+
+    def test_a_run_whose_harness_is_alive_is_left_running(self):
+        d = self._run_dir(
+            "live", vmlaunch._process_identity(os.getpid()))
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([], [], [d]))
+        self.assertTrue(d.exists())
+        self.kill.assert_not_called()
+
+    def test_a_run_whose_harness_died_is_reaped(self):
+        d = self._run_dir("dead", f"{self._dead_pid()} 1")
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([d], [], []))
+        self.kill.assert_called_once_with(999999, 15)
+
+    def test_a_reused_pid_is_not_the_harness(self):
+        """The pid is alive, but its start time is not the one recorded:
+        another process has the pid now, and the run is stale."""
+        pid, start = vmlaunch._process_identity(os.getpid()).split()
+        d = self._run_dir("reused", f"{pid} {int(start) + 1}")
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([d], [], []))
+
+    def test_a_run_without_an_owner_is_reaped(self):
+        """Runs from before the owner file, and runs whose launch died
+        before writing it."""
+        d = self._run_dir("legacy")
+        self.assertEqual(vmlaunch.reap_stale_runs(), ([d], [], []))
 
 
 class _PathAt:
@@ -148,3 +205,26 @@ class _PathAt:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLaunchRecordsItsHarness(unittest.TestCase):
+    """The reap's liveness test reads what launch writes. Without it every
+    run reads as stale, and a sweep kills the other rung's VM."""
+
+    def test_the_run_dir_names_the_launching_process(self):
+        seen = {}
+
+        def stop_after_the_run_dir_exists():
+            (run_dir,) = Path(root).glob(f"{vmlaunch.RUN_PREFIX}*")
+            seen["owner"] = (run_dir / vmlaunch.OWNER_FILE).read_text()
+            raise RuntimeError("stop here")
+
+        with TemporaryDirectory() as root, \
+             mock.patch.object(vmlaunch, "RUN_ROOT", Path(root)), \
+             mock.patch.object(vmlaunch, "missing_prereqs", return_value=[]), \
+             mock.patch.object(vmlaunch, "_gate_ssh_key",
+                               side_effect=stop_after_the_run_dir_exists):
+            with self.assertRaisesRegex(RuntimeError, "stop here"):
+                vmlaunch.launch("gate")
+        self.assertEqual(seen["owner"],
+                         vmlaunch._process_identity(os.getpid()))

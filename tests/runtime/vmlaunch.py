@@ -53,6 +53,9 @@ RUN_ROOT = Path(os.environ.get("TMPDIR") or "/var/tmp")
 # still writing into it — outlive the run; `reap_stale_runs()` is what keeps
 # those from accumulating on a long-lived CI runner.
 RUN_PREFIX = "wlrt-run."
+# In each run dir: the launching harness's pid and start time, so a sweep
+# can tell a leaked run from a running one.
+OWNER_FILE = "owner"
 
 # Binaries the dev-mode boot needs beyond /dev/kvm.
 _DEV_BINARIES = ("qemu-system-x86_64", "qemu-img", "cloud-localds", "ssh-keygen")
@@ -697,6 +700,7 @@ def launch(mode: str, *, mem_mib: int = 2048, vcpus: int = 2,
 
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     run_dir = Path(tempfile.mkdtemp(prefix=RUN_PREFIX, dir=RUN_ROOT))
+    (run_dir / OWNER_FILE).write_text(_process_identity(os.getpid()))
     try:
         # Mode-specific ssh key + disk / seed / TPM; the rest of the boot is
         # identical. dev uses a per-run ephemeral key; gate uses a stable cached
@@ -781,6 +785,29 @@ def launch(mode: str, *, mem_mib: int = 2048, vcpus: int = 2,
         raise
 
 
+def _process_identity(pid: int) -> str:
+    """`pid` and its start time since boot, which a reused pid does not
+    share; empty when the process is gone."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return ""
+    # comm, field 2, is parenthesised and may hold spaces; starttime is the
+    # 20th field after it.
+    return f"{pid} {stat.rsplit(')', 1)[1].split()[19]}"
+
+
+def _harness_alive(run_dir: Path) -> bool:
+    """Whether the process that launched this run is still running it. A
+    run from before the owner file existed has none, and counts as dead."""
+    try:
+        owner = (run_dir / OWNER_FILE).read_text().strip()
+        pid = int(owner.split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    return _process_identity(pid) == owner
+
+
 def _is_run_dir(path: Path) -> bool:
     """Whether `path` is one of our own run dirs — the guard on `sudo rm -rf`.
 
@@ -822,10 +849,12 @@ def _cleanup_run_dir(run_dir: Path) -> bool:
     return not run_dir.exists()
 
 
-def reap_stale_runs() -> tuple[list[Path], list[Path]]:
+def reap_stale_runs() -> tuple[list[Path], list[Path], list[Path]]:
     """Kill leftover harness VMs and drop their run dirs.
 
-    Returns `(reaped, stuck)` — dirs that are now gone, and dirs that survived.
+    Returns `(reaped, stuck, live)` — dirs that are now gone, dirs that
+    survived, and dirs left alone because the harness that launched them is
+    still running.
     Only a dir that is *verifiably* gone counts as reaped: `shutil.rmtree` runs
     with `ignore_errors=True`, so for a long time this reported success for gate
     run dirs it had not removed (their root-owned `bib/` content defeats an
@@ -840,17 +869,26 @@ def reap_stale_runs() -> tuple[list[Path], list[Path]]:
 
     `/tmp` is swept alongside RUN_ROOT because that is where runs from before the
     disk-backed RUN_ROOT landed, and a leaked one there is exactly what starves
-    the tmpfs. Assumes no other harness VM is meant to be alive — true of the
-    runtime job, which runs its fidelities sequentially in one job.
+    the tmpfs.
+
+    A run whose harness is alive is not stale: the dev and gate rungs are
+    separate workflows on a runner that takes two jobs at once, so one's
+    sweep can start while the other's VM is up. `launch` records the
+    harness's pid and start time in the run dir (OWNER_FILE); a run without
+    one, or whose pid is gone or now names another process, is reaped.
     """
     reaped: list[Path] = []
     stuck: list[Path] = []
+    live: list[Path] = []
     for root in {RUN_ROOT, Path("/tmp")}:
         for run_dir in sorted(root.glob(f"{RUN_PREFIX}*")):
             if not run_dir.is_dir():
                 continue
+            if _harness_alive(run_dir):
+                live.append(run_dir)
+                continue
             (reaped if _cleanup_run_dir(run_dir) else stuck).append(run_dir)
-    return reaped, stuck
+    return reaped, stuck, live
 
 
 if __name__ == "__main__":
@@ -858,9 +896,11 @@ if __name__ == "__main__":
     # a dev box after a Ctrl-C) can reuse the teardown above instead of open-coding
     # pidfile handling in shell.
     if sys.argv[1:2] == ["reap"]:
-        _reaped, _stuck = reap_stale_runs()
+        _reaped, _stuck, _live = reap_stale_runs()
         for _d in _reaped:
             print(f"reaped stale run dir: {_d}")
+        for _d in _live:
+            print(f"left running run dir: {_d} (its harness is alive)")
         for _d in _stuck:
             print(f"WARNING: could not remove stale run dir: {_d}", file=sys.stderr)
         if _stuck:

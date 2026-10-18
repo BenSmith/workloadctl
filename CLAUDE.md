@@ -175,6 +175,9 @@ Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
   container with moatery from Copr, as a non-root user. No VM, no secrets.
 - `.forgejo/workflows/test.yml` — the same suite plus an RPM build on the
   Forgejo `native` runner.
-- `.forgejo/workflows/runtime.yml` — **cadence gate**: `just test-runtime`
-  (`dev`, then `gate`), weekly and on dispatch; skips cleanly without
-  `/dev/kvm`.
+- `.forgejo/workflows/runtime-dev.yml` — **cadence gate**: `just
+  test-runtime` in `dev` mode (this checkout's RPM in a Fedora Cloud VM),
+  weekly (Tue 03:00) and on dispatch; skips cleanly without `/dev/kvm`.
+- `.forgejo/workflows/runtime-gate.yml` — the same in `gate` mode, against the
+  shipped hypervisor image (Tue 04:00). Separate workflows can run side by
+  side on the runner; `reap_stale_runs` leaves a run whose harness is alive.

@@ -1,0 +1,116 @@
+# Weekly runtime rung (B1), dev fidelity, for workloadctl on the Forgejo
+# runner: boots a harness-owned VM from a cached Fedora Cloud image, builds and
+# installs this checkout's RPM in the guest, and runs the `runtime`-marked
+# checks (`just test-runtime` -> pytest -m runtime, WLRT_MODE=dev). It tests
+# this repository's code. A CADENCE gate, not a PR gate: schedule + manual
+# dispatch only.
+#
+# The two runtime rungs, dev (runtime-dev.yml) and gate (runtime-gate.yml),
+# are separate workflows. Each checks out into its own workspace (the path is
+# derived from repo + workflow + SHA), and the runner takes two jobs at once,
+# so they can run side by side: each one's pre-flight sweep reaps only runs
+# whose harness has gone (tests/runtime/vmlaunch.py reap_stale_runs).
+#
+# The native runner lives inside the forgejo-runner VM, which exposes nested
+# KVM (workloadctl launches it with `-cpu host`; verified live 2026-07-10) and
+# whose cloud-init bakes the toolchain (qemu-kvm, swtpm, edk2-ovmf). The
+# /dev/kvm probe below is a capability check, not a host list: any runner
+# without KVM records a warning and exits green rather than failing.
+#
+# No secrets are used. GitHub never reads .forgejo/workflows/, so this file
+# can only ever run on the Forgejo runner.
+name: runtime-dev
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Tuesday 03:00 UTC.
+    - cron: '0 3 * * 2'
+
+jobs:
+  runtime-dev:
+    runs-on: native
+    # ~10min; the rest is headroom for a cold Fedora Cloud image download.
+    timeout-minutes: 60
+    env:
+      # Per-runner persistent cache, as an absolute path: the runner daemon runs
+      # with no HOME in its environment, so "$HOME/wlrt-cache" resolved to the
+      # filesystem root.
+      WLRT_CACHE: /var/cache/wlrt
+      # Installed in the guest before workloadctl, which requires it.
+      WLRT_MOATERY_RPM: /var/cache/wlrt/moatery.rpm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for /dev/kvm
+        id: kvm
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "KVM present:"; ls -l /dev/kvm
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::/dev/kvm absent on this runner; skipping runtime rung."
+          fi
+
+      - name: Install runtime dependencies
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          # Probe-then-install, matching test.yml. Host-side binaries the
+          # harness needs (vmlaunch.py _DEV_BINARIES + rsync/pytest):
+          #   qemu-system-x86_64  <- qemu-system-x86-core
+          #   qemu-img            <- qemu-img
+          #   cloud-localds       <- cloud-utils
+          #   ssh-keygen          <- openssh (always present)
+          declare -A need=(
+            [qemu-system-x86_64]=qemu-system-x86-core
+            [qemu-img]=qemu-img
+            [cloud-localds]=cloud-utils
+            [rsync]=rsync
+            [pytest]=python3-pytest
+            [just]=just
+          )
+          missing=()
+          for bin in "${!need[@]}"; do
+            command -v "$bin" >/dev/null || missing+=("${need[$bin]}")
+          done
+          # OVMF has no binary to probe. dev falls back to SeaBIOS without it, but UEFI matches the
+          # VM-workload launch path.
+          rpm -q edk2-ovmf >/dev/null || missing+=(edk2-ovmf)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo dnf install -y "${missing[@]}"
+          fi
+          just --version
+
+      - name: Persistent image cache
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          # The launcher caches the Fedora Cloud qcow2 (dev) and the built gate
+          # qcow2 + stable gate ssh key (gate) under tests/runtime/.cache/. Point
+          # that at a per-runner persistent dir (the dev-host wlrt-cache pattern)
+          # so runs don't re-download ~500MB or re-run BIB on a fresh workspace.
+          mkdir -p "$WLRT_CACHE"
+          rm -rf tests/runtime/.cache
+          ln -s "$WLRT_CACHE" tests/runtime/.cache
+
+      - name: Fetch moatery RPM
+        if: steps.kvm.outputs.available == 'true'
+        run: sudo just moatery-rpm "$WLRT_MOATERY_RPM"
+
+      - name: Reap stale harness VMs
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          # This runner is long-lived, so a cancelled run's QEMU survives it —
+          # still running, still holding its scratch dir. Left alone they pile up
+          # and starve the gate's bootc-image-builder build of disk. Sweep first;
+          # a no-op when nothing is stale. The other rung's run, if it is
+          # running beside this one, is left alone: its harness is alive.
+          just reap-stale-runs
+          df -h /var/tmp
+
+      - name: Runtime rung (dev)
+        if: steps.kvm.outputs.available == 'true'
+        env:
+          WLRT_MODE: dev
+        run: just test-runtime
