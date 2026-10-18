@@ -179,7 +179,19 @@ Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
   test-runtime` in `dev` mode (this checkout's RPM in a Fedora Cloud VM),
   weekly (Tue 03:00) and on dispatch; skips cleanly without `/dev/kvm`.
 - The `gate` mode, against the shipped hypervisor image, is the hypervisor
-  repository's CI (its `runtime-gate.yml`, Tue 04:00), which checks this
+  repository's CI (its `runtime-gate.yml`, Tue 11:00 UTC), which checks this
   repository out at the release the image pins. It shares the runner with
   `runtime-dev.yml`, and the two can run side by side: `reap_stale_runs`
   leaves a run whose harness is alive.
+- `.forgejo/workflows/build-workload-images.yml` — the self-built bundles'
+  images: built with `lib/imagebuild.py` (`.forgejo/scripts/ci-workload-images.py`),
+  scanned by grype (a fixable critical not accepted in
+  `.forgejo/cve-allowlist.txt` stops the push), pushed to
+  `registry.local/workloads/<name>` and signed with the runner's sealed key
+  (the hypervisor repository's `seal-signing-key.yml` seals it;
+  `.forgejo/cosign.pub` is its public half, and must change with it). On a
+  push to main it rebuilds the bundles that changed; every bundle weekly (Sun
+  03:00 UTC) and on dispatch. Its helpers' tests run in it, not in `just
+  test`: importing the helper repoints the bundle paths at module scope.
+- `.forgejo/workflows/scan-images.yml` — report-only daily grype scan (12:00
+  UTC) of every image the bundles run, upstream ones included.

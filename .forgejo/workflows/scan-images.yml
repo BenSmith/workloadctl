@@ -1,0 +1,91 @@
+name: Scan Images
+
+# Report-only grype scan of every image the bundles run: the self-built ones
+# as the registry holds them, and the upstream ones a bundle names directly,
+# which no build scans. A CVE published after an image's build scan shows
+# here, not at the next weekly rebuild. Warnings, never a failure: nothing
+# waits on this run (build-workload-images.yml's scan is the gate).
+
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Images to scan: "all", or a space/comma list of refs'
+        required: true
+        default: 'all'
+        type: string
+  # Daily at 12:00 UTC: the runner is shared with the hypervisor
+  # repository's nightly image builds, which have finished by then.
+  schedule:
+    - cron: '0 12 * * *'
+
+concurrency:
+  group: scan-images
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: native
+    timeout-minutes: 180
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: moatery, unpacked
+        # workloadctl's modules import it: its newest release, from its Copr
+        # repository with its signature checked, unpacked and not installed.
+        run: |
+          site=$(.forgejo/scripts/moatery-root "$RUNNER_TEMP/moatery-root")
+          echo "PYTHONPATH=$site" >> "$GITHUB_ENV"
+
+      - name: Test the CI helpers
+        run: |
+          python3 .forgejo/scripts/test_ci_workload_images.py
+          python3 .forgejo/scripts/test_ci_scan.py
+
+      - name: Scan
+        env:
+          SELECT: ${{ inputs.images }}
+        run: |
+          if ! command -v grype >/dev/null; then
+            echo "::warning::grype is not on the runner; nothing was scanned"
+            exit 0
+          fi
+          if [ -n "$SELECT" ] && [ "$SELECT" != "all" ]; then
+            REFS=$(echo "$SELECT" | tr ', ' '\n\n')
+          else
+            REFS=$(python3 .forgejo/scripts/ci-workload-images.py images)
+          fi
+          # skopeo straight to an OCI layout directory: nothing lands in
+          # root's image store, and one image at a time bounds the disk. Not
+          # an archive: grype unpacks an oci-archive with a 2 GiB cap on each
+          # entry, which a CUDA layer exceeds. grype's layer cache goes on the
+          # disk too: a CUDA image overfills the runner's /tmp.
+          AUTH=/run/credentials/forgejo-runner.service/registry-auth
+          LAYOUT=/var/tmp/img-scan-${{ github.run_id }}
+          SCAN=/var/tmp/img-scan-${{ github.run_id }}.json
+          GRYPE_TMP=/var/tmp/img-scan-${{ github.run_id }}.tmp
+          trap 'sudo rm -rf "$LAYOUT" "$SCAN" "$GRYPE_TMP"' EXIT
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            auth=()
+            if [ "${ref%%/*}" = registry.local ] && sudo test -s "$AUTH"; then
+              auth=(--authfile "$AUTH")
+            fi
+            sudo rm -rf "$LAYOUT" "$SCAN" "$GRYPE_TMP"
+            sudo mkdir "$GRYPE_TMP"
+            # A layout cannot hold signatures; the scan does not need them.
+            if ! sudo skopeo copy -q --remove-signatures "${auth[@]}" \
+                "docker://${ref}" "oci:${LAYOUT}:latest"; then
+              echo "::warning::could not fetch ${ref}; it was not scanned"
+              continue
+            fi
+            if ! sudo env TMPDIR="$GRYPE_TMP" grype "oci-dir:${LAYOUT}" \
+                -o json --file "$SCAN"; then
+              echo "::warning::grype could not scan ${ref}"
+              continue
+            fi
+            sudo chmod a+r "$SCAN"
+            python3 .forgejo/scripts/ci-scan.py report "$ref" "$SCAN" \
+              .forgejo/cve-allowlist.txt
+          done <<< "$REFS"

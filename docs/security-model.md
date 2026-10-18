@@ -142,9 +142,10 @@ slice.
 ## Supply chain
 
 On the hypervisor image, images from `registry.local` are
-signature-verified. The forge's image build
-scans each image before pushing it, refusing a fixable critical CVE that is
-not accepted in `cve-allowlist.txt`, and rebuilds the images weekly;
+signature-verified. This repository's image build
+(`.forgejo/workflows/build-workload-images.yml`) scans each image before
+pushing it, refusing a fixable critical CVE that is not accepted in
+`.forgejo/cve-allowlist.txt`, and rebuilds the images weekly;
 `diagnose` reports an image older than 30 days. The OS images are checked,
 report only, for security updates Fedora has shipped that the build lacks,
 and the hypervisor image stages its updates for a reboot

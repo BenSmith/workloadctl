@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# moatery, which workloadctl's modules import, unpacked under ROOT and not
+# installed: its newest release, fetched and checked by `just moatery-rpm`.
+# Prints its site-packages directory, for PYTHONPATH.
+#
+#   PYTHONPATH=$(.forgejo/scripts/moatery-root /tmp/moatery-root)
+set -euo pipefail
+[ "$#" -eq 1 ] || { echo "usage: $0 ROOT" >&2; exit 2; }
+repo=$(realpath "$(dirname "$(realpath "$0")")/../..")
+root=$(realpath -m "$1")
+rm -rf "$root"
+mkdir -p "$root"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+just --justfile "$repo/justfile" moatery-rpm "$work/moatery.rpm" >&2
+(cd "$root" && rpm2cpio "$work/moatery.rpm" | cpio -idm --quiet)
+set -- "$root"/usr/lib/python3*/site-packages
+if [ "$#" -ne 1 ] || [ ! -d "$1/moatery" ]; then
+  echo "no moatery package under $root/usr/lib/python3*/site-packages" >&2
+  exit 1
+fi
+echo "$1"
