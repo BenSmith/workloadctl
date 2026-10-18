@@ -7,8 +7,8 @@ inherited by what it starts: passt failed under even `-sandbox on`
 and gave passt one end as `--fd` (net/passt.c); workload-vm-notify now does
 the same before QEMU starts, and QEMU takes the other end as a stream
 netdev. passt has to reach passt_t: run as svirt_t it cannot create the user
-namespace it isolates itself in (tp's policy, read 2026-10-14: svirt_t has
-no user_namespace create, passt_t has).
+namespace it isolates itself in (the dev host's policy, read 2026-10-14:
+svirt_t has no user_namespace create, passt_t has).
 
 A bridged VM's QEMU ran qemu-bridge-helper itself, so it ran without
 -sandbox; the wrapper now runs the helper and hands QEMU the tap's fd, as

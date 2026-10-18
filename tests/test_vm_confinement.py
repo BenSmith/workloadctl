@@ -274,7 +274,7 @@ class TestCilModule(unittest.TestCase):
 
     def test_qemus_stdio_reaches_the_journal(self):
         """Without it QEMU's fds 1 and 2 are SELinux's null device and a
-        QEMU that refuses its command line says so to nobody (tp,
+        QEMU that refuses its command line says so to nobody (dev host,
         2026-10-14: /proc/<qemu>/fd/2 -> /null, a failed start with no
         QEMU line in the journal)."""
         self.assertIn(

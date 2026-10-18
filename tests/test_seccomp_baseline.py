@@ -585,7 +585,7 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
         # And x86_64's sub-architectures, as podman hands crun them: on x86,
         # libseccomp folds a socket rule onto socketcall, and two folded
         # rules with different actions fail the load with EEXIST, which a
-        # native-only filter never sees (tp, 2026-10-14: every container
+        # native-only filter never sees (dev host, 2026-10-14: every container
         # workload failed to start).
         for entry in profile["archMap"]:
             if entry["architecture"] == "SCMP_ARCH_X86_64":

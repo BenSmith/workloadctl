@@ -2355,8 +2355,8 @@ class TestGeneratorVmWorkload(unittest.TestCase):
     def test_virtiofsd_prestart_runs_outside_the_sidecars_context(self):
         """SELinuxContext= applies to every Exec line, and wlvfsd_t may
         enter only virtiofsd: an rm in it fails 203/EXEC, `entrypoint`
-        denied on bin_t (tp, 2026-10-14). Every Exec line but ExecStart is
-        `+`."""
+        denied on bin_t (dev host, 2026-10-14). Every Exec line but
+        ExecStart is `+`."""
         sidecar, _uid = self._sidecar_and_uid()
         self.assertIn("SELinuxContext=system_u:system_r:wlvfsd_t:", sidecar)
         for line in sidecar.splitlines():
