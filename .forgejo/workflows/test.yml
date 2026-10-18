@@ -21,7 +21,11 @@ jobs:
           done
           # Macro packages provide no binary to probe; install unconditionally.
           # Required by the spec's BuildRequires (%{_unitdir}, %{python3_sitelib}).
-          sudo dnf install -y systemd-rpm-macros python3-rpm-macros
+          # libseccomp's Python binding: without it the seccomp baseline's
+          # libseccomp tests skip, and the profile is checked only against
+          # the suite's own model of libseccomp.
+          sudo dnf install -y systemd-rpm-macros python3-rpm-macros \
+            libseccomp-python
           python3 --version
           just --version
 

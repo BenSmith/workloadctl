@@ -35,7 +35,7 @@ jobs:
       - name: Tooling
         run: >-
           dnf install -y git just python3 openssl systemd zstd
-          openssh-clients logrotate util-linux
+          openssh-clients logrotate util-linux libseccomp-python
 
       - name: Checkout repository
         uses: actions/checkout@v7
