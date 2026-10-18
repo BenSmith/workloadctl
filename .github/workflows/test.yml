@@ -38,7 +38,7 @@ concurrency:
 jobs:
   test:
     if: ${{ github.server_url == 'https://github.com' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container: registry.fedoraproject.org/fedora:44
     timeout-minutes: 20
     steps:
