@@ -529,7 +529,7 @@ tests/                             # Unit suite + tests/manual/ rigs + tests/run
 
 ## Shipped bundles
 
-33 bundles under `workloads/`, each a directory with `workload.toml` at minimum. `workloadctl catalog` lists them; `workloadctl init <bundle>` stamps one into `/etc/workloads.d/`. By shape:
+32 bundles under `workloads/`, each a directory with `workload.toml` at minimum. `workloadctl catalog` lists them; `workloadctl init <bundle>` stamps one into `/etc/workloads.d/`. By shape:
 
 - **VM** — `forgejo-runner` (the live example), `vm-base` (the minimal one)
 - **Multi-container** — `proxy-stack`, `pihole-vpn`, `webproxy-demo` (smallest bridge-mode example), `example-multi-container`
@@ -539,6 +539,7 @@ tests/                             # Unit suite + tests/manual/ rigs + tests/run
 - **GPU / AI** — `llama-swap`, `llamacpp`, `comfyui`, `swarmui`, `oobabooga`
 - **Desktop / streaming** — `vncdesktop-sway`, `vncdesktop-labwc`, `vncdesktop-wayfire`, `sunshine-streaming`, `wolf-game-streaming`, `jellyfin`
 - **Files** — `smb-server`
+- **Development** — `remote-dev`
 
 Shipped bundles use `pull = "missing"` or `"never"` only — enforced by `tests/test_workloads.py`; see Image trust.
 
