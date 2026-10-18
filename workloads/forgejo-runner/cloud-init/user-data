@@ -180,8 +180,7 @@ write_files:
       # qemu-kvm/qemu-img/swtpm/edk2-ovmf back the runtime-test gate (B1b): this
       # native runner boots a real bootc image under nested KVM with a
       # swtpm-backed vTPM and OVMF firmware. grype scans each image the
-      # workload image build pushes, which refuses to push without it, and
-      # reports on the OS images.
+      # workload image build pushes, which refuses to push without it.
       dnf install -y --skip-broken --skip-unavailable \
         podman skopeo curl jq yq just git rpm-build \
         python3 policycoreutils-python-utils checkpolicy udica \
