@@ -199,6 +199,10 @@ jobs:
           # *.local scheme race broke signing). Key + passphrase are
           # host-key-sealed systemd credentials in the runner's tmpfs; missing
           # creds fail the job.
+          # This step's own files: jobs run side by side on the runner, and a
+          # digest read from a shared path can be another job's.
+          WORK=$(mktemp -d)
+          trap 'sudo rm -rf "$WORK"' EXIT
           CREDS=/run/credentials/forgejo-runner.service
           if ! sudo test -s "${CREDS}/cosign-key"; then
             echo "::error::no signing credential at ${CREDS}/cosign-key — refusing to push unsigned. Run the hypervisor repository's seal-signing-key workflow, then re-run this build."
@@ -227,14 +231,14 @@ jobs:
             else
               dated="${reftag}-${TAG}"
             fi
-            sudo podman push "${AUTH_ARGS[@]}" "${SIGN_ARGS[@]}" --digestfile /tmp/digest.txt "$ref"
-            DIGEST=$(cat /tmp/digest.txt)
+            sudo podman push "${AUTH_ARGS[@]}" "${SIGN_ARGS[@]}" --digestfile "$WORK/digest" "$ref"
+            DIGEST=$(cat "$WORK/digest")
             # A push can succeed without attaching a signature; the shipped policy.json
             # then refuses the image, so verify the attachment resolves and validates
             # before anything downstream consumes this digest.
             printf '{"default":[{"type":"reject"}],"transports":{"docker":{"%s":[{"type":"sigstoreSigned","keyPath":"%s","signedIdentity":{"type":"matchRepository"}}]}}}' \
-              "${repo}" "$(pwd)/.forgejo/cosign.pub" > /tmp/verify-policy.json
-            if ! sudo podman pull -q --signature-policy=/tmp/verify-policy.json "${repo}@${DIGEST}" >/dev/null; then
+              "${repo}" "$(pwd)/.forgejo/cosign.pub" > "$WORK/verify-policy.json"
+            if ! sudo podman pull -q --signature-policy="$WORK/verify-policy.json" "${repo}@${DIGEST}" >/dev/null; then
               echo "::error::signature verification failed for ${repo}@${DIGEST} — the push did not produce a valid signature"
               exit 1
             fi
