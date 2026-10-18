@@ -7,6 +7,7 @@ at `podman run` time, far from the edit that caused it. Nothing else in the suit
 looks at the file's contents. A workload's [security] seccomp_allow derives
 a profile from it, and the same checks hold every derived one.
 """
+import errno
 import json
 import re
 import unittest
@@ -574,14 +575,27 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
     by rule as crun builds it, loaded in a child, and socket() called
     there. Only calls the filter refuses, or families the kernel has built
     in, are made: a logged family would be allowed, and could make the
-    kernel load its module."""
+    kernel load its module.
+
+    The child also runs under every filter this process already has (a
+    container's runtime installs one), and the kernel answers with the most
+    restrictive; of two refusals, the filter loaded last. So the profile is
+    built refusing with MARK where it says its default errno, and only MARK
+    reads as its refusal: an earlier filter's refusal cannot pass for ours.
+    A call the profile allows that an earlier filter refuses cannot be
+    measured in this process, and its row is skipped rather than passed."""
 
     OPS = ("EQ", "NE", "LT", "LE", "GT", "GE", "MASKED_EQ")
+    # No runtime filter refuses with it, and socket() never returns it.
+    MARK = errno.EHWPOISON
+    # The profile's default errno, from a filter other than ours.
+    REFUSED_EARLIER = "refused by a filter loaded before ours"
 
-    def _build(self, profile):
+    def _build(self, profile, default=None):
         sc = _libseccomp()
         ops = {f"SCMP_CMP_{op}": getattr(sc, op) for op in self.OPS}
-        flt = sc.SyscallFilter(sc.ERRNO(profile["defaultErrnoRet"]))
+        default = profile["defaultErrnoRet"] if default is None else default
+        flt = sc.SyscallFilter(sc.ERRNO(default))
         # And x86_64's sub-architectures, as podman hands crun them: on x86,
         # libseccomp folds a socket rule onto socketcall, and two folded
         # rules with different actions fail the load with EEXIST, which a
@@ -596,8 +610,7 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
             if not _applies(e, "amd64", PODMAN_CAPS):
                 continue
             action = {"SCMP_ACT_ALLOW": sc.ALLOW, "SCMP_ACT_LOG": sc.LOG}.get(
-                e["action"]) or sc.ERRNO(
-                    e.get("errnoRet", profile["defaultErrnoRet"]))
+                e["action"]) or sc.ERRNO(e.get("errnoRet", default))
             args = [sc.Arg(c["index"], ops[c["op"]], c["value"],
                            c["valueTwo"]) for c in e.get("args") or ()]
             for name in e["names"]:
@@ -608,15 +621,20 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                 flt.add_rule(action, name, *args)
         return flt
 
-    def _sockets(self, calls, profile=None):
+    def _sockets(self, calls, profile=None, filtered=True):
+        """What each socket() call gives in a child under the profile's
+        filter, its refusals told apart from an earlier filter's (MARK), or
+        under no filter of ours when not `filtered`."""
         import ctypes
         import os
-        flt = self._build(profile or json.loads(PROFILE.read_text()))
+        profile = profile or json.loads(PROFILE.read_text())
+        flt = self._build(profile, default=self.MARK) if filtered else None
         read, write = os.pipe()
         pid = os.fork()
         if pid == 0:
             os.close(read)
-            flt.load()
+            if flt is not None:
+                flt.load()
             libc = ctypes.CDLL(None, use_errno=True)
             libc.syscall.restype = ctypes.c_long
             out = []
@@ -631,7 +649,30 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
         os.close(write)
         data = os.read(read, 65536)
         os.waitpid(pid, 0)
-        return json.loads(data)
+        default = profile["defaultErrnoRet"]
+        return [default if got == self.MARK
+                else self.REFUSED_EARLIER if filtered and got == default
+                else got for got in json.loads(data)]
+
+    def _assert_sockets(self, calls, profile=None):
+        """Each call gives the outcome `calls` names for it under the
+        profile. A call it allows that this process refuses before any
+        filter of ours loads is skipped: nothing here can measure it. One
+        the profile itself refused is not retried: that refusal is ours."""
+        profile = profile or json.loads(PROFILE.read_text())
+        got = dict(zip(calls, self._sockets(list(calls), profile)))
+        retry = [c for c, want in calls.items() if want == ALLOW
+                 and got[c] not in (ALLOW, profile["defaultErrnoRet"])]
+        refused_anyway = {c for c, bare in zip(
+            retry, self._sockets(retry, profile, filtered=False))
+            if bare != ALLOW}
+        for call, want in calls.items():
+            with self.subTest(socket=call):
+                if call in refused_anyway:
+                    self.skipTest("this process refuses it before any filter "
+                                  "of ours loads (a runtime's own seccomp "
+                                  "filter)")
+                self.assertEqual(got[call], want)
 
     def test_it_builds_for_every_architecture_crun_adds(self):
         self._build(json.loads(PROFILE.read_text()))
@@ -689,8 +730,7 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                  (AF_NETLINK, 3, NETLINK_AUDIT): EINVAL,
                  (2, 1, 6): ALLOW, (2, 1, 132): ENOSYS, (10, 2, 115): ENOSYS,
                  (2, 1, 256): ENOSYS}
-        got = self._sockets(list(calls))
-        self.assertEqual(dict(zip(calls, got)), calls)
+        self._assert_sockets(calls)
 
     def test_generic_netlink_taken_back_loads_and_holds(self):
         """A WireGuard bundle's profile: generic netlink allowed, sock_diag
@@ -701,9 +741,8 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
                                     allow_32bit=True))
         calls = {(AF_NETLINK, 3, 16): ALLOW, (AF_NETLINK, 3, 4): ENOSYS,
                  (AF_NETLINK, 3, 6): ENOSYS, (AF_VSOCK, 1, 0): ENOSYS}
-        got = self._sockets(list(calls), derived_profile(
+        self._assert_sockets(calls, derived_profile(
             baseline, [], netlink=["generic"]))
-        self.assertEqual(dict(zip(calls, got)), calls)
 
 if __name__ == "__main__":
     unittest.main()
