@@ -178,6 +178,8 @@ Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
 - `.forgejo/workflows/runtime-dev.yml` — **cadence gate**: `just
   test-runtime` in `dev` mode (this checkout's RPM in a Fedora Cloud VM),
   weekly (Tue 03:00) and on dispatch; skips cleanly without `/dev/kvm`.
-- `.forgejo/workflows/runtime-gate.yml` — the same in `gate` mode, against the
-  shipped hypervisor image (Tue 04:00). Separate workflows can run side by
-  side on the runner; `reap_stale_runs` leaves a run whose harness is alive.
+- The `gate` mode, against the shipped hypervisor image, is the hypervisor
+  repository's CI (its `runtime-gate.yml`, Tue 04:00), which checks this
+  repository out at the release the image pins. It shares the runner with
+  `runtime-dev.yml`, and the two can run side by side: `reap_stale_runs`
+  leaves a run whose harness is alive.

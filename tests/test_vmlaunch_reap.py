@@ -127,9 +127,10 @@ class TestReapReportsOnlyWhatItRemoved(unittest.TestCase):
 
 
 class TestReapLeavesARunningHarnessAlone(unittest.TestCase):
-    """The dev and gate rungs are separate workflows on a runner that takes
-    two jobs at once, so one's pre-flight sweep can run while the other's VM
-    is up. A run is stale only when the harness that launched it is gone."""
+    """The dev rung here and the gate rung in the hypervisor repository's
+    CI are separate workflows on a runner that takes two jobs at once, so
+    one's pre-flight sweep can run while the other's VM is up. A run is stale
+    only when the harness that launched it is gone."""
 
     def setUp(self):
         self.tmp = TemporaryDirectory()

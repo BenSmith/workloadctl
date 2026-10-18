@@ -871,9 +871,10 @@ def reap_stale_runs() -> tuple[list[Path], list[Path], list[Path]]:
     disk-backed RUN_ROOT landed, and a leaked one there is exactly what starves
     the tmpfs.
 
-    A run whose harness is alive is not stale: the dev and gate rungs are
-    separate workflows on a runner that takes two jobs at once, so one's
-    sweep can start while the other's VM is up. `launch` records the
+    A run whose harness is alive is not stale: the dev rung here and the
+    gate rung in the hypervisor repository's CI are separate workflows on a
+    runner that takes two jobs at once, so one's sweep can start while the
+    other's VM is up. `launch` records the
     harness's pid and start time in the run dir (OWNER_FILE); a run without
     one, or whose pid is gone or now names another process, is reaped.
     """
