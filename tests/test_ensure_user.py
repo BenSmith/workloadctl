@@ -2691,53 +2691,6 @@ class TestReadSshPubkey(unittest.TestCase):
             self.assertEqual(self.mod._read_ssh_pubkey(pw), "")
 
 
-class TestBundleRpms(unittest.TestCase):
-    """workloadctl's RPM requires moatery's, so the seed ISO carries both or
-    neither: a guest handed workloadctl's alone fails at dnf, not at the
-    warning that says why."""
-
-    def setUp(self):
-        self.mod = ensure_vm
-
-    def _bundle(self, tmp, present):
-        cache = Path(tmp) / "cache"
-        cache.mkdir()
-        for name in present:
-            (cache / name).write_bytes(name.encode())
-        seed_dir = Path(tmp) / "seed"
-        seed_dir.mkdir()
-        prefix = "/usr/share/workloadctl/"
-        with mock.patch.object(self.mod, "Path", side_effect=lambda p: (
-                cache / p[len(prefix):] if p.startswith(prefix)
-                else Path(p))):
-            return self.mod._bundle_rpms(seed_dir), seed_dir
-
-    def test_copies_both_when_both_cached(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result, seed_dir = self._bundle(
-                tmp, ("workloadctl.rpm", "moatery.rpm"))
-            self.assertTrue(result)
-            self.assertEqual(
-                (seed_dir / "workloadctl.rpm").read_bytes(),
-                b"workloadctl.rpm")
-            self.assertEqual(
-                (seed_dir / "moatery.rpm").read_bytes(), b"moatery.rpm")
-
-    def test_copies_neither_when_one_is_missing(self):
-        for present in ("workloadctl.rpm", "moatery.rpm"):
-            with self.subTest(present=present), \
-                    tempfile.TemporaryDirectory() as tmp:
-                result, seed_dir = self._bundle(tmp, (present,))
-                self.assertFalse(result)
-                self.assertEqual(list(seed_dir.iterdir()), [])
-
-    def test_returns_false_when_nothing_cached(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result, seed_dir = self._bundle(tmp, ())
-            self.assertFalse(result)
-            self.assertEqual(list(seed_dir.iterdir()), [])
-
-
 class TestDecryptSystemdCredentialMore(unittest.TestCase):
     """Additional coverage for the encrypted-success, encrypted-failure and
     plain-fallback branches of _decrypt_systemd_credential."""

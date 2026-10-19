@@ -671,12 +671,6 @@ class TestTheProgramsAreMoatery(unittest.TestCase):
         self.assertGreaterEqual(
             tuple(int(part) for part in minimum.split(".")), (0, 6, 0))
 
-    def test_seed_isos_carry_moatery(self):
-        """A VM's seed ISO carries moatery's RPM beside workloadctl's, which
-        its bootstrap cannot install alone."""
-        from ensure_vm import BUNDLED_RPMS
-        self.assertIn("moatery.rpm", BUNDLED_RPMS)
-
 
 if __name__ == "__main__":
     unittest.main()

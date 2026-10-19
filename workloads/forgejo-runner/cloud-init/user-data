@@ -318,26 +318,7 @@ write_files:
         fi
       fi
 
-      # 2. Install workloadctl, and moatery, which it requires, from the RPMs
-      # bundled in the cloud-init ISO (the ISO is labelled CIDATA). They are
-      # embedded only when the image has cached both under
-      # /usr/share/workloadctl (see ensure_vm), so this is best-effort: the
-      # runner's core function (daemon + jobs) does not need workloadctl in the
-      # guest — only gate-rung jobs that boot a nested BIB VM do. Without it,
-      # warn and continue rather than abort the whole bootstrap.
-      CIDATA_DEV=$(blkid -L CIDATA 2>/dev/null || echo /dev/sr0)
-      CIDATA_MNT=$(mktemp -d)
-      mount -r "$CIDATA_DEV" "$CIDATA_MNT"
-      if [ -s "$CIDATA_MNT/workloadctl.rpm" ]; then
-        dnf install -y "$CIDATA_MNT/workloadctl.rpm" "$CIDATA_MNT/moatery.rpm"
-      else
-        echo "WARNING: no workloadctl RPM on the seed ISO; skipping guest install"
-        echo "  (gate-rung jobs that boot a nested VM will need it — cache it and"
-        echo "  moatery.rpm under /usr/share/workloadctl and re-provision)."
-      fi
-      umount "$CIDATA_MNT" && rmdir "$CIDATA_MNT"
-
-      # 2a. Make the guest a proper workloadctl SELinux host for the gate. The
+      # 2. Make the guest a proper workloadctl SELinux host for the gate. The
       # workloadctl unit suite (just test — this runner is its CI host) reads
       # real host state: `workloadctl diagnose` demands the /var/lib/workloads
       # fcontext rule, and the suite runs as root here, so it creates real

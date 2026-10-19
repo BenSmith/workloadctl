@@ -91,8 +91,8 @@ like UID recycling). Two fidelity modes, selected by `--target=vm:<mode>`:
 
 - **dev** (`vm:dev`) — a cached Fedora Cloud image + the local workloadctl RPM,
   rsynced in and `just rpm-install`ed after moatery's RPM, which it requires
-  (`WLRT_MOATERY_RPM`, default `/usr/share/workloadctl/moatery.rpm`; `just
-  moatery-rpm` fetches the pinned one). Fast; the default.
+  (`WLRT_MOATERY_RPM`, default `moatery.rpm` in the checkout, where `just
+  moatery-rpm` writes its newest release). Fast; the default.
 - **gate** (`vm:gate`) — the *real* hypervisor bootc image, built via
   bootc-image-builder and booted under swtpm (emulated TPM2). Highest fidelity;
   exercises the shipped image and the TPM-backed secret path.

@@ -70,10 +70,10 @@ _GATE_IMAGE = os.environ.get("WLRT_GATE_IMAGE",
 _BIB_IMAGE = "quay.io/centos-bootc/bootc-image-builder:latest"
 
 # dev mode installs moatery in the guest before workloadctl, which requires
-# it and which no repository the guest knows carries. `just moatery-rpm`
-# fetches its newest release; a hypervisor host has it cached at the default.
+# it and which no repository the guest knows carries. The default is where
+# `just moatery-rpm` writes its newest release.
 _MOATERY_RPM = Path(os.environ.get("WLRT_MOATERY_RPM",
-                                   "/usr/share/workloadctl/moatery.rpm"))
+                                   _WORKLOADCTL / "moatery.rpm"))
 
 
 def missing_prereqs(mode: str) -> list[str]:

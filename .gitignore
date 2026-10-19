@@ -15,6 +15,9 @@ tests/runtime/.cache
 # In-progress design proposals, kept local until promoted to tracked docs
 docs/wip/
 
+# `just moatery-rpm`'s default destination, which the runtime rung reads
+/moatery.rpm
+
 # packit srpm output
 rpm/*.tar.gz
 *.src.rpm

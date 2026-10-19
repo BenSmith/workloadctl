@@ -155,31 +155,6 @@ def _decrypt_systemd_credential(name: str) -> str:
     )
 
 
-BUNDLED_RPMS = ("workloadctl.rpm", "moatery.rpm")
-
-
-def _bundle_rpms(seed_dir: Path) -> bool:
-    """Copy workloadctl's RPM and moatery's, which it requires, into seed_dir
-    for in-VM installation.
-
-    Uses the copies the hypervisor image build caches under
-    /usr/share/workloadctl, so the ISO is self-contained. Both or neither:
-    workloadctl's RPM cannot install without moatery's.
-    """
-    cached = [Path(f"/usr/share/workloadctl/{name}") for name in BUNDLED_RPMS]
-    missing = [str(path) for path in cached if not path.exists()]
-    if missing:
-        ensure_common.log(
-            f"  WARNING: no cached RPM at {', '.join(missing)}; bootstrap "
-            "will not be able to install workloadctl from the ISO.")
-        return False
-
-    for name, path in zip(BUNDLED_RPMS, cached):
-        shutil.copy2(path, seed_dir / name)
-    ensure_common.log("  Bundled workloadctl and moatery RPMs (cached copies)")
-    return True
-
-
 def _resolve_cloud_init_instance_id(name: str, existing: str,
                                     fp_unchanged: bool,
                                     marker: dict | None = None
@@ -714,11 +689,6 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
         os.write(fd, user_data_text.encode())
     finally:
         os.close(fd)
-
-    # For VM workloads: bundle workloadctl's and moatery's RPMs so the
-    # bootstrap can install them directly from the cdrom.
-    if vm_cfg:
-        _bundle_rpms(seed_dir)
 
     # Build ISO using genisoimage or mkisofs
     iso_tool = None
