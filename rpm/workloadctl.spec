@@ -5,7 +5,7 @@
 
 Name:           workloadctl
 # VERSION's, which a unit test holds it to.
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?buildserial:.%{buildserial}}%{?dist}
 Summary:        Declarative rootless container workload manager
 
