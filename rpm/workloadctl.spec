@@ -30,6 +30,26 @@ Requires:       shadow-utils
 Requires:       acl
 # modprobe: [security] kernel_modules (lib/kernel_modules.py).
 Requires:       kmod
+# ip: the egress inspector's and the broker's addresses (lib/broker_config.py)
+# and the default-route lookups (lib/ensure_common.py, lib/passt_dns_host.py).
+Requires:       iproute
+# sudo: a caller that is not root reaches a workload user's podman through
+# `sudo -n -u` (lib/podman.py), and enable loads the image that way
+# (lib/provisioning.py).
+Requires:       sudo
+# tar and zstd: backup writes a zstd tarball with tar --zstd (lib/backup.py),
+# and restore decompresses one through zstd (lib/cmd_backup.py).
+Requires:       tar
+Requires:       zstd
+# pkill: purge ends a workload user's stragglers before userdel
+# (lib/cmd_disable.py).
+Requires:       procps-ng
+# find: a share's directories get the setgid bit (lib/shares_setup.py).
+Requires:       findutils
+# logrotate: the egress inspector's per-request records rotate through
+# logrotate/workloadctl-inspect, which nothing else reads; without it they
+# grow without bound.
+Requires:       logrotate
 Suggests:       bash-completion
 # SELinux: enable registers an fcontext rule for /var/lib/workloads so the
 # transferred image storage is labeled container_file_t. semanage
