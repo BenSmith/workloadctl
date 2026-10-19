@@ -26,8 +26,8 @@ from vm_defs import SEED_CONTRACT_EXIT, SeedContractError
 import ensure_common
 from ensure_common import (
     warn_if_stale_home, setup_home_directory, record_deployment_provenance,
-    stamp_selinux_labels, write_environment_file, setup_workload_runtime_dir,
-    generate_egress_ca, provision_egress_pki_dirs,
+    join_image_groups, stamp_selinux_labels, write_environment_file,
+    setup_workload_runtime_dir, generate_egress_ca, provision_egress_pki_dirs,
     write_container_ca_bundle,
 )
 from ensure_vm import (
@@ -150,6 +150,12 @@ def provision(name: str) -> int:
         ensure_common.log(f"  WARNING: Failed to set up home directory for {username}: {e}")
 
     record_deployment_provenance(name)
+
+    try:
+        join_image_groups(name)
+    except Exception as e:
+        ensure_common.log(f"  ERROR: Failed to add {username} to its groups: {e}")
+        return 1
 
     if kind == "vm":
         # VM workloads: NVRAM, socket dir, SSH key, cloud-init

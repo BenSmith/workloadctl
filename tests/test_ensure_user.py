@@ -3745,5 +3745,118 @@ class TestEnsureUserShim(unittest.TestCase):
         self.assertEqual(order, [("lock", "web"), ("run", "web"), ("unlock", "web")])
 
 
+class TestJoinImageGroups(unittest.TestCase):
+    """join_image_groups, over a /etc/group, an image group file and a
+    systemd-sysusers that behave as the real ones do on Fedora bootc: NSS
+    reads both files, and sysusers adds a member only to a group whose line
+    is in /etc/group, reporting success either way."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = Path(tmp.name)
+        self.etc, self.image, self.run = d / "group", d / "image-group", d / "run"
+        self.run.mkdir()
+        self.sysusers = []
+        for patch in (
+                mock.patch.object(ensure_common, "ETC_GROUP", self.etc),
+                mock.patch.object(ensure_common, "IMAGE_GROUP", self.image),
+                mock.patch.object(ensure_common, "PASSWD_LOCK", d / ".pwd.lock"),
+                mock.patch.object(ensure_common, "RUN_SYSTEMD_SYSTEM", self.run),
+                mock.patch.object(ensure_common.grp, "getgrnam", self._getgrnam),
+                mock.patch.object(ensure_common.subprocess, "run", self._sysusers),
+                mock.patch.object(ensure_common, "log")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _getgrnam(self, name):
+        for path in (self.etc, self.image):
+            for line in path.read_text().splitlines() if path.exists() else ():
+                fields = line.split(":")
+                if fields[0] == name:
+                    return types.SimpleNamespace(
+                        gr_name=name, gr_gid=int(fields[2]),
+                        gr_mem=[m for m in fields[3].split(",") if m])
+        raise KeyError(name)
+
+    def _sysusers(self, argv, **kwargs):
+        self.sysusers.append(argv)
+        adds = [arg.split()[1:3] for arg in argv[2:]]
+        out = []
+        for line in self.etc.read_text().splitlines():
+            fields = line.split(":")
+            for user, group in adds:
+                members = [m for m in fields[3].split(",") if m]
+                if fields[0] == group and user not in members:
+                    fields[3] = ",".join(members + [user])
+            out.append(":".join(fields))
+        self.etc.write_text("".join(line + "\n" for line in out))
+
+    def _conf(self, *groups):
+        (self.run / "workload-web.conf").write_text(
+            'u _wl-web 10001 "web workload" /var/lib/workloads/web/state\n'
+            + "".join(f"m _wl-web {g}\n" for g in groups))
+
+    def test_a_group_only_the_image_defines_is_copied_and_joined(self):
+        self.etc.write_text("root:x:0:\nkvm:x:36:qemu\n")
+        self.image.write_text("video:x:39:\nrender:x:105:\n")
+        self._conf("video", "render")
+        ensure_common.join_image_groups("web")
+        self.assertEqual(self.etc.read_text(),
+                         "root:x:0:\nkvm:x:36:qemu\n"
+                         "video:x:39:_wl-web\nrender:x:105:_wl-web\n")
+        self.assertEqual(self.sysusers, [["systemd-sysusers", "--inline",
+                                          "m _wl-web video", "m _wl-web render"]])
+
+    def test_a_member_already_is_left_alone(self):
+        self.etc.write_text("kvm:x:36:qemu,_wl-web\nvideo:x:39:_wl-web\n")
+        self.image.write_text("video:x:39:\n")
+        self._conf("kvm", "video")
+        ensure_common.join_image_groups("web")
+        self.assertEqual(self.etc.read_text(), "kvm:x:36:qemu,_wl-web\nvideo:x:39:_wl-web\n")
+        self.assertEqual(self.sysusers, [])
+
+    def test_a_group_line_already_in_etc_is_not_copied_again(self):
+        self.etc.write_text("video:x:39:\n")
+        self.image.write_text("video:x:39:\n")
+        self._conf("video")
+        ensure_common.join_image_groups("web")
+        self.assertEqual(self.etc.read_text(), "video:x:39:_wl-web\n")
+
+    def test_a_group_file_without_a_final_newline_keeps_its_last_line(self):
+        self.etc.write_text("root:x:0:")
+        self.image.write_text("video:x:39:\n")
+        self._conf("video")
+        ensure_common.join_image_groups("web")
+        self.assertEqual(self.etc.read_text(), "root:x:0:\nvideo:x:39:_wl-web\n")
+
+    def test_a_group_neither_file_holds_raises_naming_it(self):
+        self.etc.write_text("root:x:0:\n")
+        self.image.write_text("")
+        self._conf("video")
+        directory = types.SimpleNamespace(gr_name="video", gr_gid=39, gr_mem=[])
+        with mock.patch.object(ensure_common.grp, "getgrnam", return_value=directory):
+            with self.assertRaisesRegex(RuntimeError, "not a member of video"):
+                ensure_common.join_image_groups("web")
+
+    def test_no_sysusers_config_is_nothing_to_do(self):
+        ensure_common.join_image_groups("web")
+        self.assertEqual(self.sysusers, [])
+
+    def test_provision_stops_when_the_groups_cannot_be_joined(self):
+        pw = _fake_pw(Path("/var/lib/workloads/web/state"))
+        with mock.patch.object(ensure_user.pwd, "getpwnam", return_value=pw), \
+             mock.patch.object(ensure_user, "warn_if_stale_home"), \
+             mock.patch.object(ensure_user, "WORKLOADS_BASE", self.run), \
+             mock.patch.object(ensure_user, "load_workload_config", return_value={}), \
+             mock.patch.object(ensure_user, "setup_home_directory"), \
+             mock.patch.object(ensure_user, "record_deployment_provenance"), \
+             mock.patch.object(ensure_user, "join_image_groups",
+                               side_effect=RuntimeError("not a member of video")), \
+             mock.patch.object(ensure_user, "configure_subuid_subgid") as subids:
+            self.assertEqual(ensure_user.provision("web"), 1)
+        subids.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

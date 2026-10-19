@@ -25,6 +25,8 @@ resolves at call time. (The generator's `log_msg` is imported by name because
 nothing patches it -- the difference is the traffic, not the taste.)
 """
 
+import fcntl
+import grp
 import os
 import shutil
 import stat
@@ -35,8 +37,8 @@ from pathlib import Path
 import deployment
 from config_parser import workload_root_dir
 from workload_lib import (
-    EGRESS_PKI_BASE, workload_data_dir, workload_egress_dir,
-    workload_state_dir,
+    EGRESS_PKI_BASE, RUN_SYSTEMD_SYSTEM, workload_data_dir,
+    workload_egress_dir, workload_state_dir,
 )
 from workload_mcs import CONTAINER_TREE_TYPE, VM_TREE_TYPE, mcs_level
 from run_files import workload_env_dir
@@ -125,6 +127,70 @@ def record_deployment_provenance(name):
             log(f"  Recorded deployment provenance in {deployment.marker_path(root)}")
     except Exception as e:
         log(f"  WARNING: Failed to record deployment provenance for {name}: {e}")
+
+
+# The group file systemd-sysusers writes memberships into, the image's own,
+# which NSS reads (nss-altfiles) and nothing writes, and the lock both
+# sysusers and the shadow tools take before writing the first.
+ETC_GROUP = Path("/etc/group")
+IMAGE_GROUP = Path("/usr/lib/group")
+PASSWD_LOCK = Path("/etc/.pwd.lock")
+
+
+def join_image_groups(name):
+    """Give the workload user the memberships its sysusers config could not.
+
+    The config's `m` lines name the user's groups: kvm for a VM, and each of
+    extra_groups. systemd-sysusers writes a membership into the group's line
+    in /etc/group, and a group an image defines only in /usr/lib/group (video,
+    render and input on Fedora bootc) has no such line: sysusers reports
+    success and the user is not a member, and so does `usermod -aG`. So each
+    such group's line is copied into /etc/group, and sysusers is run again for
+    the memberships alone.
+
+    Raises: a user without its groups starts without the devices they open.
+    """
+    conf = RUN_SYSTEMD_SYSTEM / f"workload-{name}.conf"
+    try:
+        lines = conf.read_text().splitlines()
+    except FileNotFoundError:
+        return
+    wanted = [line.split()[1:3] for line in lines if line.startswith("m ")]
+
+    def missing():
+        return [(user, group) for user, group in wanted
+                if user not in grp.getgrnam(group).gr_mem]
+
+    absent = missing()
+    if not absent:
+        return
+    image = {}
+    if IMAGE_GROUP.exists():
+        image = {line.split(":", 1)[0]: line
+                 for line in IMAGE_GROUP.read_text().splitlines()
+                 if line and not line.startswith("#")}
+    with os.fdopen(os.open(PASSWD_LOCK, os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC,
+                           0o600), "w") as lock:
+        fcntl.lockf(lock, fcntl.LOCK_EX)
+        text = ETC_GROUP.read_text()
+        present = {line.split(":", 1)[0] for line in text.splitlines()}
+        copy = [image[group] for group in dict.fromkeys(g for _, g in absent)
+                if group not in present and group in image]
+        if copy:
+            with open(ETC_GROUP, "a") as f:
+                if text and not text.endswith("\n"):
+                    f.write("\n")
+                f.write("".join(line + "\n" for line in copy))
+            log(f"  Copied {', '.join(line.split(':', 1)[0] for line in copy)} "
+                f"from {IMAGE_GROUP} into {ETC_GROUP}")
+    subprocess.run(["systemd-sysusers", "--inline",
+                    *(f"m {user} {group}" for user, group in absent)],
+                   check=True, capture_output=True, text=True)
+    still = missing()
+    if still:
+        raise RuntimeError(
+            "not a member of " + ", ".join(group for _, group in still)
+            + f": no line in {ETC_GROUP} or {IMAGE_GROUP} to add it to")
 
 
 def _provision_dir_secure(root_dir, host_path, uid, gid, mode):

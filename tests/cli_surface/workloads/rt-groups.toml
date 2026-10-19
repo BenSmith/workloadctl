@@ -1,0 +1,23 @@
+# rt-groups — a workload in two of the image's device groups (test_runtime_groups).
+# video and render are the groups the GPU bundles name, and on Fedora bootc
+# they are defined only in /usr/lib/group. The same image as rt-basic, so the
+# run pulls nothing new; it only has to stay up long enough for its groups to
+# be read.
+# Do NOT enable this manually; it is managed by the runtime harness.
+
+[workload]
+name = "rt-groups"
+enabled = false
+
+[container]
+image = "docker.io/library/caddy:2-alpine"
+command = ["sleep", "infinity"]
+
+[security]
+extra_groups = ["video", "render"]
+
+[network]
+mode = "pasta"
+
+[resources]
+memory_max = "64M"
