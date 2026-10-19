@@ -89,7 +89,7 @@ def preflight_checks(config: WorkloadConfig) -> bool:
             info("  ✗ Missing required VM executables:")
             for exe in missing_vm:
                 info(f"    - {exe}")
-            info("    Install: dnf install qemu-kvm socat")
+            info("    Install: dnf install workloadctl-vm")
             failed = True
 
         if not Path("/dev/kvm").exists():
@@ -103,7 +103,7 @@ def preflight_checks(config: WorkloadConfig) -> bool:
         from vm_defs import find_ovmf_code
         if not find_ovmf_code():
             info("  ✗ OVMF firmware (edk2-ovmf) not found")
-            info("    Install: dnf install edk2-ovmf")
+            info("    Install: dnf install workloadctl-vm")
             failed = True
 
         # Only a VM pinned to an operator-provided bridge goes through

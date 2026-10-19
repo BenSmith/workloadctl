@@ -323,8 +323,8 @@ yourself. `incant` supplies all of it and turns the `key=value` tokens into the
 - `passt`, `nftables`, `openssl`, `shadow-utils`
 - SELinux tooling: `policycoreutils`, `policycoreutils-python-utils`,
   `container-selinux` (`udica` recommended)
-- VM workloads additionally want `qemu-kvm` and `virtiofsd`; `pcap` wants
-  `tcpdump`
+- VM workloads additionally want `workloadctl-vm`, which brings QEMU, its
+  firmware, virtiofsd and the rest; `pcap` wants `tcpdump`
 
 No bootc or immutable OS required — workloadctl is a standalone RPM and runs on
 ordinary Fedora. It is *bootc-ready*, which is a different claim: TOMLs and

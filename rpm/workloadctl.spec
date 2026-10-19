@@ -102,8 +102,9 @@ Requires:       moatery >= 0.6.0
 # reached from the helper's finally block — where a host that did not install
 # this optional package lost the capture it had just taken.
 Recommends:     tcpdump
-Suggests:       qemu-kvm
-Suggests:       virtiofsd
+# VM workloads' tools come with workloadctl-vm. Weak and not Recommends, which
+# dnf installs by default: a host that runs only containers would carry QEMU.
+Suggests:       workloadctl-vm
 
 %description
 workloadctl is a declarative workload provisioning system for rootless
@@ -113,6 +114,37 @@ volume management, secrets, and container lifecycle.
 
 Each workload runs as a dedicated locked-down system user with its own
 UID/subuid namespace, home directory, and rootless podman instance.
+
+%package vm
+Summary:        What workloadctl's VM workloads run on the host
+Requires:       workloadctl = %{version}-%{release}
+# qemu-system-x86_64: the VM itself (lib/gen_vm.py). The core package, not
+# qemu-kvm, which adds audio, display and USB modules: every device the
+# generated command line names is built into the core binary, and it runs
+# -nographic.
+Requires:       qemu-system-x86-core
+# qemu-img: the system and data disks (lib/vm_disk_build.py).
+Requires:       qemu-img
+# OVMF_CODE.fd and OVMF_VARS.fd: the UEFI firmware and each VM's NVRAM
+# (lib/vm_defs.py, lib/ensure_vm.py).
+Requires:       edk2-ovmf
+# socat: `workloadctl shell` reaches the serial console (lib/substrate_vm.py).
+Requires:       socat
+# ssh: exec and provisioning reach the guest (lib/vm_guest_reach.py,
+# lib/vm_provision.py); ssh-keygen, from openssh, mints each VM's key
+# (lib/vm_ssh_keys.py).
+Requires:       openssh-clients
+Requires:       openssh
+# xorriso: the cloud-init seed ISO (lib/ensure_vm.py). Without an ISO tool the
+# VM still boots, with no cloud-init and nothing but a warning to say so.
+Requires:       xorriso
+# virtiofsd: each virtiofs volume's sidecar (lib/gen_vm.py).
+Requires:       virtiofsd
+
+%description vm
+Installs what a workloadctl VM workload runs on the host: QEMU, qemu-img,
+UEFI firmware, virtiofsd, an ISO tool for the cloud-init seed, ssh and socat.
+It carries no files of its own.
 
 %prep
 %autosetup
@@ -597,5 +629,7 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/workloadctl-inspect
 %{_prefix}/lib/systemd/journald.conf.d/60-workloadctl.conf
 %config(noreplace) %{_sysconfdir}/ssh/sshd_config.d/40-workloadctl.conf
+
+%files vm
 
 %changelog

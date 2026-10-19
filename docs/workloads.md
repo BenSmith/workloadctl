@@ -1052,7 +1052,7 @@ In addition to rootless containers, workloadctl can manage KVM/QEMU virtual mach
 ### Prerequisites
 
 ```bash
-sudo dnf install qemu-kvm edk2-ovmf
+sudo dnf install workloadctl-vm
 ```
 
 `workloadctl enable` runs a pre-flight check first and names anything missing — qemu, `qemu-img`, `socat`, OVMF firmware, `/dev/kvm` — rather than failing later at boot. There is no separate `preflight` subcommand.
