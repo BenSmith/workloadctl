@@ -36,10 +36,6 @@
         "fedora-bootc-minimal": {
           "anonymousPolicy": ["read"],
           "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
-        },
-        "negativo-rpms": {
-          "anonymousPolicy": ["read"],
-          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
         }
       }
     }

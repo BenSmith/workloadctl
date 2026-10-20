@@ -72,10 +72,6 @@ userns = "keep-id"
 
 [network]
 # Host networking: zot listens directly on 127.0.0.1:5050, no port forwarding.
-# (Historically set to dodge a pasta failure that was misdiagnosed as a
-# rootless-pasta incompatibility; the real cause was a stale libpod pause
-# pinning a deleted PrivateTmp /tmp, now fixed in the generator's head units.
-# pasta works fine for _wl-* users — host here is just a deliberate choice.)
 mode = "host"
 
 [resources]
