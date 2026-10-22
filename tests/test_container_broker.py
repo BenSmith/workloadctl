@@ -21,9 +21,11 @@ exactly what hides it.
 """
 
 import ipaddress
+import socket
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.test_generator import run_generator, write_config
 import inspect_arm
@@ -466,13 +468,15 @@ class TestTheGeneratedUnit(unittest.TestCase):
 
 
 class TestTheUpstreamAllowlist(unittest.TestCase):
-    def test_an_unresolvable_upstream_contributes_nothing_and_is_not_an_error(self):
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_an_unresolvable_upstream_contributes_nothing_and_is_not_an_error(self, _getaddrinfo):
         """The safe failure: with IPAddressDeny=any under the list, an
         unresolvable upstream is a broker that cannot reach that provider and
         says so per request, rather than one that reaches everything."""
         self.assertEqual(container_broker_upstream_addresses(cred_config()), [])
 
-    def test_an_uncredentialed_host_is_not_allowlisted(self):
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_an_uncredentialed_host_is_not_allowlisted(self, _getaddrinfo):
         config = cred_config(
             hosts=["api.example.test", "plain.example.test"],
             policy=[{"host": "api.example.test", "credential": "example-token"},

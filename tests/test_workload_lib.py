@@ -3013,7 +3013,8 @@ class TestContainerFilterElements(unittest.TestCase):
         self.assertEqual(container_allow_resolve(entry),
                          [__import__("ipaddress").ip_address("10.0.0.5")])
 
-    def test_host_entry_resolves_and_raises_on_failure(self):
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_host_entry_resolves_and_raises_on_failure(self, _getaddrinfo):
         entry = ContainerAllowEntry(
             host="definitely-not-a-real-host.invalid", address=None, port=443,
             reason="x")
@@ -3047,7 +3048,8 @@ class TestContainerFilterElements(unittest.TestCase):
         with self.assertRaises(ValueError):
             container_filter_commands(1234, allow, "bogus")
 
-    def test_internal_resolve_raises_naming_host(self):
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_internal_resolve_raises_naming_host(self, _getaddrinfo):
         with self.assertRaises(ValueError) as cm:
             container_internal_resolve("definitely-not-a-real-host.invalid")
         self.assertIn("does not resolve", str(cm.exception))

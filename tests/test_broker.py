@@ -23,9 +23,11 @@ from tests import MOATERY_LIBEXEC, load_script
 # `lib/` reaches sys.path via tests/__init__, so this import follows it.
 import vm_default_seed
 import io
+import socket
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from guest_ca import CA_ENV_VARS
 from guest_ca import RESERVED_GUEST_ENV
@@ -315,7 +317,8 @@ class TestTheGeneratedUnit(unittest.TestCase):
         self.assertLess(unit.index("IPAddressAllow=203.0.113.7"),
                         unit.index("IPAddressDeny=any"))
 
-    def test_an_unresolvable_upstream_contributes_nothing(self):
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_an_unresolvable_upstream_contributes_nothing(self, _getaddrinfo):
         """And is not an error. With the deny under it, the failure is a
         provider this broker cannot reach -- not a broker that reaches all."""
         self.assertEqual(vm_broker_upstream_addresses(cred_config()), [])
