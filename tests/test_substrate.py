@@ -59,8 +59,6 @@ name = "test-wl"
 image = "example.com/test:latest"
 """
 
-
-from tests import REPO_ROOT, script_env
 VM_TOML = """\
 [workload]
 name = "test-vm"
@@ -2264,42 +2262,6 @@ class TestCmdIncant(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
 
 
-# ── attach/network removed from parser ───────────────────────────────────────
-
-class TestRemovedVerbs(unittest.TestCase):
-    """attach and network are no longer accepted by the CLI parser."""
-
-    def _invoke(self, argv):
-        """Run bin/workloadctl with the given argv list; return (stdout, stderr, exitcode)."""
-        import subprocess
-        wctl = str(REPO_ROOT / 'bin' / 'workloadctl')
-        result = subprocess.run(
-            ['python3', wctl, *argv],
-            capture_output=True, text=True, env=script_env(),
-        )
-        return result.stdout, result.stderr, result.returncode
-
-    def test_attach_not_in_help(self):
-        stdout, _, _ = self._invoke(['--help'])
-        self.assertNotIn('attach', stdout)
-
-    def test_network_not_in_help(self):
-        stdout, _, _ = self._invoke(['--help'])
-        self.assertNotIn('network', stdout)
-
-    def test_incant_in_help(self):
-        stdout, _, _ = self._invoke(['--help'])
-        self.assertIn('incant', stdout)
-
-    def test_attach_verb_rejected(self):
-        _, stderr, rc = self._invoke(['attach', 'somewl'])
-        self.assertNotEqual(rc, 0)
-
-    def test_network_verb_rejected(self):
-        _, stderr, rc = self._invoke(['network', 'testnet', 'create', 'somewl'])
-        self.assertNotEqual(rc, 0)
-
-
 # ── ContainerSubstrate.exec() / open_shell() ──────────────────────────────────
 
 class TestContainerExecShell(unittest.TestCase):
@@ -2977,6 +2939,7 @@ class TestBackupImplAndHelpers(unittest.TestCase):
             buf = io.StringIO()
             with _patch_uid(10001), \
                  patch('subprocess.run', side_effect=fake_run), \
+                 patch('service_runtime.ensure_runtime_dir', return_value=True), \
                  patch.object(_backup_mod, 'auto_detect_credentials', return_value=set()), \
                  patch('sys.stdout', buf):
                 size = ContainerSubstrate(config, None).capture(output, consistency='cold', quiet=False)

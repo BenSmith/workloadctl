@@ -54,15 +54,6 @@ def run_generator(config_dir, services_dir, sysusers_dir):
     )
 
 
-def has_systemd_analyze():
-    try:
-        subprocess.run(["systemd-analyze", "--version"],
-                       capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-
-
 def load_all_workloads():
     """Load all real workload configs. Returns list of (filename, config_dict)."""
     workloads = []
@@ -533,88 +524,6 @@ class TestWorkloadGeneration(unittest.TestCase):
 
     def _read_service(self, name):
         return (Path(self.services_dir) / f"workload-{name}.service").read_text()
-
-
-@unittest.skipUnless(has_systemd_analyze(), "systemd-analyze not available")
-class TestWorkloadSystemdVerify(unittest.TestCase):
-    """Run systemd-analyze verify on every generated workload service."""
-
-    config_dir: str
-    services_dir: str
-    sysusers_dir: str
-
-    @classmethod
-    def setUpClass(cls):
-        cls.config_dir = tempfile.mkdtemp()
-        cls.services_dir = tempfile.mkdtemp()
-        cls.sysusers_dir = tempfile.mkdtemp()
-
-        for filename, config in ALL_WORKLOADS:
-            config_copy = _deep_copy_config(config)
-            toml_text = _config_to_toml(config_copy)
-            wl_name = filename.removesuffix(".toml")
-            (Path(cls.config_dir) / wl_name).mkdir(exist_ok=True)
-            (Path(cls.config_dir) / wl_name / "workload.toml").write_text(toml_text)
-            (Path(cls.config_dir) / wl_name / ".enabled").touch()
-
-        run_generator(cls.config_dir, cls.services_dir, cls.sysusers_dir)
-
-        # Patch helper paths for verify: workloadctl's libexec helpers live in
-        # the installed package, not the test env (dev box or CI). systemd-analyze
-        # verify only needs each Exec* binary to exist and be executable, so swap
-        # every /usr/libexec/workloadctl/<helper> for /bin/true. Done generically
-        # (not per-helper) so adding a new helper — e.g. workload-vm-shutdown —
-        # never silently breaks verify again.
-        # Same idea for podman itself: dev containers don't ship it, and
-        # systemd-analyze fails the whole unit on a non-executable ExecStart.
-        # Only patched when actually absent so real hosts keep strict verify.
-        patch_podman = not os.path.exists("/usr/bin/podman")
-
-        # GPU workloads Require= nvidia-cdi-generator.service, shipped by the
-        # hypervisor image. Stub it next to the units (systemd-analyze resolves
-        # references from the unit's own directory) when the host lacks it.
-        if not os.path.exists("/usr/lib/systemd/system/nvidia-cdi-generator.service"):
-            (Path(cls.services_dir) / "nvidia-cdi-generator.service").write_text(
-                "[Unit]\nDescription=verify stub\n"
-                "[Service]\nType=oneshot\nExecStart=/bin/true\n"
-            )
-        for service_path in Path(cls.services_dir).glob("workload-*.service"):
-            content = service_path.read_text()
-            content = re.sub(r"/usr/libexec/workloadctl/[\w-]+", "/bin/true", content)
-            if patch_podman:
-                content = content.replace("/usr/bin/podman", "/bin/true")
-            service_path.write_text(content)
-
-    @classmethod
-    def tearDownClass(cls):
-        for d in (cls.config_dir, cls.services_dir, cls.sysusers_dir):
-            shutil.rmtree(d)
-
-    def test_verify_each_workload(self):
-        """systemd-analyze verify passes for each workload."""
-        for filename, config in ALL_WORKLOADS:
-            name = config["workload"]["name"]
-            with self.subTest(workload=name):
-                service_path = Path(self.services_dir) / f"workload-{name}.service"
-                result = subprocess.run(
-                    ["systemd-analyze", "verify", str(service_path)],
-                    capture_output=True, text=True,
-                )
-                self.assertEqual(result.returncode, 0,
-                                 f"systemd-analyze verify failed for {name}:\n{result.stderr}")
-
-    def test_no_unknown_directives(self):
-        """No 'Unknown key' warnings in any workload service."""
-        for filename, config in ALL_WORKLOADS:
-            name = config["workload"]["name"]
-            with self.subTest(workload=name):
-                service_path = Path(self.services_dir) / f"workload-{name}.service"
-                result = subprocess.run(
-                    ["systemd-analyze", "verify", str(service_path)],
-                    capture_output=True, text=True,
-                )
-                self.assertNotIn("Unknown key", result.stderr,
-                                 f"Unknown directives in {name}:\n{result.stderr}")
 
 
 class TestWorkloadCrossConfigConsistency(unittest.TestCase):

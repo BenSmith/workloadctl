@@ -718,6 +718,11 @@ class TestShippedBundlesSystemdAnalyzeVerify(unittest.TestCase):
                                 verify_result.returncode, 0,
                                 f"systemd-analyze verify failed for {service_path.name} "
                                 f"(bundle {name}):\n{verify_result.stderr}")
+                            # verify exits 0 on an unknown key; only stderr says so.
+                            self.assertNotIn(
+                                "Unknown key", verify_result.stderr,
+                                f"unknown directives in {service_path.name} "
+                                f"(bundle {name}):\n{verify_result.stderr}")
 
 
 if __name__ == "__main__":

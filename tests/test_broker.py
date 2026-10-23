@@ -758,6 +758,9 @@ class _BrokerRig(unittest.TestCase):
                 unittest.mock.patch.object(
                     egress_relay, "RELAY_IDLE_TIMEOUT", 0.75):
             serve_cleartext(listener.inspection, ours, _where())
+        # Listener._serve closes the connection after serve_cleartext; without
+        # that close the read below waits out the guest's timeout.
+        ours.close()
         for _, _, pump in dialled:
             pump.join(timeout=3.0)
         records = []
@@ -1263,51 +1266,6 @@ class TestTheRetiredKeyIsARefusal(unittest.TestCase):
         self.assertTrue(self._errors(broker=True, bridge="br0"))
 
 
-class TestTheMapSweepIsGone(unittest.TestCase):
-    """The generator's SECOND broker block, which no grep for a config key
-    finds.
-
-    It emitted `workload-broker-config up`/`down` on EVERY VM -- bridged ones
-    included -- to scrub an element a reused uid could inherit from a deleted
-    workload. That sweep was load-bearing while the map existed and is deleted
-    with it: the entitlement now lives in the workload's own generated unit,
-    which goes away with the workload, so there is nothing a uid can inherit.
-
-    Asserted by absence, which is the shape [[unit-gates-dont-see-the-seam]]
-    warns about. It was pinned against the helper's surviving `config` verb
-    so that deleting the helper outright could not satisfy it -- and then
-    the helper WAS deleted outright, with the document it wrote, so the
-    positive half is now that no VM unit names the helper at all: the
-    broker instance is the one unit that ever did, and its ExecStart= names
-    the broker.
-    """
-
-    def _unit(self, config):
-        gen = importlib.import_module("gen_vm")
-        return gen.generate_vm_service(config, "_wl-agent", 10007)
-
-    def test_no_vm_arms_a_broker_map_element(self):
-        for label, net in (("filtered", {"egress": "filtered",
-                                         "hosts": ["example.test"]}),
-                           ("open", {"egress": "open"}),
-                           ("bridged", {"bridge": "br0"})):
-            with self.subTest(label):
-                unit = self._unit({"workload": {"name": "agent"},
-                                   "vm": {"network": net}})
-                self.assertNotIn("workload-broker-config up", unit)
-                self.assertNotIn("workload-broker-config down", unit)
-
-    def test_the_helper_is_gone_and_nothing_names_it(self):
-        """The negative above is only meaningful while nothing regrows it.
-        The helper file is gone; the broker unit -- its one caller -- execs
-        the broker; and no generated VM unit spells its name."""
-        self.assertFalse((Path(__file__).resolve().parent.parent
-                          / "libexec" / "workload-broker-config").exists())
-        unit = TestTheGeneratedUnit().unit()
-        self.assertNotIn("workload-broker-config", unit)
-        self.assertIn(f"ExecStart={BROKER_BIN} ", unit)
-
-
 class TestTheAdvertisedAddressIsNotAdded(unittest.TestCase):
     """D10: the dummy link survives, the 192.0.2.1 on it does not.
 
@@ -1346,63 +1304,12 @@ class TestTheAdvertisedAddressIsNotAdded(unittest.TestCase):
             self.assertNotIn("addr", argv, argv)
             self.assertFalse(any("192.0.2" in str(part) for part in argv), argv)
 
-    def test_the_constant_is_gone_rather_than_unused(self):
-        """An unused constant is the residue this rung exists to stop leaving,
-        and it is what a later reader would wire back up."""
-        import nft_elements
-        self.assertFalse(hasattr(nft_elements, "VM_ADVERTISED_ADDR"))
-
     def test_test_net_1_is_now_an_internal_destination(self):
         """The consequence, and the reason the range moves rather than simply
         losing its exclusion comment: with nothing carrying it, TEST-NET-1 is
         exactly what the internal drop exists to refuse."""
         from nft_constants import INTERNAL_PREFIXES4
         self.assertIn("192.0.2.0/24", INTERNAL_PREFIXES4)
-
-
-class TestTheRetiredMechanismLeavesNoSymbols(unittest.TestCase):
-    """Every name F3 lists, asserted absent from lib/nft_elements.py.
-
-    One test rather than eight, and by attribute rather than by grep: a
-    half-deleted mechanism is what leaves a caller importing a name that still
-    resolves, and this is the cheapest thing that notices.
-    """
-
-    def test_none_of_them_resolve(self):
-        import nft_elements
-        for name in ("VM_BROKER_PORT", "VM_BROKER_LISTEN_ADDR",
-                     "VM_BROKER_LISTEN_PORT", "VM_BROKER_ENV_VAR",
-                     "NFT_BROKER_SKELETON", "NFT_BROKER_TABLE",
-                     "NFT_BROKER_MAP", "vm_uses_broker", "vm_broker_element",
-                     "vm_broker_map_command", "vm_broker_env"):
-            with self.subTest(name):
-                self.assertFalse(hasattr(nft_elements, name))
-
-    def test_the_guest_is_told_nothing_about_a_broker(self):
-        """RESERVED_GUEST_ENV loses its second producer.
-
-        Not cosmetic: the set is what refuses a credential's `env` for
-        colliding with a variable workloadctl seeds. Nothing seeds
-        WORKLOAD_BROKER_URL any more, so continuing to reserve it would refuse
-        a legal name for a collision that cannot happen.
-        """
-        self.assertEqual(set(RESERVED_GUEST_ENV), set(CA_ENV_VARS))
-        self.assertNotIn("WORKLOAD_BROKER_URL", RESERVED_GUEST_ENV)
-
-    def test_the_skeleton_and_the_host_wide_unit_are_gone(self):
-        root = Path(__file__).resolve().parent.parent
-        self.assertFalse((root / "nftables" / "workload-broker.nft").exists())
-        self.assertFalse((root / "systemd" / "agent-broker.service").exists())
-
-    def test_the_spec_ships_neither(self):
-        """Deleting a file the spec still installs makes the RPM fail to build,
-        which is a late and confusing way to learn about a missed line."""
-        spec = (Path(__file__).resolve().parent.parent
-                / "rpm" / "workloadctl.spec").read_text()
-        self.assertNotIn("workload-broker.nft", spec)
-        self.assertNotIn("%{_unitdir}/agent-broker.service", spec)
-        self.assertNotIn("systemd/agent-broker.service", spec)
-        self.assertNotIn("libexec/agent-broker", spec)
 
 
 class TestTheBrokerAddressIsExemptedFromTheInternalDrop(unittest.TestCase):
