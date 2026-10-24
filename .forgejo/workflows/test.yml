@@ -29,13 +29,16 @@ jobs:
           python3 --version
           just --version
 
-      # workloadctl requires moatery, and the unit suite imports it: its
-      # newest release, from its Copr repository with its signature checked.
+      # workloadctl requires moatery, and the unit suite imports it: main's,
+      # from this forge's RPM registry with its signature checked.
       - name: Install moatery
+        env:
+          REPO: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm
         run: |
-          sudo just moatery-rpm /tmp/moatery.rpm
-          sudo dnf install -y /tmp/moatery.rpm
-          sudo rm -f /tmp/moatery.rpm
+          rpm=$(mktemp --suffix=.rpm)
+          sudo .forgejo/scripts/forge-moatery-rpm "$REPO" "$rpm"
+          sudo dnf install -y "$rpm"
+          sudo rm -f "$rpm"
 
       # The unit suite runs as a non-root user, exactly as it does on the gate
       # host. Run as root on this runner, the suite writes real
@@ -59,8 +62,10 @@ jobs:
           # untracked files between runs and `just rpm-build` only ever adds to
           # rpmbuild/. Left alone, the artifact glob below matches every RPM
           # the runner has ever built — an old package attached to a green run.
+          # As the test user, who owns the checkout: git refuses root a
+          # repository another user owns, and the RPM then names no commit.
           rm -rf rpmbuild
-          just rpm-build
+          runuser -u fedora -- just rpm-build
 
       - name: Upload RPM artifact
         uses: forgejo/upload-artifact@v4
@@ -69,3 +74,30 @@ jobs:
           path: rpmbuild/RPMS/**/*.rpm
           if-no-files-found: error
 
+
+      # main's RPMs, to this forge's RPM registry: the dnf repository the
+      # homelab's hypervisor images install workloadctl from.
+      - name: Publish RPMs
+        if: github.event_name == 'push'
+        env:
+          PKG_PUBLISH_TOKEN: ${{ secrets.PKG_PUBLISH_TOKEN }}
+          UPLOAD: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm/upload
+        run: |
+          set -- rpmbuild/RPMS/noarch/workloadctl-*.rpm
+          if [ "$#" -ne 2 ]; then
+            echo "::error::expected workloadctl and workloadctl-vm, got: $*"
+            exit 1
+          fi
+          log=$(mktemp)
+          trap 'rm -f "$log"' EXIT
+          for rpm; do
+            code=$(curl -sS -o "$log" -w '%{http_code}' \
+              -H "Authorization: token ${PKG_PUBLISH_TOKEN}" \
+              --upload-file "$rpm" "$UPLOAD")
+            if [ "$code" != 201 ]; then
+              echo "::error::uploading $rpm: HTTP $code"
+              cat "$log"
+              exit 1
+            fi
+            echo "published $(basename "$rpm")"
+          done

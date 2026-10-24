@@ -95,9 +95,12 @@ jobs:
           rm -rf tests/runtime/.cache
           ln -s "$WLRT_CACHE" tests/runtime/.cache
 
+      # main's, from this forge's RPM registry with its signature checked.
       - name: Fetch moatery RPM
         if: steps.kvm.outputs.available == 'true'
-        run: sudo just moatery-rpm "$WLRT_MOATERY_RPM"
+        env:
+          REPO: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm
+        run: sudo .forgejo/scripts/forge-moatery-rpm "$REPO" "$WLRT_MOATERY_RPM"
 
       - name: Reap stale harness VMs
         if: steps.kvm.outputs.available == 'true'

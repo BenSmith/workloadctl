@@ -7,6 +7,9 @@ Name:           workloadctl
 # VERSION's, which a unit test holds it to.
 Version:        0.2.1
 Release:        1%{?buildserial:.%{buildserial}}%{?dist}
+# The commit a clean checkout was built from, which the runtime gate checks
+# its harness out at.
+%{?vcs:VCS:            %{vcs}}
 Summary:        Declarative rootless container workload manager
 
 License:        MIT

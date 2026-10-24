@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# moatery's newest RPM in REPO, the Forgejo RPM registry its main publishes
+# to, to DEST, refused unless it is signed by the registry's key
+# (.forgejo/rpm-registry.gpg). The homelab's images ship this moatery beside
+# main's workloadctl, so the Forgejo workflows test against it.
+#
+#   .forgejo/scripts/forge-moatery-rpm "$SERVER/api/packages/$OWNER/rpm" DEST
+set -euo pipefail
+[ "$#" -eq 2 ] || { echo "usage: $0 REPO DEST" >&2; exit 2; }
+repo=$1
+dest=$2
+key=$(realpath "$(dirname "$(realpath "$0")")/../rpm-registry.gpg")
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# dnf skips a repository it cannot load, which then holds no moatery.
+dnf download -q --refresh --arch=noarch --destdir="$work/rpms" \
+  --repofrompath="forge,$repo" --repo=forge \
+  --setopt=forge.skip_if_unavailable=0 moatery
+set -- "$work"/rpms/*.rpm
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+  echo "expected exactly one moatery RPM in $repo, got $#" >&2
+  exit 1
+fi
+keyring=(--define '_keyring fs' --define "_keyringpath $work/keys"
+         --define "_dbpath $work/keys")
+rpmkeys "${keyring[@]}" --import "$key"
+rpmkeys "${keyring[@]}" --define '_pkgverify_level signature' -K "$1"
+install -m 0644 "$1" "$dest"
+rpm -qp "$dest"

@@ -174,9 +174,15 @@ Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
 - `.github/workflows/test.yml` — **PR gate**: lint + `just test` in a Fedora
   container with moatery from Copr, as a non-root user. No VM, no secrets.
 - `.forgejo/workflows/test.yml` — the same suite plus an RPM build on the
-  Forgejo `native` runner.
+  Forgejo `native` runner, against main's moatery from the forge's RPM
+  registry (`.forgejo/scripts/forge-moatery-rpm`, signature checked against
+  `.forgejo/rpm-registry.gpg`). A push to main publishes the RPMs to the forge's
+  RPM registry (the `PKG_PUBLISH_TOKEN` secret, a token with package write
+  access), which the homelab's hypervisor images install from. A clean
+  checkout's RPM names its commit in the `VCS` tag.
 - `.forgejo/workflows/runtime-dev.yml` — **cadence gate**: `just
-  test-runtime` in `dev` mode (this checkout's RPM in a Fedora Cloud VM),
+  test-runtime` in `dev` mode (this checkout's RPM in a Fedora Cloud VM,
+  beside main's moatery from the forge's RPM registry),
   weekly (Tue 03:00) and on dispatch; skips cleanly without `/dev/kvm`.
 - The `gate` mode, against the shipped hypervisor image, is the hypervisor
   repository's CI (its `runtime-gate.yml`, Tue 11:00 UTC), which checks this

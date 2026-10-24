@@ -204,6 +204,7 @@ rpm-build:
   serial="$(date +%Y%m%d%H%M%S)"
   version="$(cat VERSION)"
   tarball="rpmbuild/SOURCES/workloadctl-${version}.tar.gz"
+  vcs=()
   mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SRPMS,SPECS}
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # A commit of the working tree, made and left unreferenced; HEAD when
@@ -213,6 +214,7 @@ rpm-build:
     git update-index -q --refresh || true
     tree="$(git stash create)"
     git archive --prefix="workloadctl-${version}/" -o "$tarball" "${tree:-HEAD}"
+    [ -n "$tree" ] || vcs=(--define "vcs $(git rev-parse HEAD)")
   else
     tar -czf "$tarball" --exclude=./rpmbuild --exclude=./.git \
       --transform "s,^\.,workloadctl-${version}," .
@@ -220,6 +222,7 @@ rpm-build:
   rpmbuild -bb \
     --define "_topdir $(pwd)/rpmbuild" \
     --define "buildserial ${serial}" \
+    "${vcs[@]}" \
     rpm/workloadctl.spec
   echo "RPM built:"
   find rpmbuild/RPMS -name "workloadctl-*${serial}*.rpm"
