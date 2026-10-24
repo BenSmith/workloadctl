@@ -95,7 +95,7 @@ jobs:
           rm -rf tests/runtime/.cache
           ln -s "$WLRT_CACHE" tests/runtime/.cache
 
-      # main's, from this forge's RPM registry with its signature checked.
+      # main's, from this forge's RPM registry, its metadata's signature checked.
       - name: Fetch moatery RPM
         if: steps.kvm.outputs.available == 'true'
         env:

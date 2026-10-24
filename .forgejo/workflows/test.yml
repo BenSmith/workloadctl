@@ -30,7 +30,7 @@ jobs:
           just --version
 
       # workloadctl requires moatery, and the unit suite imports it: main's,
-      # from this forge's RPM registry with its signature checked.
+      # from this forge's RPM registry, its metadata's signature checked.
       - name: Install moatery
         env:
           REPO: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm

@@ -175,8 +175,8 @@ Copr would, and rewrites `rpm/workloadctl.spec` in place (Release, Source0,
   container with moatery from Copr, as a non-root user. No VM, no secrets.
 - `.forgejo/workflows/test.yml` — the same suite plus an RPM build on the
   Forgejo `native` runner, against main's moatery from the forge's RPM
-  registry (`.forgejo/scripts/forge-moatery-rpm`, signature checked against
-  `.forgejo/rpm-registry.gpg`). A push to main publishes the RPMs to the forge's
+  registry (`.forgejo/scripts/forge-moatery-rpm`; the registry signs its
+  metadata, which dnf checks against `.forgejo/rpm-registry.gpg`). A push to main publishes the RPMs to the forge's
   RPM registry (the `PKG_PUBLISH_TOKEN` secret, a token with package write
   access), which the homelab's hypervisor images install from. A clean
   checkout's RPM names its commit in the `VCS` tag.
