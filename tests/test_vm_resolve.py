@@ -267,7 +267,7 @@ class TestGeneratedUnits(unittest.TestCase):
     # here is exactly how the claim survived its first correction.
     CGROUP_SET_FILES = (
         ("nftables", "workload-filter.nft"),
-        ("nftables", "workload-proxy.nft"),
+        ("nftables", "workload-redirect.nft"),
         ("lib", "nft_elements.py"),
         ("libexec", "workload-vm-inspect"),
     )
@@ -355,7 +355,7 @@ class TestGeneratedUnits(unittest.TestCase):
         """
         root = Path(__file__).resolve().parent.parent
         for parts in (("nftables", "workload-filter.nft"),
-                      ("nftables", "workload-proxy.nft")):
+                      ("nftables", "workload-redirect.nft")):
             path = root.joinpath(*parts)
             hits = [line.strip() for line in path.read_text().splitlines()
                     if "-resolve.service" in line]

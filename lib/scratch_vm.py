@@ -23,7 +23,7 @@ SCRATCH_VM_CLOUD_IMAGE_CHECKSUM = (
 SCRATCH_VM_USER_DATA = r"""
 #cloud-config
 # Starter cloud-init for a workloadctl VM. Substitution happens at seed-build
-# time (see docs/workloads.md "Bootstrapping a VM with cloud-init"):
+# time (see docs/manual/05-vms.md "A seed of your own"):
 #   $${WORKLOADCTL_SSH_KEY}        the workload's auto-generated pubkey
 #   $${WORKLOADCTL_WORKLOAD_NAME}  this workload's name
 #   $${WORKLOADCTL_VM_USER}        [vm].user — the account the CLI logs in as

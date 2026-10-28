@@ -160,14 +160,14 @@ def request(namespace, addr, port, as_uid):
 
 def build(namespace):
     """A namespace holding the advertised link, the plane addresses, and the
-    real skeleton -- built the way ensure_advertised_interface builds it."""
+    real skeleton -- built the way ensure_egress_interface builds it."""
     run(["ip", "netns", "add", namespace])
     ns(namespace, "ip", "link", "set", "lo", "up")
-    ns(namespace, "ip", "link", "add", "workload-proxy", "type", "dummy")
-    ns(namespace, "ip", "link", "set", "workload-proxy", "up")
+    ns(namespace, "ip", "link", "add", "wl-egress", "type", "dummy")
+    ns(namespace, "ip", "link", "set", "wl-egress", "up")
     for addr in ("192.0.2.1/32", f"{V4}/32"):
-        ns(namespace, "ip", "addr", "add", addr, "dev", "workload-proxy")
-    ns(namespace, "ip", "addr", "add", f"{V6}/128", "dev", "workload-proxy",
+        ns(namespace, "ip", "addr", "add", addr, "dev", "wl-egress")
+    ns(namespace, "ip", "addr", "add", f"{V6}/128", "dev", "wl-egress",
        "nodad")
     ns(namespace, "nft", "-f", SKELETON)
 

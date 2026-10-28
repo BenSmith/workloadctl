@@ -56,7 +56,7 @@ VM_SELINUX_CIL = "/usr/share/workloadctl/workload-vm.cil"
 # compares each loaded module against the source the RPM shipped: a module
 # missing from that list is a domain whose policy can drift out from under a
 # running host with nothing saying so, which is the failure the check exists
-# for. They replaced workload-proxy, which the RPM's %post now removes.
+# for.
 INSPECT_SELINUX_MODULE = "workload-inspect"
 INSPECT_SELINUX_CIL = "/usr/share/workloadctl/workload-inspect.cil"
 VM_RESOLVE_SELINUX_MODULE = "workload-resolve"

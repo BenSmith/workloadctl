@@ -42,6 +42,7 @@ from gen_container_heads import (
     generate_umbrella_service,
 )
 from unit_file import Unit
+from validation import VALID_SYSTEMD_MODES
 from workload_seccomp import (
     baseline_source, needs_derived_profile, render_derived_profile,
     seccomp_32bit, seccomp_allow, seccomp_netlink,
@@ -436,10 +437,9 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
     systemd_mode = container.get("container", {}).get("systemd", None)
     if systemd_mode is not None:
         systemd_mode = str(systemd_mode).lower()
-        valid_systemd = ("always", "true", "false")
-        if systemd_mode not in valid_systemd:
+        if systemd_mode not in VALID_SYSTEMD_MODES:
             log_msg(f"ERROR: Invalid container.systemd='{systemd_mode}' for {name}. "
-                    f"Valid values: {', '.join(valid_systemd)}.", level="err")
+                    f"Valid values: {', '.join(VALID_SYSTEMD_MODES)}.", level="err")
             return None
 
     # service_type is read here (before podman_args) so --sdnotify can match.

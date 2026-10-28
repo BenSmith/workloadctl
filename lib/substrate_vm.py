@@ -599,7 +599,7 @@ class VMSubstrate(Substrate):
             lines.append(
                 "clear egress filter elements from inet workload_filter")
             lines.append(
-                "clear inspect redirect elements from inet workload_proxy")
+                "clear inspect redirect elements from inet workload_redirect")
             lines.append(
                 "clear inspect guard and internal exemption elements "
                 "from inet workload_filter")

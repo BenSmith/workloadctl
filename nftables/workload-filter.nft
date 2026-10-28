@@ -93,16 +93,11 @@ add set inet workload_filter wl_inspect_live6 { type ipv6_addr ; }
 # naming it; nothing in the tree arms it today, and there is no
 # vm_resolve_cgroup to arm it with.
 #
-# Named wl_egress_cg, not wl_proxy_cg. Through rung 1 that one member was the
-# workload's tinyproxy and the old name was accurate. Rung 2 deleted tinyproxy
-# and left the set holding a member that is not a proxy at all.
-#
 # The control group is the discriminator that survives the shared uid. It is
 # assigned by systemd, is not something a guest can enter or forge, and is
 # exact — no destination or port is widened, so a guest that dials 443 past the
 # inspector is still dropped, which is what makes inspection mandatory rather
-# than advisory. Under the proxy that sentence was a claim about a guest that
-# ignored HTTPS_PROXY; under the redirect the guest is never asked.
+# than advisory.
 #
 # Widening by port instead — "let this uid reach 443 anywhere" — was the
 # obvious alternative and is fatal: it is precisely the bypass the default-deny
@@ -326,10 +321,8 @@ add rule inet workload_filter output meta skuid != 0 ct direction original ip6 d
 # looks healthy. The residual it leaves is an internal service answering HTTP
 # on port 53, which is not a thing that exists.
 #
-# THIS CARVE-OUT SURVIVED RUNG 2 AND HAD TO. It was written for tinyproxy, and
-# deleting it with tinyproxy is the obvious mistake: the inspector resolves
-# host-side on every connection it authorises, permanently. It is the one
-# member of the set — the synthesising responder looks nothing up, which is
+# The inspector resolves host-side on every connection it authorises. It is
+# the one member of the set — the synthesising responder looks nothing up, which is
 # why it is not here; see the set's own comment above.
 add rule inet workload_filter output socket cgroupv2 level 2 @wl_egress_cg th dport 53 counter accept
 
@@ -441,7 +434,7 @@ add rule inet workload_filter output meta skuid @wl_filtered counter drop
 #
 # 127/8 is protected inbound by the kernel, unconditionally: a packet arriving
 # on a non-loopback interface with a 127/8 destination is martian and dies
-# before any hook of ours sees it. An address on the workload-proxy dummy link
+# before any hook of ours sees it. An address on the wl-egress dummy link
 # has none of it — Linux uses the weak host model, so anything that can put a
 # frame in front of this host reaches whatever listens there, and the
 # connection has no output leg (the side all the rules above live on) until

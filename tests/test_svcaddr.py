@@ -30,10 +30,10 @@ class TestSvcaddrArm(unittest.TestCase):
         cls.down = cls.source[cls.source.index("def down("):]
 
     def test_up_ensures_the_link_before_it_adds_the_addresses(self):
-        """An `ip addr add ... dev workload-proxy` against a missing link fails
+        """An `ip addr add ... dev wl-egress` against a missing link fails
         the start with a message that names neither this helper nor its intent;
         ensuring the link first is what makes the add meaningful."""
-        self.assertLess(self.up.index("ensure_advertised_interface"),
+        self.assertLess(self.up.index("ensure_egress_interface"),
                         self.up.index("add_listener_addresses"))
 
     def test_up_adds_but_down_removes(self):

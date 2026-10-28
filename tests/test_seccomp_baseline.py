@@ -17,8 +17,8 @@ from workload_seccomp import NETLINK_PROTOCOLS, derived_profile
 
 PROFILE = REPO_ROOT / "seccomp-workload-baseline.json"
 SPEC = REPO_ROOT / "rpm" / "workloadctl.spec"
-TROUBLESHOOTING = REPO_ROOT / "docs" / "troubleshooting.md"
-WORKLOADS = REPO_ROOT / "docs" / "workloads.md"
+SECURITY = REPO_ROOT / "docs" / "manual" / "08-security.md"
+TROUBLESHOOTING = REPO_ROOT / "docs" / "manual" / "10-troubleshooting.md"
 
 ENOSYS_TEXT = "Function not implemented"
 EPERM_TEXT = "Operation not permitted"
@@ -412,21 +412,29 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
             keyctl             EOPNOTSUPP        ENOSYS     ENOSYS
             setns(-1, 0)       EBADF (kernel)    EPERM      EPERM
         """
-        doc = _section(TROUBLESHOOTING.read_text(),
-                       "### 9. Syscall blocked by seccomp profile")
-        listed = re.search(r"The blocked syscalls are: (.*)", doc).group(1)
-        names = re.findall(r"`([a-z0-9_]+)`", listed)
-        self.assertTrue(names, "troubleshooting.md §9 lists no syscalls")
-        guide = _section(WORKLOADS.read_text(), "### Seccomp Filtering")
-        for n in names:
-            errno = _errno_for_an_uncapable_container(self.profile, n)
-            with self.subTest(syscall=n, errno=errno):
-                self.assertIn(errno, (1, 38), "allowed, yet listed as blocked")
-                text = ENOSYS_TEXT if errno == 38 else EPERM_TEXT
-                self.assertIn(text, doc)
-                row = re.search(rf"^\| `{n[:10]}.*$", guide, re.M)
-                self.assertIsNotNone(row, f"workloads.md has no row for {n}")
-                self.assertIn(text, row.group(0))
+        doc = _section(SECURITY.read_text(), "### What the baseline refuses")
+        expected = {}
+        for cell, fails_with in re.findall(
+                r"^\| (.*?) \| .*? \| (.*?) \|$", doc, re.M):
+            # Rows naming plain syscalls only; "socket with ..." and the
+            # namespace-flag rows are argument filters this cannot probe.
+            if not re.fullmatch(r"`[a-z0-9_]+`(, `[a-z0-9_]+`)*", cell):
+                continue
+            errno = 38 if "ENOSYS" in fails_with else 1 if "EPERM" in fails_with else None
+            for n in re.findall(r"`([a-z0-9_]+)`", cell):
+                expected[n] = errno
+        self.assertTrue(expected, "08-security.md's table lists no syscalls")
+        for n, want in expected.items():
+            with self.subTest(syscall=n):
+                self.assertEqual(
+                    _errno_for_an_uncapable_container(self.profile, n), want)
+        prose = " ".join(doc.split())
+        self.assertIn(ENOSYS_TEXT, prose)
+        self.assertIn(EPERM_TEXT, prose)
+        symptoms = " ".join(
+            _section(TROUBLESHOOTING.read_text(), "## seccomp").split())
+        self.assertIn(ENOSYS_TEXT, symptoms)
+        self.assertIn(EPERM_TEXT, symptoms)
 
 
 def _errno_for_an_uncapable_container(profile, name):

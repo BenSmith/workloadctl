@@ -1,16 +1,7 @@
 #!/usr/sbin/nft -f
 #
-# workload_proxy — the uid-keyed transparent redirect into each VM's own egress
-# inspector (ADR 008).
-#
-# THE FILE NAME AND THE TABLE NAME ARE HISTORICAL. Through rung 1 this table
-# held one rule: a rewrite of the advertised HTTPS_PROXY endpoint to the
-# workload's own tinyproxy, keyed on uid. Rung 2 deleted the proxy, the
-# advertised endpoint and that rule, and left the table holding the transparent
-# redirect that replaced them. The names were not changed with the contents
-# because a table name is kernel state on running hosts and a skeleton path is
-# packaged state: renaming both is a migration, and it would buy a better name
-# and nothing else. Read "proxy" here as "the nat table", not as a service.
+# workload_redirect — the uid-keyed transparent redirect into each VM's own
+# egress inspector (ADR 008).
 #
 # The guest is told nothing. It dials 80 or 443 normally and this chain rewrites
 # the destination to the workload's own inspector listener, keyed on the uid of
@@ -24,7 +15,7 @@
 # evaluates first, and the filter chain in workload-filter.nft (priority 0)
 # evaluates after — it therefore sees the TRANSLATED destination, which is the
 # workload's own 127.128.x.y on lo. That is already accepted by the skeleton's
-# `oif lo` rule, so the proxy endpoint needs no allowlist entry of its own.
+# `oif lo` rule, so the inspector listener needs no allowlist entry of its own.
 #
 # `type uid` rather than `typeof meta skuid`: a map may not mix a typeof key
 # with a plain data type, and ipv4_addr has no typeof serialization, so both
@@ -38,24 +29,23 @@
 # the rule stops a re-apply from duplicating it, and one `nft -f` is one atomic
 # transaction so concurrent VM starts cannot interleave.
 #
-# Break-glass:  nft delete table inet workload_proxy
+# Break-glass:  nft delete table inet workload_redirect
 # An abandoned table is inert: with an empty map the rule matches no uid, and
 # the chain policy is accept. Orphaned elements self-heal on reboot.
 
-add table inet workload_proxy
+add table inet workload_redirect
 
 # The transparent redirect's targets: uid . original port -> (inspector
 # listener, listener port), so a redirected dial to 80 lands on the cleartext
 # listener and one to 443 on the TLS one. One map per family because `dnat ip`
 # and `dnat ip6` are different translations in the inet family.
-add map inet workload_proxy wl_inspect4 { type uid . inet_service : ipv4_addr . inet_service ; }
-add map inet workload_proxy wl_inspect6 { type uid . inet_service : ipv6_addr . inet_service ; }
+add map inet workload_redirect wl_inspect4 { type uid . inet_service : ipv4_addr . inet_service ; }
+add map inet workload_redirect wl_inspect6 { type uid . inet_service : ipv6_addr . inet_service ; }
 
 # The process that RE-ORIGINATES workload-uid traffic -- the egress inspector --
 # rather than the guest's traffic arriving through passt. Its own dials to
 # 80/443 must not be translated, or they loop into the listener they are
-# dialing past. Through rung 1 tinyproxy's upstream CONNECT leg was a second
-# member; it is gone with the service.
+# dialing past.
 #
 # ONE MEMBER PER WORKLOAD, exactly as wl_egress_cg holds one, and the
 # synthesising responder is deliberately not the second: it originates nothing
@@ -69,27 +59,23 @@ add map inet workload_proxy wl_inspect6 { type uid . inet_service : ipv6_addr . 
 # table inet 'workload_filter'?"), not a style error. The inspector's unit adds
 # and removes an element here as well as in wl_egress_cg -- both, or it either
 # reaches nothing or dials into itself.
-add set inet workload_proxy wl_inspect_cg { typeof socket cgroupv2 level 2 ; }
+add set inet workload_redirect wl_inspect_cg { typeof socket cgroupv2 level 2 ; }
 
-add chain inet workload_proxy proxy_dnat { type nat hook output priority dstnat; policy accept; }
-flush chain inet workload_proxy proxy_dnat
+add chain inet workload_redirect redirect_dnat { type nat hook output priority dstnat; policy accept; }
+flush chain inet workload_redirect redirect_dnat
 
 # No route_localnet anywhere. DNAT from the output hook to a 127/8 destination
 # works with net.ipv4.conf.*.route_localnet at its default 0 — verified on a
 # live host, not only in a namespace — so this needs no sysctl that would make
 # loopback addresses routable from off-host.
 #
-# The cgroup return is now the FIRST rule in the chain, and it is the only rule
-# that has to precede the two transparent DNATs below: rule order is the loop
-# prevention. Until rung 2 it sat second, behind the advertised-endpoint rewrite
-# — which was safe because that rule matched only a dial to the advertised
-# literal and the set's members never made one. That rule is gone; this one is
-# first because there is nothing left for it to be second to.
+# The cgroup return is the FIRST rule in the chain, and it has to precede the
+# two transparent DNATs below: rule order is the loop prevention.
 #
 # The set's members re-originate traffic as the workload's own uid, and without
 # this their own dials to 80/443 are translated into the listener they are
 # trying to reach past.
-add rule inet workload_proxy proxy_dnat socket cgroupv2 level 2 @wl_inspect_cg return
+add rule inet workload_redirect redirect_dnat socket cgroupv2 level 2 @wl_inspect_cg return
 
 # The transparent redirect itself, both families from the start: a v4-only
 # redirect sends dual-stack traffic out over v6 untranslated, into the default
@@ -97,5 +83,5 @@ add rule inet workload_proxy proxy_dnat socket cgroupv2 level 2 @wl_inspect_cg r
 # skuid` predicate of its own: the map lookup IS the predicate, a uid absent
 # from the map is not translated, and no element exists for uids that have no
 # inspector.
-add rule inet workload_proxy proxy_dnat meta nfproto ipv4 tcp dport { 80, 443 } dnat ip to meta skuid . tcp dport map @wl_inspect4
-add rule inet workload_proxy proxy_dnat meta nfproto ipv6 tcp dport { 80, 443 } dnat ip6 to meta skuid . tcp dport map @wl_inspect6
+add rule inet workload_redirect redirect_dnat meta nfproto ipv4 tcp dport { 80, 443 } dnat ip to meta skuid . tcp dport map @wl_inspect4
+add rule inet workload_redirect redirect_dnat meta nfproto ipv6 tcp dport { 80, 443 } dnat ip6 to meta skuid . tcp dport map @wl_inspect6

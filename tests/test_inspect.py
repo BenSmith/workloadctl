@@ -34,19 +34,19 @@ from broker_config import (
     inspect_link_address_commands, inspect_link_delete_commands,
 )
 from nft_constants import (
-    NFT_BIN, NFT_MAP_INSPECT4, NFT_MAP_INSPECT6, NFT_PROXY_TABLE,
+    NFT_BIN, NFT_MAP_INSPECT4, NFT_MAP_INSPECT6, NFT_REDIRECT_TABLE,
     NFT_SET_INSPECT_CG, NFT_SET_INSPECT_DST, NFT_SET_INSPECT_DST6,
     NFT_SET_INSPECT_SELF, NFT_SET_INSPECT_SELF6, NFT_SET_INSPECT_LIVE,
     NFT_SET_INSPECT_LIVE6, NFT_SET_EGRESS_CG, NFT_TABLE,
 )
 from config_parser import runtime_dir
 from vm_defs import vm_allowed_hosts
-from workload_addr import IP_BIN, ADVERTISED_IFACE
+from workload_addr import IP_BIN, EGRESS_IFACE
 import inspect_arm
 from tests import load_script
 
 ROOT = Path(__file__).resolve().parent.parent
-PROXY_SKELETON_FILE = ROOT / "nftables" / "workload-proxy.nft"
+REDIRECT_SKELETON_FILE = ROOT / "nftables" / "workload-redirect.nft"
 FILTER_SKELETON_FILE = ROOT / "nftables" / "workload-filter.nft"
 
 
@@ -60,13 +60,13 @@ def argv_of(commands, set_name):
 class TestOriginalPorts(unittest.TestCase):
     """The two ORIGINAL ports the redirect matches.
 
-    workload-proxy.nft spells `tcp dport { 80, 443 }` literally so the file
+    workload-redirect.nft spells `tcp dport { 80, 443 }` literally so the file
     stays applicable with a bare `nft -f`; the map key carries those same
     two ports, so the constants and the file must agree rather than drift.
     """
 
     def test_the_skeleton_matches_the_constants(self):
-        text = PROXY_SKELETON_FILE.read_text()
+        text = REDIRECT_SKELETON_FILE.read_text()
         self.assertIn(f"tcp dport {{ {CLEARTEXT.guest_port}, "
                       f"{TLS.guest_port} }}", text)
         self.assertEqual((CLEARTEXT.guest_port, TLS.guest_port), (80, 443))
@@ -197,14 +197,14 @@ class TestElementCommands(unittest.TestCase):
              NFT_SET_INSPECT_LIVE, NFT_SET_INSPECT_LIVE6])
 
     def test_the_maps_arm_in_the_proxy_table_only(self):
-        """Both tables named: the DNAT maps live in inet workload_proxy, the
+        """Both tables named: the DNAT maps live in inet workload_redirect, the
         guard sets in inet workload_filter. A helper that arms one table and
         not the other leaves a workload that looks configured and reaches
         nothing."""
         commands = inspect_element_commands(10004, "add")
         for name in (NFT_MAP_INSPECT4, NFT_MAP_INSPECT6):
             self.assertEqual(argv_of(commands, name)[3:5],
-                             NFT_PROXY_TABLE.split())
+                             NFT_REDIRECT_TABLE.split())
         for name in (NFT_SET_INSPECT_DST, NFT_SET_INSPECT_DST6,
                      NFT_SET_INSPECT_SELF, NFT_SET_INSPECT_SELF6,
                      NFT_SET_INSPECT_LIVE, NFT_SET_INSPECT_LIVE6):
@@ -235,10 +235,10 @@ class TestSkeletonNamesAgree(unittest.TestCase):
     """
 
     def test_the_proxy_skeleton_declares_both_maps(self):
-        text = PROXY_SKELETON_FILE.read_text()
-        self.assertIn(f"add map inet workload_proxy {NFT_MAP_INSPECT4}", text)
-        self.assertIn(f"add map inet workload_proxy {NFT_MAP_INSPECT6}", text)
-        self.assertIn(f"add set inet workload_proxy {NFT_SET_INSPECT_CG}", text)
+        text = REDIRECT_SKELETON_FILE.read_text()
+        self.assertIn(f"add map inet workload_redirect {NFT_MAP_INSPECT4}", text)
+        self.assertIn(f"add map inet workload_redirect {NFT_MAP_INSPECT6}", text)
+        self.assertIn(f"add set inet workload_redirect {NFT_SET_INSPECT_CG}", text)
 
     def test_the_filter_skeleton_declares_all_four_sets(self):
         text = FILTER_SKELETON_FILE.read_text()
@@ -251,12 +251,12 @@ class TestCgroupCommands(unittest.TestCase):
     """The two cgroup exemption builders name OPPOSITE tables."""
 
     def test_the_redirect_exemption_lives_in_the_proxy_table(self):
-        """wl_inspect_cg feeds the `return` rule in workload-proxy.nft; sets
+        """wl_inspect_cg feeds the `return` rule in workload-redirect.nft; sets
         are table-scoped, so naming the filter table fails only at load time
         with `did you mean set 'wl_egress_cg' in table inet
         'workload_filter'?`."""
         argv = inspect_cgroup_command("web", "add")
-        self.assertEqual(argv[3:5], NFT_PROXY_TABLE.split())
+        self.assertEqual(argv[3:5], NFT_REDIRECT_TABLE.split())
         self.assertEqual(argv[5], NFT_SET_INSPECT_CG)
 
     def test_the_egress_exemption_lives_in_the_filter_table(self):
@@ -296,9 +296,9 @@ class TestLinkAddressCommands(unittest.TestCase):
     def test_the_addresses_are_host_global_host_local(self):
         v4, v6 = inspect_link_address_commands(10004)
         self.assertEqual(v4, [IP_BIN, "addr", "add", "198.18.1.4/32",
-                              "dev", ADVERTISED_IFACE])
+                              "dev", EGRESS_IFACE])
         self.assertEqual(v6, [IP_BIN, "addr", "add", "2001:2::c612:104/128",
-                              "dev", ADVERTISED_IFACE, "nodad"])
+                              "dev", EGRESS_IFACE, "nodad"])
 
     def test_nodad_is_on_v6_only(self):
         """A dummy link runs no DAD (measured 2026-08-19), so the flag
@@ -314,9 +314,9 @@ class TestLinkAddressCommands(unittest.TestCase):
         # Same address, same dev, the verb flipped: a delete that named a
         # different prefix would leave the add's address on the link.
         self.assertEqual(v4_del, [IP_BIN, "addr", "del", "198.18.1.4/32",
-                                  "dev", ADVERTISED_IFACE])
+                                  "dev", EGRESS_IFACE])
         self.assertEqual(v6_del, [IP_BIN, "addr", "del", "2001:2::c612:104/128",
-                                  "dev", ADVERTISED_IFACE])
+                                  "dev", EGRESS_IFACE])
 
 
 class TestHelperArmsBothTables(unittest.TestCase):
@@ -340,7 +340,7 @@ class TestHelperArmsBothTables(unittest.TestCase):
         skeleton applied after the first element would not create a table
         for a host that never had one, and the element add would fail."""
         up = self.up
-        self.assertLess(up.index("NFT_PROXY_SKELETON"),
+        self.assertLess(up.index("NFT_REDIRECT_SKELETON"),
                         up.index("inspect_element_commands"))
         self.assertLess(up.index("NFT_SKELETON"),
                         up.index("inspect_element_commands"))

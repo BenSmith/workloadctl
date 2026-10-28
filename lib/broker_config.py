@@ -39,7 +39,7 @@ from container_network_config import (
     container_uses_inspect,
 )
 from credential_entries import parse_credential_entries
-from workload_addr import (IP_BIN, ADVERTISED_IFACE, BROKER_INSTANCE_PORT,
+from workload_addr import (IP_BIN, EGRESS_IFACE, BROKER_INSTANCE_PORT,
                            broker_listen_address, inspect_address)
 from egress_policy import vm_uses_inspect
 from secrets_template import credential_path, CREDSTORE_DIR
@@ -76,7 +76,7 @@ class VmCredential(NamedTuple):
 
     `auth_header` and `auth_format` are the provider's HTTP convention, and they
     are here rather than on the policy entry for the same reason: a credential
-    is minted for one provider, and docs/agent-broker.md §10 documents them
+    is minted for one provider, and docs/manual/06-networking.md documents them
     per provider beside the key. Both are OPTIONAL and default to
     the broker's own (`x-api-key`, `{secret}`), which is the Anthropic
     convention -- so a workload that says nothing gets exactly what it got
@@ -424,8 +424,8 @@ def inspect_link_address_commands(uid: int) -> tuple[list[str], list[str]]:
     connection on that family would time out.
     """
     addr = inspect_address(uid)
-    v4 = [IP_BIN, "addr", "add", f"{addr.v4}/32", "dev", ADVERTISED_IFACE]
-    v6 = [IP_BIN, "addr", "add", f"{addr.v6}/128", "dev", ADVERTISED_IFACE,
+    v4 = [IP_BIN, "addr", "add", f"{addr.v4}/32", "dev", EGRESS_IFACE]
+    v6 = [IP_BIN, "addr", "add", f"{addr.v6}/128", "dev", EGRESS_IFACE,
           "nodad"]
     return v4, v6
 
@@ -433,12 +433,12 @@ def inspect_link_address_commands(uid: int) -> tuple[list[str], list[str]]:
 def inspect_link_delete_commands(uid: int) -> tuple[list[str], list[str]]:
     """The `ip addr del` argvs removing them again, (v4, v6).
 
-    The per-workload addresses are removed on stop (unlike the shared link and
-    the advertised address, which are never): an address on the link means an
+    The per-workload addresses are removed on stop (unlike the shared link,
+    which never is): an address on the link means an
     inspector that is supposed to be running, and a stopped workload leaving
     its listener address behind is exactly what `diagnose` cannot explain.
     """
     addr = inspect_address(uid)
-    v4 = [IP_BIN, "addr", "del", f"{addr.v4}/32", "dev", ADVERTISED_IFACE]
-    v6 = [IP_BIN, "addr", "del", f"{addr.v6}/128", "dev", ADVERTISED_IFACE]
+    v4 = [IP_BIN, "addr", "del", f"{addr.v4}/32", "dev", EGRESS_IFACE]
+    v6 = [IP_BIN, "addr", "del", f"{addr.v6}/128", "dev", EGRESS_IFACE]
     return v4, v6

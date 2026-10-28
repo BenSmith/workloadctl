@@ -27,7 +27,7 @@ _workload_ctl_completion() {
     # for that workload. The unit naming is workload-<name>-<container>.service,
     # sharing that shape with the generator's own helper units, which are not
     # containers: setup/pod/net/build, a VM's proxy, and virtiofs-<tag>. The
-    # authoritative list is docs/workload-run-files.md — a helper added there and
+    # authoritative list is docs/dev/boot-and-generation.md — a helper added there and
     # not here is offered as if it were a container, and `exec`s into nothing.
     # If no per-container units exist, this is a single-container workload —
     # the "/" form doesn't apply, so we return no completions.

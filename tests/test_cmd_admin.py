@@ -894,7 +894,7 @@ class DiagnoseUserExistsTest(unittest.TestCase):
         check = next(c for c in data["checks"] if c["check"] == "units_current")
         self.assertFalse(check["passed"])
         self.assertIn("0.1.0-1.20250101000000", check["message"])
-        self.assertIn("workloadctl enable app", check["fix"])
+        self.assertIn("workloadctl recreate app", check["fix"])
         self.assertTrue(
             next(c for c in data["checks"]
                  if c["check"] == "config_current")["passed"],

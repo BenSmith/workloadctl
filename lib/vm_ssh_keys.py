@@ -4,7 +4,7 @@ The per-workload client keypair `workloadctl exec`/`shell` dials with, the
 VM's host keypair and its pin in the workload's known_hosts (so the first
 connection has nothing to trust on faith), and the seeding of the client
 pubkey into a virtiofs share that covers the guest home, where cloud-init's
-`ssh_authorized_keys` cannot reach (docs/vm-virtiofs.md §8). All of it is
+`ssh_authorized_keys` cannot reach (docs/manual/05-vms.md). All of it is
 generated once, on the host, as the workload user's files; the seed ISO
 reads the results.
 

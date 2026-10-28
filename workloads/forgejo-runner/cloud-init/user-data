@@ -2,7 +2,7 @@
 # First-boot provisioning for the forgejo-runner VM.
 #
 # Substitutions are performed by workloadctl (workload-ensure-user) when the
-# seed is built — see docs/workloads.md "Bootstrapping a VM with cloud-init" for
+# seed is built — see docs/manual/05-vms.md "A seed of your own" for
 # the placeholder forms. Magic vars available here: WORKLOADCTL_SSH_KEY (the
 # workload's pubkey), WORKLOADCTL_WORKLOAD_NAME, WORKLOADCTL_VM_USER (the
 # [vm].user account the CLI logs in as), and the SSH host key

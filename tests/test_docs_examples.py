@@ -2,9 +2,8 @@
 
 WHY THIS EXISTS
 
-Same reason as tests/test_schema_reference_examples.py and
-tests/test_manual_rig_configs.py: a config that no gate parses rots at the
-speed of the schema. These five files are the ones an operator copies whole
+Same reason as tests/test_manual_rig_configs.py: a config that no gate
+parses rots at the speed of the schema. These files are the ones an operator copies whole
 into /etc/workloads.d/, and nothing read them -- so the only thing keeping
 them current was someone remembering they were there.
 
@@ -28,7 +27,7 @@ class TestTheExamplesAreConfigs(unittest.TestCase):
     def test_the_directory_still_has_examples(self):
         """A guard on the glob, not on the documents: an empty directory would
         otherwise pass every test below by iterating over nothing."""
-        self.assertGreaterEqual(len(list(EXAMPLES.glob("*.toml"))), 5)
+        self.assertGreaterEqual(len(list(EXAMPLES.glob("*.toml"))), 4)
 
     def test_every_example_parses_and_validates(self):
         for path in sorted(EXAMPLES.glob("*.toml")):

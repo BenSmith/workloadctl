@@ -158,6 +158,37 @@ class TestBundleShebangsSurviveTheBuild(unittest.TestCase):
             self.assertEqual(host.read_text(), "#!/usr/bin/bash\ntrue\n")
 
 
+class TestUnitDocumentationIsInstalled(unittest.TestCase):
+    """A generated unit's `Documentation=file:` path is a file the RPM ships.
+
+    The unit text and the spec's doc installs are two hand-kept halves of one
+    link, and only `systemctl help` on a host reads it."""
+
+    DOCDIR = "/usr/share/doc/workloadctl/"
+
+    def _installed_docs(self) -> set[str]:
+        spec = SPEC.read_text()
+        installed = {dest.removeprefix("%{_docdir}/workloadctl/")
+                     for _src, dest in INSTALL_RE.findall(spec)
+                     if dest.startswith("%{_docdir}/workloadctl/")}
+        for dest, pattern in re.findall(
+                r"install\s+-pm\s+\d+\s+-t\s+%\{buildroot\}"
+                r"%\{_docdir\}/workloadctl/(\S+)\s+(\S+)", spec):
+            for f in ROOT.glob(pattern):
+                installed.add(f"{dest}/{f.name}")
+        return installed
+
+    def test_every_documentation_path_is_installed(self):
+        installed = self._installed_docs()
+        cited = set()
+        for py in (ROOT / "lib").glob("*.py"):
+            cited.update(re.findall(
+                r"file:" + re.escape(self.DOCDIR) + r"([\w./-]+)",
+                py.read_text()))
+        self.assertTrue(cited, "no Documentation=file: path found in lib/")
+        self.assertEqual(sorted(cited - installed), [])
+
+
 class TestTheVersionIsVERSIONs(unittest.TestCase):
 
     def test_the_spec_version_is_the_version_file(self):

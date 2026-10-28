@@ -74,6 +74,66 @@ from secrets_template import (
 )
 
 
+class TestSystemdModeValidation(unittest.TestCase):
+    """validate must refuse what the generator refuses to render."""
+
+    def _errs(self, config):
+        return [e for e in validate_workload_config(config) if "systemd" in e]
+
+    def test_accepts_the_three_modes_and_a_bool(self):
+        for mode in ("always", "true", "false", "Always", True, False):
+            with self.subTest(mode=mode):
+                cfg = {"workload": {"name": "x"},
+                       "container": {"image": "a", "systemd": mode}}
+                self.assertEqual(self._errs(cfg), [])
+
+    def test_rejects_an_unknown_mode_single(self):
+        cfg = {"workload": {"name": "x"},
+               "container": {"image": "a", "systemd": "yes"}}
+        self.assertEqual(len(self._errs(cfg)), 1)
+
+    def test_rejects_an_unknown_mode_per_container(self):
+        cfg = {"workload": {"name": "x"},
+               "containers": [{"name": "c1",
+                               "container": {"image": "a", "systemd": "on"}}]}
+        errs = self._errs(cfg)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("containers[c1]", errs[0])
+
+
+class TestPullPolicyValidation(unittest.TestCase):
+
+    def _errs(self, config):
+        return [e for e in validate_workload_config(config) if ".pull" in e]
+
+    def test_accepts_the_four_policies(self):
+        for pull in ("missing", "always", "newer", "never"):
+            with self.subTest(pull=pull):
+                cfg = {"workload": {"name": "x"},
+                       "container": {"image": "a", "pull": pull}}
+                self.assertEqual(self._errs(cfg), [])
+
+    def test_rejects_a_typo_single(self):
+        cfg = {"workload": {"name": "x"},
+               "container": {"image": "a", "pull": "allways"}}
+        errs = self._errs(cfg)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("container.pull = 'allways'", errs[0])
+
+    def test_rejects_a_non_string(self):
+        cfg = {"workload": {"name": "x"},
+               "container": {"image": "a", "pull": True}}
+        self.assertEqual(len(self._errs(cfg)), 1)
+
+    def test_rejects_a_typo_per_container(self):
+        cfg = {"workload": {"name": "x"},
+               "containers": [{"name": "c1",
+                               "container": {"image": "a", "pull": "Never"}}]}
+        errs = self._errs(cfg)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("containers[c1]", errs[0])
+
+
 class TestMultiContainerValidation(unittest.TestCase):
     def test_rejects_both_container_blocks(self):
         config = {
@@ -1117,22 +1177,6 @@ class TestVmCloudInit(unittest.TestCase):
     def test_seed_provides_known_values_accepted(self):
         cfg = self._base(seed_provides=["ca", "mounts"])
         self.assertEqual(validate_workload_config(cfg), [])
-
-    def test_seed_provides_proxy_is_refused_and_names_its_replacement(self):
-        """The retired entry is not merely dropped from the accepted set.
-
-        A seed that still declares it DOES provide something -- the concern it
-        provides was renamed under the operator -- so the generic
-        "unknown entries" message would send them hunting a typo they did not
-        make. The message has to name the replacement, or a custom seed declines
-        a CA it was never offered.
-        """
-        errs = validate_workload_config(self._base(seed_provides=["proxy"]))
-        self.assertEqual(len(errs), 1, errs)
-        self.assertIn("proxy", errs[0])
-        self.assertIn("'ca'", errs[0])
-        # And not ALSO reported as unknown: one entry, one error.
-        self.assertNotIn("unknown entries", errs[0])
 
     def test_seed_provides_unknown_value_rejected(self):
         """A typo'd opt-out would silently disable a seed-completeness check —

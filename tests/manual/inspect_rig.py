@@ -114,7 +114,7 @@ PROBE_V6 = "2606:2800:220:1:248:1893:25c8:1946"
 # question under test is the redirect and not the host's uplink. It is removed
 # again; a host that already routes the prefix is left alone.
 PROBE_V6_NET = "2606:2800:220::/48"
-INSPECT_LINK = "workload-proxy"
+INSPECT_LINK = "wl-egress"
 
 # Spelled out rather than imported from lib/, for the reason above the
 # port constants: a rig that computes both sides from one constant cannot
@@ -379,7 +379,7 @@ def guards():
                else f"After={after}")
 
         for mapname in ("wl_inspect4", "wl_inspect6"):
-            elems = set_elements("workload_proxy", mapname)
+            elems = set_elements("workload_redirect", mapname)
             hit = elems is not None and any(
                 str(uid) in json.dumps(e) for e in elems)
             record(f"{arm.name}: {mapname} carries uid {uid}",
@@ -416,7 +416,7 @@ def exemptions():
     arm's element satisfies a count of >= 1 while the other dials into itself.
     """
     say("== cgroup exemptions ==")
-    nat = set_elements("workload_proxy", "wl_inspect_cg")
+    nat = set_elements("workload_redirect", "wl_inspect_cg")
     flt = set_elements("workload_filter", "wl_egress_cg")
     for arm in ARMS:
         path = f"workloads.slice/workload-{arm.name}-inspect.service"
@@ -547,7 +547,7 @@ def probes():
 
     # A name resolves to IPv4 alone. passt's DHCPv6 hands the guest a host
     # IPv6 address, and on a host with no v6 uplink the only global ones are
-    # the inspectors' on workload-proxy -- so an AAAA naming this workload's
+    # the inspectors' on wl-egress -- so an AAAA naming this workload's
     # inspector names the guest's own interface, and the dial is refused
     # inside the guest in a millisecond. The rows above cannot see that: curl
     # falls back to v4 and gets its 200. The guest's v6 addresses are in the

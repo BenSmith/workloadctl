@@ -73,7 +73,8 @@ and copies it over.
 ## Notes
 
 - **Egress** is open. A `[network] hosts` list filters it to the names a
-  project needs (crates, packages, git); see `docs/workloads.md`.
+  project needs (crates, packages, git); see
+  `docs/manual/06-networking.md`.
 - **gdb** warns that it cannot disable address space randomization; the
   personality call it uses is not allowed. Debugging is unaffected.
 - **Everything the IDE keeps** (its server half, caches, settings, the

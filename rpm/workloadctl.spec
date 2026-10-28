@@ -90,12 +90,6 @@ Requires:       openssl
 # is denied at every start. 0.6.0 is the first named moatery, with the
 # programs these units run under /usr/libexec/moatery.
 Requires:       moatery >= 0.6.0
-# There is deliberately NO proxy dependency here. Through rung 1 this was a hard
-# `Requires: tinyproxy`, because a VM declaring [vm.network].hosts was filtered
-# default-deny with its own proxy as the only route out. Rung 2 replaced that
-# with a transparent redirect into the egress inspector. On upgrade, dnf
-# leaves tinyproxy on the host as a package nothing requires; %%post removes
-# the SELinux module that confined it.
 # `workloadctl pcap` reads the host-side vantage back through tcpdump. Weak,
 # because capture is a diagnostic and `pcap -D` reports a missing tcpdump rather
 # than failing at the point of use.
@@ -255,11 +249,11 @@ install -Dpm 0644 seccomp-workload-baseline.json \
 install -Dpm 0644 nftables/workload-filter.nft \
     %{buildroot}%{_datadir}/workloadctl/workload-filter.nft
 
-# The workload_proxy nat skeleton — same rules as workload-filter.nft: data
+# The workload_redirect nat skeleton — same rules as workload-filter.nft: data
 # applied with `nft -f` by workload-vm-inspect's prestart, idempotent, unowned.
 # The file name is historical; see the header of the file itself.
-install -Dpm 0644 nftables/workload-proxy.nft \
-    %{buildroot}%{_datadir}/workloadctl/workload-proxy.nft
+install -Dpm 0644 nftables/workload-redirect.nft \
+    %{buildroot}%{_datadir}/workloadctl/workload-redirect.nft
 
 # The virtiofsd domain. Host-global and mandatory, so it ships with the package
 # that spawns the sidecar rather than through the per-workload
@@ -295,20 +289,12 @@ install -Dpm 0644 security/workload-clock.cil \
 install -Dpm 0644 completions/workloadctl-completion.bash \
     %{buildroot}%{_datadir}/bash-completion/completions/workloadctl
 
-install -Dpm 0644 docs/workloads.md \
-    %{buildroot}%{_docdir}/workloadctl/workloads.md
-
 install -Dpm 0644 docs/schema-reference.toml \
     %{buildroot}%{_docdir}/workloadctl/schema-reference.toml
 
-# The broker's design doc. The generated units' Documentation= points at it.
-# There was an annotated agent-broker.toml.example beside it, for the
-# broker.toml an operator once copied and edited and the generator then
-# rendered; the broker takes its configuration as flags on the generated
-# unit's ExecStart= now and there is no file to show the shape of. §10 of the
-# doc shows the command line instead.
-install -Dpm 0644 docs/agent-broker.md \
-    %{buildroot}%{_docdir}/workloadctl/agent-broker.md
+# The manual. The generated broker units' Documentation= points into it.
+install -d %{buildroot}%{_docdir}/workloadctl/manual
+install -pm 0644 -t %{buildroot}%{_docdir}/workloadctl/manual docs/manual/*.md
 
 # Shipped workload bundles: one subdir per bundle co-locating the template
 # declaration (workload.toml) with its control files (Containerfile, build.sh,
@@ -470,24 +456,6 @@ fi
 if [ -x /usr/sbin/semodule ] && [ -f %{_datadir}/workloadctl/workload-vm.cil ]; then
     if semodule -i %{_datadir}/workloadctl/workload-vm.cil 2>/dev/null; then
         restorecon /usr/libexec/virtiofsd 2>/dev/null || :
-    fi
-fi
-# The retired tinyproxy domain, removed here rather than only in %%postun.
-#
-# %%postun's module removals are guarded on $1 -eq 0 -- an erase, not an
-# upgrade -- which is correct for the modules this package still ships. This one
-# it no longer ships, and on an UPGRADE nothing else would ever take it out: the
-# host would keep a loaded wlproxy_t whose filecon labels /usr/bin/tinyproxy for
-# a domain no unit enters, indefinitely. Unconditional and tolerant, so a fresh
-# install where the module was never present is a no-op.
-#
-# The restorecon is not optional. Removing the module drops its filecon, but the
-# installed binary keeps the wlproxy_exec_t label it was given until something
-# relabels it, and a host that still has tinyproxy would be left with a file
-# labelled for a type that no longer exists.
-if [ -x /usr/sbin/semodule ]; then
-    if semodule -r workload-proxy 2>/dev/null; then
-        restorecon /usr/bin/tinyproxy 2>/dev/null || :
     fi
 fi
 # The egress inspector's domain, on the same terms. The inspector is moatery's,

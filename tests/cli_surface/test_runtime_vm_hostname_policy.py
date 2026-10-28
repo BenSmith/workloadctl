@@ -85,7 +85,7 @@ pytestmark = [pytest.mark.runtime, pytest.mark.slow]
 WORKLOAD = "rt-vm-hostname"
 
 # The redirected cleartext port. Hardcoded rather than imported for the reason
-# the advertised endpoint was: it is fixed by the rules in workload-proxy.nft,
+# the advertised endpoint was: it is fixed by the rules in workload-redirect.nft,
 # and a test that reads it from the source cannot catch a change to it. The unit
 # suite already asserts the constant and the skeleton agree.
 HTTP_PORT = 80
@@ -341,7 +341,7 @@ def _uid(target) -> int:
 def _redirect_armed(target, uid: int) -> bool:
     """Is this uid in the v4 redirect map, for the cleartext port?"""
     result = target.run(
-        "nft list map inet workload_proxy wl_inspect4",
+        "nft list map inet workload_redirect wl_inspect4",
         sudo=True, check=False, timeout=30)
     return result.rc == 0 and f"{uid} . {HTTP_PORT}" in result.stdout.replace(
         "{ ", "").replace(",", "")
@@ -456,8 +456,8 @@ def test_a_wildcard_entry_does_not_cover_its_own_apex(target):
     A separate test from the one above because it is a separate claim: that one
     says the inspector answers by name, this one says how far a pattern reaches.
     If the matcher ever changed to suffix semantics, this test failing is the
-    signal to update the docs that promise otherwise — docs/workloads.md and
-    docs/vm-egress-walkthrough.md both state it.
+    signal to update the doc that promises otherwise —
+    docs/manual/06-networking.md states it.
     """
     skip_if_no_kvm(target)
     skip_if_no_vm_toolchain(target)
@@ -480,7 +480,7 @@ def test_a_wildcard_entry_does_not_cover_its_own_apex(target):
         assert apex == "403", (
             f"{WILD_APEX} got {apex!r}, not 403. If this is a 200, the "
             f"matcher now covers the apex of a `*.` pattern, and the guidance "
-            f"in docs/workloads.md and docs/vm-egress-walkthrough.md telling "
+            f"in docs/manual/06-networking.md telling "
             f"operators to list the apex separately is stale")
 
     finally:

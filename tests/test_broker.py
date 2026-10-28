@@ -1277,7 +1277,7 @@ class TestTheAdvertisedAddressIsNotAdded(unittest.TestCase):
     """
 
     def _argvs(self):
-        from workload_addr import ensure_advertised_interface
+        from workload_addr import ensure_egress_interface
 
         class Result:
             returncode = 0
@@ -1290,7 +1290,7 @@ class TestTheAdvertisedAddressIsNotAdded(unittest.TestCase):
             seen.append(argv)
             return Result()
 
-        ensure_advertised_interface(run)
+        ensure_egress_interface(run)
         return seen
 
     def test_the_link_is_still_created_and_brought_up(self):

@@ -278,11 +278,8 @@ def _selinux_module_loaded(module: str) -> bool | None:
 
 
 # Host-global SELinux modules whose source the RPM installs, so a loaded module
-# can be compared against what the image ships. Deliberately just these three:
-# the VM domain, and the two the retired proxy's module was replaced by. A
-# module the RPM installs and this tuple omits is a domain that drifts silently
-# -- which is what happened when workload-proxy left and this list did not
-# follow it.
+# can be compared against what the image ships. A module the RPM installs and
+# this tuple omits is a domain that drifts silently.
 #
 # The image's own modules (pasta_sandbox, container_input_devices,
 # seatd_container, extra_varrun) are compiled into the policy store at build

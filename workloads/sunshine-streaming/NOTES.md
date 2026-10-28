@@ -98,7 +98,7 @@ member of the group.
 `/etc/subuid` and `/etc/subgid` for every group in `extra_groups`:
 
 ```
-_wl-sunshine-streaming:600100000:65536  # main subuid range (this UID's; see docs/workloads.md)
+_wl-sunshine-streaming:600100000:65536  # main subuid range (this UID's; see docs/manual/10-troubleshooting.md)
 _wl-sunshine-streaming:39:1           # video (GID 39)
 _wl-sunshine-streaming:63:1           # audio (GID 63)
 _wl-sunshine-streaming:104:1          # render (GID 104)

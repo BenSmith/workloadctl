@@ -6,8 +6,9 @@ rootless-podman containers and KVM/QEMU VMs, with one locked-down
 requires moatery, whose programs (`moat-inspect`, `moat-broker` and
 `moat-resolve`, in `/usr/libexec/moatery/`) its units run.
 
-`llms.txt` maps the docs. Before changing boot, generator, egress or
-secret behaviour, read the ADR in `docs/adr/` and the code's own comments.
+`llms.txt` maps the docs. Before changing boot, generator, egress or VM
+behaviour, read the matching `docs/dev/` guide and ADR. User-facing
+behaviour is documented in `docs/manual/`; keep it true when you change it.
 
 ## Commands
 

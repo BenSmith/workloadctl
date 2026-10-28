@@ -121,10 +121,10 @@ def build():
     run(["ip", "netns", "add", NS])
     # A dummy link carrying both planes, so the dial has somewhere to go. The
     # names match the host's only to keep the ruleset unmodified.
-    ns("ip", "link", "add", "workload-proxy", "type", "dummy")
-    ns("ip", "link", "set", "workload-proxy", "up")
-    ns("ip", "addr", "add", f"{V4}/32", "dev", "workload-proxy")
-    ns("ip", "-6", "addr", "add", f"{V6}/128", "nodad", "dev", "workload-proxy")
+    ns("ip", "link", "add", "wl-egress", "type", "dummy")
+    ns("ip", "link", "set", "wl-egress", "up")
+    ns("ip", "addr", "add", f"{V4}/32", "dev", "wl-egress")
+    ns("ip", "-6", "addr", "add", f"{V6}/128", "nodad", "dev", "wl-egress")
     ns("nft", "-f", SKELETON)
     # Exactly what workload-vm-inspect arms: the served ports accepted, and the
     # whole listener address in the self set with NO port, which is what makes

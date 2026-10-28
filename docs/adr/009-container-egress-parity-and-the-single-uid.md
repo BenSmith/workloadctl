@@ -53,7 +53,7 @@ that every rule has to pick between. That has already produced one real hole
    listener, both nft table skeletons, the broker binary, the policy document
    shape and `lib/peer_identity.py` are the VM ones unchanged. The container
    contributes `workload-container-inspect`/`-filter` as arming helpers and a
-   `[network]` schema mirroring `[vm.network]`. `docs/egress-and-broker-architecture.md`
+   `[network]` schema mirroring `[vm.network]`. `docs/dev/egress.md`
    §5 tabulates the genuine differences.
 
 3. **A container is inspected by presence of a trigger, and only by that.**

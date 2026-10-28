@@ -10,6 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
+from run_files import workload_env_dir
 from service_runtime import manager_active
 from substrate import get_substrate, service_active
 from workloadctl_core import (
@@ -45,10 +46,11 @@ def _publish_host_port(port_spec: str) -> str | None:
         return None  # random host port, or a range we can't probe as one port
     return host
 
-def _publish_bind_address(port_spec: str) -> str:
+def _publish_bind_address(port_spec: str, all_addresses: str = 'localhost') -> str:
     """Return the address a podman `--publish` spec's host port answers on:
-    its bind address, or localhost when it binds every address. A port bound
-    to one address does not answer on loopback, so it is probed where bound.
+    its bind address, or `all_addresses` when it binds every address. A port
+    bound to one address does not answer on loopback, so it is probed where
+    bound.
     """
     spec = port_spec.split('/', 1)[0]
     if spec.startswith('['):
@@ -57,8 +59,24 @@ def _publish_bind_address(port_spec: str) -> str:
         parts = spec.split(':')
         address = parts[0] if len(parts) == 3 else ''
     if address in ('', '0.0.0.0', '::'):
-        return 'localhost'
+        return all_addresses
     return address
+
+def _env_file_host_ip(name: str) -> str:
+    """HOST_IP from the environment file setup wrote, or '' if there is none.
+
+    pasta publishes a port on every address but loopback, so a probe of a
+    pasta port bound to every address has to go to the host's own address.
+    """
+    try:
+        text = (workload_env_dir() / f"workload-{name}.env").read_text()
+    except OSError:
+        return ''
+    for line in text.splitlines():
+        key, _, value = line.partition('=')
+        if key == 'HOST_IP':
+            return value.strip()
+    return ''
 
 def _multi_container_health(config, manager, only_container):
     """Per-container health summary for a multi-container workload.
@@ -260,12 +278,15 @@ def cmd_health(args, manager: WorkloadManager):
     ports = config.get_ports()
     network_mode = config.get_network_mode()
     if ports and container_running and network_mode in ("pasta", "host"):
+        all_addresses = 'localhost'
+        if network_mode == "pasta":
+            all_addresses = _env_file_host_ip(config.name) or 'localhost'
         for port_spec in ports:
             # Probe the host-side published port, not the container port.
             port = _publish_host_port(port_spec)
             if port is None:
                 continue  # no single fixed host port to probe
-            address = _publish_bind_address(port_spec)
+            address = _publish_bind_address(port_spec, all_addresses)
             family = socket.AF_INET6 if ':' in address else socket.AF_INET
             try:
                 port_num = int(port)

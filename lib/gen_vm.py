@@ -70,7 +70,7 @@ def generate_virtiofs_service(name: str, tag: str, host_path: str, user_name: st
 
     The design this unit implements — the share's ownership model, why the
     daemon holds no capabilities, and what confines it instead — is
-    docs/vm-virtiofs.md. The comments below carry the per-directive why.
+    docs/dev/vm-runtime.md. The comments below carry the per-directive why.
 
     Note: the runtime socket directory (/run/workload-vm/{name}/) is owned by
     the main VM service (RuntimeDirectory + RuntimeDirectoryPreserve). Sidecars

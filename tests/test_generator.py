@@ -2993,8 +2993,7 @@ class TestGeneratorContainerFlags(unittest.TestCase):
         """)
         result = run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Invalid container.systemd='bogus'", result.stderr)
-        self.assertIn("Skipping badsd due to config errors", result.stderr)
+        self.assertIn("container.systemd = 'bogus' must be one of", result.stderr)
         self.assertFalse((Path(self.services_dir) / "workload-badsd.service").exists())
 
     def test_custom_directive_shadowing_generator_owned_warns(self):
@@ -3214,7 +3213,9 @@ class TestGeneratorMainEdgeCases(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("ignored in pod mode", result.stderr)
 
-    def test_multi_container_invalid_systemd_skips_that_container(self):
+    def test_multi_container_invalid_systemd_skips_the_workload(self):
+        """validate refuses the bad mode, so no container of the workload is
+        generated: a pod missing one member is not what the TOML describes."""
         write_config(self.config_dir, "badmulti", """\
             [workload]
             name = "badmulti"
@@ -3233,8 +3234,9 @@ class TestGeneratorMainEdgeCases(unittest.TestCase):
         """)
         result = run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Skipping container bad due to config errors", result.stderr)
-        self.assertTrue((Path(self.services_dir) / "workload-badmulti-good.service").exists())
+        self.assertIn("containers[bad].container.systemd = 'bogus' must be one of",
+                      result.stderr)
+        self.assertFalse((Path(self.services_dir) / "workload-badmulti-good.service").exists())
         self.assertFalse((Path(self.services_dir) / "workload-badmulti-bad.service").exists())
 
     def test_bridge_workload_level_ports_ignored_with_warning(self):

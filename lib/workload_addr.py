@@ -113,7 +113,7 @@ def _uid_derived_value(derived: UidDerived, uid: int) -> int:
 # passt toward a REMOTE address, so a DNAT to 127/8 is martian at the default
 # and the packets vanish — making it work needs net.ipv4.conf.*.route_localnet=
 # 1, a host-wide loosening of martian filtering. Instead the inspector binds a
-# uid-derived address on the shared `workload-proxy` dummy link, in
+# uid-derived address on the shared `wl-egress` dummy link, in
 # 198.18.0.0/16 (RFC 2544 benchmarking space, not routable), with an IPv6 twin
 # in 2001:2::/48 (RFC 5180, the exact v6 counterpart). The address is on a
 # dummy link and therefore local, so no sysctl is involved. The offset
@@ -264,7 +264,7 @@ def inspect_address(uid: int) -> VmInspectAddress:
 
     The transparent redirect rewrites a guest dial to 80 or 443 onto these. They
     are not loopback (unlike management_address): the inspector binds them on
-    the shared `workload-proxy` dummy link, in 198.18.0.0/16 and 2001:2::/48,
+    the shared `wl-egress` dummy link, in 198.18.0.0/16 and 2001:2::/48,
     because guest traffic re-originated by passt toward a remote address cannot
     be DNATed to 127/8 without a host-wide sysctl. The v6 twin embeds the v4
     address in its low 32 bits, so the two carry the same number.
@@ -377,7 +377,7 @@ BROKER_INSTANCE_PORT = 8081
 # loopback after the management one would inherit the reservation rather than
 # each need their own. `ports` already cannot bind here.
 #
-# Loopback and not the 198.18.0.0/16 advertised link, because the guest must not
+# Loopback and not the 198.18.0.0/16 addresses on the egress link, because the guest must not
 # reach the responder directly: 127/8 is unreachable from the guest by
 # construction (ADR 006 -- passt re-originates guest traffic as host sockets, and
 # the guest's own 127/8 is its own), so the ONLY path to it is passt's
@@ -502,26 +502,18 @@ def reserved_range(addr: str, port: int | None = None) -> ReservedRange | None:
 # shared, created on demand and never torn down by a workload stop: it is
 # refcount-free because it holds no per-workload state, costs nothing idle,
 # and an orphan is inert.
-#
-# The DEVICE name still reads "workload-proxy" after the proxy it was named for
-# was deleted, and that is deliberate. A link name is an object that exists on
-# running hosts: renaming it would leave the old link in place holding this
-# workload's 127.128.x.y and 198.18.x.y addresses, with the new link claiming
-# the same addresses — two links answering for one address is a routing
-# ambiguity, and it would arrive on upgrade rather than on a fresh install.
-ADVERTISED_IFACE = "workload-proxy"
+EGRESS_IFACE = "wl-egress"
 
 IP_BIN = "/usr/sbin/ip"
 
 
-def ensure_advertised_interface(run) -> None:
+def ensure_egress_interface(run) -> None:
     """Create the dummy link the inspector's addresses hang on, idempotently.
 
     THE LINK ONLY. What it carries is each filtered workload's own inspector
     addresses, put on by inspect_link_address_commands -- so this creates
     the object those `ip addr add`s need to exist and nothing more. No address
-    of its own: there is no advertised endpoint, and the name is historical,
-    like nftables/workload-proxy.nft's.
+    of its own.
 
     `run(argv)` is injected rather than imported so this module stays free of
     subprocess; the inspect helper passes its own. libexec entrypoints have no
@@ -533,15 +525,15 @@ def ensure_advertised_interface(run) -> None:
     the redirect's destination is unroutable, which the guest sees as a
     connection that fails with no useful diagnostic.
     """
-    result = run([IP_BIN, "link", "add", ADVERTISED_IFACE, "type", "dummy"])
+    result = run([IP_BIN, "link", "add", EGRESS_IFACE, "type", "dummy"])
     if result.returncode != 0 and "File exists" not in result.stderr:
         raise RuntimeError(
-            f"could not create {ADVERTISED_IFACE}: {result.stderr.strip()}")
+            f"could not create {EGRESS_IFACE}: {result.stderr.strip()}")
 
-    result = run([IP_BIN, "link", "set", ADVERTISED_IFACE, "up"])
+    result = run([IP_BIN, "link", "set", EGRESS_IFACE, "up"])
     if result.returncode != 0:
         raise RuntimeError(
-            f"could not bring up {ADVERTISED_IFACE}: {result.stderr.strip()}")
+            f"could not bring up {EGRESS_IFACE}: {result.stderr.strip()}")
 
 
 def allow_reserved_reason(

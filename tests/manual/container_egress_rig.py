@@ -72,7 +72,7 @@ WHAT IT STILL DOES NOT MEASURE:
 
   * A GLOBAL-SCOPE v6 destination. The redirect map keys on `tcp dport` alone,
     so translation is scope-blind and the ULA result carries -- but that is a
-    reading of workload-proxy.nft, not a measurement, and it is the one claim
+    reading of workload-redirect.nft, not a measurement, and it is the one claim
     here that would still be worth a v6-capable host.
 
 RUNNING IT
@@ -202,7 +202,7 @@ HOST_V4, HOST_V6 = "10.99.98.1", "fd00:cec::1"
 # not incidental, and worth knowing before reading a failure here: it makes the
 # v6 twin of the internal-exemption set load-bearing, which no other row
 # exercises. What it does NOT prove is a global-scope v6 destination; the
-# redirect map keys on `tcp dport` alone (workload-proxy.nft), so translation
+# redirect map keys on `tcp dport` alone (workload-redirect.nft), so translation
 # is scope-blind, but that is a reading of the rule and not a measurement.
 # `fd00:cec::`, not `fd00:ceg::`: `g` is not a hexadecimal digit, and `ip`
 # rejects the address with "inet6 prefix is expected" -- which this rig then
@@ -1487,7 +1487,7 @@ def check_rung_ladder():
     record("rung 1: an untriggered container has no inspect units",
            not Path(f"/run/systemd/system/workload-{OPEN}-inspect.socket").exists(),
            f"uid {uid_open}")
-    proxy = nft_dump("workload_proxy")
+    proxy = nft_dump("workload_redirect")
     record("rung 1: it is in no redirect map",
            uid_open is not None and f"{uid_open} ." not in proxy)
     p = cli("egress", OPEN)
@@ -1584,7 +1584,7 @@ def check_redial_exemption():
     """S1, the most repeated bug in the whole egress project.
 
     The inspector's own upstream connection must be exempt in BOTH tables:
-    `wl_inspect_cg` in workload_proxy (or its re-dial is redirected back into
+    `wl_inspect_cg` in workload_redirect (or its re-dial is redirected back into
     itself) and `wl_egress_cg` in workload_filter (or its re-dial is filtered
     like the workload's own). NEITHER failure produces an error -- one loops
     and one hangs -- so this checks the elements are present AND that a request
@@ -1592,8 +1592,8 @@ def check_redial_exemption():
     """
     say("\n== the inspector's own re-dial (S1) ==")
     unit = f"workloads.slice/workload-{FILTERED}-inspect.service"
-    proxy, filt = nft_dump("workload_proxy"), nft_dump("workload_filter")
-    record("the inspector's cgroup is exempt in workload_proxy",
+    proxy, filt = nft_dump("workload_redirect"), nft_dump("workload_filter")
+    record("the inspector's cgroup is exempt in workload_redirect",
            unit in proxy, "wl_inspect_cg")
     record("the inspector's cgroup is exempt in workload_filter",
            unit in filt, "wl_egress_cg")
@@ -1961,7 +1961,7 @@ def check_bridge_mode():
 
     uid = workload_uid(BRIDGE)
     record("bridge: it is in the redirect map",
-           uid is not None and f"{uid} ." in nft_dump("workload_proxy"),
+           uid is not None and f"{uid} ." in nft_dump("workload_redirect"),
            f"uid {uid}")
 
     # `ref` is `<workload>/<container>`: bridge mode has no default container.
@@ -2140,7 +2140,7 @@ def check_pod_mode():
 
     uid = workload_uid(POD)
     record("pod: it is in the redirect map",
-           uid is not None and f"{uid} ." in nft_dump("workload_proxy"),
+           uid is not None and f"{uid} ." in nft_dump("workload_redirect"),
            f"uid {uid}")
 
     elapsed, ok, out = fetch(ref, f"https://{ALLOWED}/")
@@ -2197,7 +2197,7 @@ def check_cross_workload_gap():
     """MEASURED, NOT SCORED: can an unfiltered container reach a filtered
     workload's inspector?
 
-    `nftables/workload-proxy.nft` argues that cross-workload inspector access
+    `nftables/workload-redirect.nft` argues that cross-workload inspector access
     is STRUCTURALLY unavailable rather than denied by rule: a uid with no
     element in the redirect maps gets no translation, so its packet leaves
     untranslated and meets the default-deny drop in workload_filter. That drop
@@ -2275,7 +2275,7 @@ def check_ipv6():
     """R5's v6 half: a dial to 80/443 over IPv6 must be TRANSLATED.
 
     The failure this row exists to catch is not a wrong decision, it is the
-    absence of one: `proxy_dnat` has a v6 rule of its own (`dnat ip6 to ...
+    absence of one: `redirect_dnat` has a v6 rule of its own (`dnat ip6 to ...
     map @wl_inspect6`) because `dnat` and `dnat ip6` are different translations
     in the inet family, and a v4-only redirect sends dual-stack traffic out
     over v6 untranslated. That leaves a workload every report calls filtered
@@ -2361,7 +2361,7 @@ def _check_ipv6_body():
            "die in the container's own stack")
 
     uid = workload_uid(FILTERED)
-    v6map = run(["nft", "list", "map", "inet", "workload_proxy", "wl_inspect6"],
+    v6map = run(["nft", "list", "map", "inet", "workload_redirect", "wl_inspect6"],
                 check=False).stdout
     # Read the map, not the rule. The rule is in the shipped skeleton and is
     # always there; what a v4-only arming bug leaves out is the ELEMENT, and
@@ -3691,9 +3691,9 @@ def check_disable_cleanliness():
     for suffix in ("socket", "service"):
         path = Path(f"/run/systemd/system/workload-{FILTERED}-inspect.{suffix}")
         record(f"the inspect .{suffix} is gone", not path.exists(), str(path))
-    proxy, filt = nft_dump("workload_proxy"), nft_dump("workload_filter")
+    proxy, filt = nft_dump("workload_redirect"), nft_dump("workload_filter")
     unit = f"workload-{FILTERED}-inspect.service"
-    record("workload_proxy holds no element for it",
+    record("workload_redirect holds no element for it",
            unit not in proxy and (uid is None or f"{uid} ." not in proxy),
            f"uid {uid}")
     record("workload_filter holds no element for it",

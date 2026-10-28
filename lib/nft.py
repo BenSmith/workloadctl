@@ -156,8 +156,7 @@ def add_listener_addresses(uid: int) -> None:
 def remove_listener_addresses(uid: int) -> None:
     """Remove this workload's listener addresses. Warns rather than raising.
 
-    The per-workload addresses only -- the link and the advertised address are
-    shared and stay. Tolerates the address being absent: a start that died
+    The per-workload addresses only -- the link is shared and stays. Tolerates the address being absent: a start that died
     before adding it left nothing to remove, and a stop must not fail over it.
     """
     for argv in inspect_link_delete_commands(uid):

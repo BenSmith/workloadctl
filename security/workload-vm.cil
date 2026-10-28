@@ -3,7 +3,7 @@
 ;
 ; The connected version of everything below — the share's ownership model, why
 ; the sidecar holds no capabilities, what confines it, and a symptom table — is
-; docs/vm-virtiofs.md. This file carries the per-rule why.
+; docs/dev/vm-runtime.md. This file carries the per-rule why.
 ;
 ; Two facts live here, and they have the same root: workloadctl runs QEMU as
 ; svirt_t *outside libvirt*, so two things libvirt does for QEMU we do
@@ -23,7 +23,7 @@
 ; right answer, and the fix is an fcontext rule on the operator's path — or, on
 ; a filesystem that cannot hold a label at all (cifs, nfs: `fs_noxattr_type`,
 ; one genfscon type for every inode), a `context=` mount option, since fcontext
-; has nothing to write to there. docs/vm-virtiofs.md §5 has both, and the
+; has nothing to write to there. docs/dev/vm-runtime.md has both, and the
 ; misleading error the second case produces.
 ;
 ; WHY THE VIRTIOFSD DOMAIN EXISTS
@@ -257,7 +257,7 @@
 ;
 ; Measured on a live cifs share: read, write, mkdir and unlink all succeed while
 ; `df` alone is denied — `denied { getattr } dev="cifs" tclass=filesystem
-; tcontext=...:svirt_image_t`. See docs/vm-virtiofs.md §5 for the operator half.
+; tcontext=...:svirt_image_t`. See docs/manual/05-vms.md for the operator half.
 (allow wlvfsd_t fs_t (filesystem (getattr)))
 (allow wlvfsd_t svirt_image_t (filesystem (getattr)))
 

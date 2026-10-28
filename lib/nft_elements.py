@@ -30,7 +30,7 @@ from nft_constants import (both_families, split_by_family, NFT_BIN,
                            NFT_PAIR_ALLOW, NFT_PAIR_INSPECT_DST,
                            NFT_PAIR_INSPECT_LIVE, NFT_PAIR_INSPECT_MAP,
                            NFT_PAIR_INSPECT_SELF, NFT_PAIR_INTERNAL_OK,
-                           NFT_PROXY_TABLE, NFT_SET_ALLOW4, NFT_SET_ALLOW6,
+                           NFT_REDIRECT_TABLE, NFT_SET_ALLOW4, NFT_SET_ALLOW6,
                            NFT_SET_EGRESS_CG,
                            NFT_SET_FILTERED, NFT_SET_INSPECT_CG, NFT_TABLE)
 from config_parser import SOCKET_DIR
@@ -150,7 +150,7 @@ def container_filter_elements(uid: int, allow: list, resolved=None) -> dict:
 # is admitted by its TRANSLATED tuple, because the filter hook runs after
 # dstnat) and the two wrong-port drop-set elements (the per-element counter is
 # what gives the guard its per-workload attribution). The maps live in
-# inet workload_proxy, the sets in inet workload_filter: a helper that arms one
+# inet workload_redirect, the sets in inet workload_filter: a helper that arms one
 # table and not the other leaves a workload that looks configured and reaches
 # nothing, so the builder returns both families' commands in one shape.
 
@@ -163,8 +163,7 @@ def inspect_map_elements(uid: int) -> dict[str, list[str]]:
     cleartext. The value is (listener address, listener port), and BOTH halves
     are per-workload: the address is derived from the uid, so the element is the
     only thing that says where this workload's listener is, and no shared
-    literal appears in it. The advertised address that once did is gone with the
-    broker redirect that was its last consumer.
+    literal appears in it.
     """
     return both_families(NFT_PAIR_INSPECT_MAP, inspect_address(uid), lambda a: [
         f"{uid} . {p.guest_port} : {a} . {p.inspect_port}" for p in PLANES
@@ -220,7 +219,7 @@ def inspect_element_commands(uid: int, action: str) -> list[list[str]]:
     """argv lists arming ("add") or disarming ("delete") all eight elements.
 
     Two families, four objects each, in a fixed order: both DNAT maps (in
-    inet workload_proxy), both accept sets, both wrong-port sets and both
+    inet workload_redirect), both accept sets, both wrong-port sets and both
     cross-workload guard sets (in inet workload_filter). One argv per object,
     because an object's elements belong to one table and one transaction, and
     the eight span two tables.
@@ -235,7 +234,7 @@ def inspect_element_commands(uid: int, action: str) -> list[list[str]]:
         raise ValueError(f"action must be 'add' or 'delete', got {action!r}")
     commands = []
     groups = (
-        (NFT_PROXY_TABLE, inspect_map_elements(uid)),
+        (NFT_REDIRECT_TABLE, inspect_map_elements(uid)),
         (NFT_TABLE, inspect_dst_elements(uid)),
         (NFT_TABLE, inspect_self_elements(uid)),
         (NFT_TABLE, inspect_live_elements(uid)),
@@ -439,7 +438,7 @@ def inspect_cgroup_command(name: str, action: str) -> list[str]:
     opposite of inspect_cgroup_filter_command. Backwards, it fails only at load
     time with `did you mean set 'wl_egress_cg' in table inet
     'workload_filter'?`: nftables sets are table-scoped, and wl_inspect_cg is
-    declared in workload-proxy.nft next to the `return` rule it feeds.
+    declared in workload-redirect.nft next to the `return` rule it feeds.
 
     Armed by the inspector's own unit (ExecStartPre adds, ExecStopPost
     removes), emitted by generate_inspect_service: an element resolves to a
@@ -447,7 +446,7 @@ def inspect_cgroup_command(name: str, action: str) -> list[str]:
     the add belongs to the unit that owns the cgroup, not to the arming
     helper.
     """
-    return [NFT_BIN, action, "element", *NFT_PROXY_TABLE.split(),
+    return [NFT_BIN, action, "element", *NFT_REDIRECT_TABLE.split(),
             NFT_SET_INSPECT_CG, '{ "' + inspect_cgroup(name) + '" }']
 
 

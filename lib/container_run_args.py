@@ -253,10 +253,7 @@ class RunSpec:
     @property
     def pull_policy(self) -> str:
         """[container].pull -- missing (default), always, newer, never.
-
-        A property and not an argument because nothing resolves it: podman
-        owns the value's validity, so there is no check here to hide.
-        """
+        validate refuses any other value."""
         return self.container["container"].get("pull", "missing")
 
     @property

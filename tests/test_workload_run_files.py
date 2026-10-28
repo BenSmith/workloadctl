@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TDD contracts for the B15 shared run-file topology helper.
 
-Background: `docs/workload-run-files.md` is the authoritative definition of the
+Background: `docs/dev/boot-and-generation.md` is the authoritative definition of the
 per-workload run-files a workload owns, but that set is currently hand-enumerated
 in ~8 places plus the generator (grep `f"workload-{` across lib/ generators/
 libexec/). B15 replaces those with a single `workload_run_files(config)` family in
@@ -336,11 +336,7 @@ class TestCurrentDestructiveGolden(unittest.TestCase):
                 # egress = "open" fixture has one too.
                 'workload-forge-clock.timer',
                 'workload-forge-clock.service',
-                # Superset semantics, like -pod/-net for containers: the proxy
-                # unit is always listed so the destructive view can unlink it,
-                # and emitted only when [vm.network].hosts is set.
-                'workload-forge-proxy.service',
-                # Superset semantics, like the proxy: the inspector socket and
+                # Superset semantics, like -pod/-net for containers: the inspector socket and
                 # service are always listed so the destructive view can unlink
                 # them, emitted only when egress inspection applies (not
                 # bridged, egress filtered). This fixture is egress = "open",

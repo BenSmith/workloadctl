@@ -89,7 +89,7 @@ sudo mount -t cifs //<host-ip>/handoff /mnt/handoff \
 
 To export a tree that lives outside this workload (say downloads another
 workload writes), declare it as a share in `/etc/workloads.d/shares.toml`
-(see "A directory several workloads use is a share" in `docs/workloads.md`)
+(see "Sharing a directory between workloads" in `docs/manual/04-containers.md`)
 and join it read-only:
 
 ```toml

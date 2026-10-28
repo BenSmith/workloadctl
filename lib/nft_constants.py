@@ -158,8 +158,8 @@ NFT_PAIR_INSPECT_LIVE = FamilyPair(NFT_SET_INSPECT_LIVE, NFT_SET_INSPECT_LIVE6)
 # path is always exactly two components and the rule's `level 2` is exact.
 # These sidecars are not the payload; resource control belongs on the VM.
 NFT_SET_EGRESS_CG = "wl_egress_cg"
-NFT_PROXY_SKELETON = "/usr/share/workloadctl/workload-proxy.nft"
-NFT_PROXY_TABLE = "inet workload_proxy"
+NFT_REDIRECT_SKELETON = "/usr/share/workloadctl/workload-redirect.nft"
+NFT_REDIRECT_TABLE = "inet workload_redirect"
 
 # The transparent redirect's objects (§7.1). The two maps carry one element per
 # workload per redirected port, keyed uid . original port -> (listener address,
@@ -168,7 +168,7 @@ NFT_PROXY_TABLE = "inet workload_proxy"
 # that re-originates workload-uid traffic -- the inspector, on the same terms
 # and for the same reason as wl_egress_cg above -- so its own dials are not
 # translated into the listener it is dialing past. All three live in table
-# inet workload_proxy and are declared in workload-proxy.nft.
+# inet workload_redirect and are declared in workload-redirect.nft.
 NFT_MAP_INSPECT4 = "wl_inspect4"
 NFT_MAP_INSPECT6 = "wl_inspect6"
 NFT_PAIR_INSPECT_MAP = FamilyPair(NFT_MAP_INSPECT4, NFT_MAP_INSPECT6)

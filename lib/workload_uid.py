@@ -28,7 +28,7 @@ RUN_SYSUSERS_D = Path("/run/sysusers.d")
 # in /etc/login.defs). A lower base overlaps that window at low UIDs, which
 # would let a useradd-created *human* user share subordinate ids with a workload
 # container — each inside the other's user namespace. Documented in
-# docs/workloads.md.
+# docs/manual/10-troubleshooting.md.
 SUBID_BASE = 600100000
 SUBID_COUNT = 65536
 

@@ -71,7 +71,7 @@ def only(case, matches, what):
 
 
 SKELETON = Path(__file__).resolve().parent.parent / "nftables" / "workload-filter.nft"
-PROXY_SKELETON = Path(__file__).resolve().parent.parent / "nftables" / "workload-proxy.nft"
+REDIRECT_SKELETON = Path(__file__).resolve().parent.parent / "nftables" / "workload-redirect.nft"
 
 
 class TestSkeleton(unittest.TestCase):
@@ -931,7 +931,7 @@ class TestInspectorAddresses(unittest.TestCase):
 class TestProxySkeletonNamesAgree(unittest.TestCase):
     """The transparent redirect's objects and the constants that name them.
 
-    workload-proxy.nft spells wl_inspect4 / wl_inspect6 / wl_inspect_cg
+    workload-redirect.nft spells wl_inspect4 / wl_inspect6 / wl_inspect_cg
     literally so the file stays applicable with a bare `nft -f`; the DNAT map
     and the cgroup `return` carry those same names. A rename on either side
     leaves the other pointing at a set or map that does not exist — which looks
@@ -941,17 +941,17 @@ class TestProxySkeletonNamesAgree(unittest.TestCase):
     """
 
     def test_the_skeleton_declares_each_object_with_its_constant_name(self):
-        text = PROXY_SKELETON.read_text()
-        self.assertIn(f"add map inet workload_proxy {NFT_MAP_INSPECT4}", text)
-        self.assertIn(f"add map inet workload_proxy {NFT_MAP_INSPECT6}", text)
+        text = REDIRECT_SKELETON.read_text()
+        self.assertIn(f"add map inet workload_redirect {NFT_MAP_INSPECT4}", text)
+        self.assertIn(f"add map inet workload_redirect {NFT_MAP_INSPECT6}", text)
         self.assertIn(
-            f"add set inet workload_proxy {NFT_SET_INSPECT_CG}", text)
+            f"add set inet workload_redirect {NFT_SET_INSPECT_CG}", text)
 
     def test_the_rules_reference_each_object_by_its_constant_name(self):
         """The declaration is not enough: a rule must reach the object by the
         same name, and a drift between the two is a map or set that no rule
         ever reads."""
-        text = PROXY_SKELETON.read_text()
+        text = REDIRECT_SKELETON.read_text()
         self.assertIn(f"@{NFT_SET_INSPECT_CG} return", text)
         self.assertIn(f"map @{NFT_MAP_INSPECT4}", text)
         self.assertIn(f"map @{NFT_MAP_INSPECT6}", text)

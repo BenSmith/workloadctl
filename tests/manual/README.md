@@ -359,7 +359,7 @@ the v6 probes die at the routing lookup, before nftables is consulted, which
 looks like a redirect defect and is not.
 
 On a host with no IPv6 uplink the temporary route makes the guest's v6 source
-address come off the `workload-proxy` link, which carries every workload's
+address come off the `wl-egress` link, which carries every workload's
 listener address — so the listener logs a `peer=` that is some *other*
 workload's plane. It is an artifact of the rig's own route, not a policy
 finding: the guards match on destination, and a host with a real v6 uplink
@@ -367,7 +367,7 @@ sources from a global address. Worth recognising rather than re-investigating.
 
 **A name resolves to IPv4 only.** passt's DHCPv6 hands the guest a host IPv6
 address, and on a host with no v6 uplink the only global ones are the
-inspectors' on `workload-proxy` -- the guest took its own inspector's. While the
+inspectors' on `wl-egress` -- the guest took its own inspector's. While the
 responder answered AAAA with that address, every by-name dial tried v6 first and
 was refused inside the guest in a millisecond. The fetch rows stayed green over
 it, because curl falls back to v4 and gets its 200; only a v6-only client, or one
@@ -817,7 +817,7 @@ and says nothing about a TCP peer. A `REACHED` line is a regression in one of
 those two.
 
 The original note is kept below because the shape of the hole is worth
-remembering: `nftables/workload-proxy.nft` argues
+remembering: `nftables/workload-redirect.nft` argues
 that a uid with no element in the redirect maps cannot reach another workload's
 inspector, because its packet leaves untranslated and meets the default-deny
 drop in `workload_filter` — but that drop is itself guarded on `@wl_filtered`
@@ -998,7 +998,7 @@ over both:
 - **The AAAA answer was the container's own address.** On a host with no
   IPv6 default route, pasta copies whatever global v6 address the host has
   onto the container's interface, and on a host running filtered workloads
-  that is an inspector's address on the `workload-proxy` link. The responder
+  that is an inspector's address on the `wl-egress` link. The responder
   answered AAAA with the inspector's v6 address, busybox wget tried v6 first,
   and every HTTPS fetch by name was refused inside the container in half a
   second. No responder gets `--address6` now: a VM guest had the same
@@ -1087,7 +1087,7 @@ every topology is worse than no field, because it reads as attribution.
 
 **A global-scope IPv6 destination.** The redirect map keys on `tcp dport`
 alone, so translation is scope-blind and the ULA result carries — but that is a
-reading of `workload-proxy.nft`, not a measurement, and it is the one claim
+reading of `workload-redirect.nft`, not a measurement, and it is the one claim
 here still worth a v6-capable host.
 
 ## uid_attribution_rig.py — which uid does a container's egress actually leave as?

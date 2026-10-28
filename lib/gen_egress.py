@@ -126,9 +126,8 @@ def generate_inspect_socket(config, user_name: str, uid: int, *,
              f"+/usr/libexec/workloadctl/{arming_helper} up {dq(name)}")
     # Tolerant, unlike the prestart: the elements and addresses are
     # legitimately absent whenever the start failed before arming them, so the
-    # stop must not block. The shared dummy link and the advertised address are
-    # never torn down — the helper does not touch them, for the reason its
-    # own docstring gives.
+    # stop must not block. The shared dummy link is never torn down — the
+    # helper does not touch it, for the reason its own docstring gives.
     sock.add("ExecStopPost",
              f"-+/usr/libexec/workloadctl/{arming_helper} down {dq(name)}")
     # Four listener ports, both families, one per plane. The values come
@@ -349,7 +348,7 @@ def generate_inspect_service(config, user_name: str, uid: int) -> str:
     # install leaves a healthy-looking inspector that reaches nothing or dials
     # into itself. Both lines, always: one missing is one of the two failures
     # the docstring names. Each argv token is quoted with dq (the systemd-Exec
-    # literal-token helper), not a bare join: the `inet workload_proxy` table
+    # literal-token helper), not a bare join: the `inet workload_redirect` table
     # and the cgroup path each carry a space that a bare join would split, and
     # dq is the repo's own quoting for Exec lines, not shell quoting.
     for cmd in (
@@ -492,7 +491,7 @@ def generate_broker_service(config, uid: int, *, before: str,
     u.set("Description", f"Credential broker for {name}")
     # The RPM's copy, not a checkout: a unit on a host cannot usefully cite a
     # path that exists only on the machine it was written on.
-    u.set("Documentation", "file:/usr/share/doc/workloadctl/agent-broker.md")
+    u.set("Documentation", "file:/usr/share/doc/workloadctl/manual/06-networking.md")
     u.set("Requires", f"workload-{name}-setup.service")
     u.set("After", f"workload-{name}-setup.service")
     # Stated from both ends, like the inspector socket and for the same reason:
@@ -722,7 +721,7 @@ def resolve_command(name: str, uid: int) -> list:
     synthesised A points the workload at the listener its 80 and 443 are
     redirected to anyway, so a workload that ignores the redirect and one that
     does not both arrive at the same place. That address is on the
-    workload-proxy link, not loopback, so a container's dial to it leaves
+    wl-egress link, not loopback, so a container's dial to it leaves
     through pasta like any other. `--policy` is the inspector's own
     document, read to COUNT queries for names on no list, never to answer.
 
@@ -730,7 +729,7 @@ def resolve_command(name: str, uid: int) -> list:
     copy a host IPv6 address onto the workload's interface -- pasta onto a
     container's, passt's DHCPv6 onto a guest's -- and on a host with no IPv6
     default route the one they copy can be an inspector's own address from
-    the workload-proxy link, this workload's included. An AAAA answer naming
+    the wl-egress link, this workload's included. An AAAA answer naming
     it is a dial to the workload's own interface, refused before it leaves,
     and clients try IPv6 first. A dial to an IPv6 literal on 80 or 443 is
     still redirected by port.

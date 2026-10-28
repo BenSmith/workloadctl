@@ -18,7 +18,7 @@ What it asserts, all shipped bundles in one generator invocation:
 
 Deliberately *not* asserted: the unit text. Rendered units are not committed —
 they regenerate from these TOMLs in ~0.2s, so a refactor diffs two baselines from
-`just snapshot-baseline` instead. See `docs/testing.md`.
+`just snapshot-baseline` instead. See `docs/dev/testing.md`.
 
 The generator allocates UIDs by scanning /etc/passwd, so its output is
 host-dependent; nothing here depends on the allocated value.

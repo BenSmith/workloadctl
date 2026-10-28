@@ -8,19 +8,23 @@ workloadctl is stdlib Python 3.14 plus a systemd generator, with no daemon of it
 
 ## Docs
 
-- [Workload guide](docs/workloads.md): configuration with worked examples
-- [Schema reference](docs/schema-reference.toml): the annotated TOML schema, in valid file order
+- [Manual](docs/manual/README.md): eleven chapters, written to be read in order
+  - [Concepts](docs/manual/01-concepts.md), [Installing](docs/manual/02-installing.md), [First workloads](docs/manual/03-first-workloads.md)
+  - [Container workloads](docs/manual/04-containers.md), [VM workloads](docs/manual/05-vms.md)
+  - [Networking and egress](docs/manual/06-networking.md): filtering, inspection, the credential broker
+  - [Secrets](docs/manual/07-secrets.md), [Security and confinement](docs/manual/08-security.md)
+  - [Operating](docs/manual/09-operating.md), [Troubleshooting](docs/manual/10-troubleshooting.md), [Reference](docs/manual/11-reference.md)
 - [CLI reference](docs/cli.md): every command and flag, and the `--json` result shapes
-- [Secrets](docs/secrets.md): TPM2-sealed credentials end to end
-- [Security model](docs/security-model.md)
-- [Troubleshooting](docs/troubleshooting.md): failures, causes and fixes
-- [Filtered VM walkthrough](docs/vm-egress-walkthrough.md): one request, from TOML to packet
-- [Egress and broker architecture](docs/egress-and-broker-architecture.md)
-- [Credential broker](docs/agent-broker.md): design, threat model and operation
-- [VM virtiofs](docs/vm-virtiofs.md): how guest volumes are shared and confined
-- [Run files](docs/workload-run-files.md): the per-workload run files `disable`, `drift` and `inspect` must agree on
-- [Testing](docs/testing.md): the rung model and the test-value rubric
+- [Schema reference](docs/schema-reference.toml): every TOML key
 - [Design decisions](docs/adr/README.md): ADRs 001 to 009
+
+## Developer guide
+
+- [Boot and generation](docs/dev/boot-and-generation.md): how a TOML becomes units, the run-file set, the CLI's layering
+- [Egress](docs/dev/egress.md): the inspector, resolver and broker wiring, and the nft plane
+- [VM runtime](docs/dev/vm-runtime.md): passt, QEMU, virtiofs, QMP and the clock keeper
+- [Testing](docs/dev/testing.md): the rung model and the test-value rubric
+- [CI and images](docs/dev/ci.md)
 
 ## Optional
 

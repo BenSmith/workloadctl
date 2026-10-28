@@ -3,7 +3,7 @@
 `up` runs as the inspect socket unit's ExecStartPre, `down` as its
 ExecStopPost. `up` is the first thing in the work that writes to the kernel:
 everything before it produced files. It writes to TWO tables -- the DNAT maps
-in inet workload_proxy and the guard sets in inet workload_filter -- and
+in inet workload_redirect and the guard sets in inet workload_filter -- and
 arming one and not the other leaves a workload that looks configured and
 reaches nothing. `down` removes the per-workload elements, the per-workload
 listener addresses, and the internal exemptions, and nothing else.
@@ -30,10 +30,9 @@ perform. This program touches both tables, so it applies both skeletons.
 
 WHAT IS NEVER TORN DOWN
 
-The shared advertised address 192.0.2.1 and the dummy link itself. Both are
-host-global and shared: two concurrent starts race for them, which is why
-ensure_advertised_interface tolerates "already exists" rather than taking a
-lock, and there is no refcount (ADR 006). The per-workload /32 and /128 ARE
+The dummy link itself. It is host-global and shared: two concurrent starts
+race for it, which is why ensure_egress_interface tolerates "already exists"
+rather than taking a lock, and there is no refcount (ADR 006). The per-workload /32 and /128 ARE
 removed on stop, so that an address on the link means an inspector that is
 supposed to be running -- `diagnose` reports what it sees, and a stopped
 workload's listener address is a line nobody can explain. Removal tolerates
@@ -75,7 +74,7 @@ edit time, where the fix is cheap. See internal_failure.
 WHAT IS NOT ARMED HERE
 
 The cgroup elements in wl_egress_cg (inet workload_filter) and wl_inspect_cg
-(inet workload_proxy). The builders for both live in lib/nft_elements.py, but
+(inet workload_redirect). The builders for both live in lib/nft_elements.py, but
 the element is armed by the inspector's own unit, not this program: an
 element resolves to a cgroup id at add time and systemd makes a fresh cgroup
 on every start, so the add belongs to the unit that owns the cgroup, and the
@@ -87,7 +86,7 @@ responder is deliberately not a second: it originates nothing, so it opens no
 socket for either set to exempt, and nothing in the tree arms an element for
 it. If it ever gains an outbound socket it needs an element in BOTH sets,
 added by its own unit -- see the set comments in nftables/workload-filter.nft
-and nftables/workload-proxy.nft.
+and nftables/workload-redirect.nft.
 
 EXIT CODES
 
@@ -116,12 +115,12 @@ from moatery.egress_status import clear_status
 from helper_main import log, run
 from nft import (add_listener_addresses, purge_internal_exemptions,
                  remove_listener_addresses)
-from nft_constants import NFT_BIN, NFT_PROXY_SKELETON, NFT_SKELETON
+from nft_constants import NFT_BIN, NFT_REDIRECT_SKELETON, NFT_SKELETON
 from nft_elements import (
     container_internal_resolve, inspect_element_commands, internal_ok_commands,
     vm_internal_resolve,
 )
-from workload_addr import broker_listen_address, ensure_advertised_interface
+from workload_addr import broker_listen_address, ensure_egress_interface
 from workload_lib import load_workload_config
 
 
@@ -263,17 +262,17 @@ def up(sub: Substrate, name: str) -> int:
     # and internal refusals presented as this one's.
     clear_status(inspect_status_path(name))
 
-    ensure_advertised_interface(run)
+    ensure_egress_interface(run)
     # Both skeletons, for the reason in the module docstring: the DNAT maps
     # live in the proxy table, the guard sets in the filter table, and this
     # unit starts Before= the workload whose prestart would otherwise be the
     # first to create one of them.
-    run([NFT_BIN, "-f", NFT_PROXY_SKELETON], check=True)
+    run([NFT_BIN, "-f", NFT_REDIRECT_SKELETON], check=True)
     run([NFT_BIN, "-f", NFT_SKELETON], check=True)
 
     # The per-workload listener addresses, both families, v6 nodad. A
     # duplicate "Address already assigned" is tolerated for the reason
-    # ensure_advertised_interface's add is: a down that raced a fast restart
+    # ensure_egress_interface's add is: a down that raced a fast restart
     # has not removed them yet.
     add_listener_addresses(uid)
 

@@ -47,7 +47,7 @@ VM_GUEST_UID = 1000
 # home. Both halves matter to workload-ensure-user: it renders the account into
 # the built-in cloud-config AND has to recognise a [vm].volumes share mounted at
 # that home, which would otherwise hide the authorized_keys the CLI logs in with
-# (seed_vm_home_share_ssh_key; docs/vm-virtiofs.md §8).
+# (seed_vm_home_share_ssh_key; docs/manual/05-vms.md).
 VM_DEFAULT_GUEST_USER = "workload"
 VM_GUEST_HOME_BASE = "/home"
 
@@ -275,25 +275,11 @@ REGISTRATION_DOMAIN_PARENTS = (
 # declare it handles itself, suppressing the matching completeness check in
 # build_cloud_init_iso.
 #
-# "proxy" was one of these and is not merely dropped: a seed that still declares
-# it is REFUSED, by name, in validate_vm_config. Silently ignoring it would let
-# a custom seed opt out of a check that no longer exists while never being told
-# the check it now needs — the CA bundle the inspector's spliced connections
-# will be presented under — and the operator would learn that at the first
-# certificate error inside the guest rather than at validation.
-#
 # "home_context" is narrower than "mounts": a seed that mounts the home share
 # itself but labels it by some means we cannot read from the seed text (an
 # image-baked fstab entry, a local policy granting sshd another type) opts out
 # of the SELinux check alone and keeps the mount check.
 SEED_PROVIDES_CHOICES = {"ca", "mounts", "home_context"}
-
-# The retired opt-out and what an operator should write instead. Kept as data
-# rather than spelled into the error string so the accepted set and the message
-# naming its replacement cannot drift.
-SEED_PROVIDES_RETIRED = {
-    "proxy": "ca",
-}
 
 # workload-ensure-user exits with this when a custom seed fails one of the
 # contracts build_cloud_init_iso enforces (host key, CA bundle, volume mounts,

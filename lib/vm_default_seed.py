@@ -230,13 +230,7 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
         lines.append("    content: |")
         for key, value in guest_env.items():
             lines.append(f"      {key}={value}")
-        # Filename kept as -proxy though it now carries the CA bundle and the
-        # credential placeholders and no proxy variable at all: renaming it
-        # would leave the
-        # old file behind on every existing guest, still exporting the retired
-        # https_proxy, since cloud-config runs once at first boot. A guest that
-        # keeps that stale export dials an address where nothing listens.
-        lines.append("  - path: /etc/profile.d/99-workload-proxy.sh")
+        lines.append("  - path: /etc/profile.d/99-workload-env.sh")
         lines.append("    permissions: '0644'")
         lines.append("    content: |")
         for key, value in guest_env.items():

@@ -1,83 +1,118 @@
-# workloadctl Command Reference
+# workloadctl command reference
 
-`workloadctl` is the CLI for managing rootless workloads. Most commands that mutate state require `sudo`; read-only commands can be run as any user.
+Every command and flag, with its defaults, exit status and `--json` output.
+The [manual](manual/README.md) explains when and why to use each one, and
+each section below links to the chapter that does.
+
+Commands that change a workload, or reach inside one, need `sudo`. The
+read-only reports run as any user, though some see more as root: the egress
+policy and record, for instance, are readable only by root and the workload
+user.
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| [`backup`](#backup) | Archive a workload's `data/` subtree to a `.tar.zst` |
-| [`build`](#build) | Build a workload's container image from its bundle build context |
-| [`catalog`](#catalog) | List shippable bundles |
-| [`cleanup`](#cleanup) | Find (and optionally remove) orphaned `_wl-*` users and home directories |
-| [`cp`](#cp) | Copy files to/from a running container |
-| [`create`](#create) | Scaffold a from-scratch workload TOML (no bundle) |
-| [`diagnose`](#diagnose) | Check runtime setup: user, subuid/subgid, linger, SELinux label |
-| [`disable`](#disable) | Stop the service and remove the `.enabled` marker (optionally `--purge`) |
-| [`doctor`](#doctor) | One-shot aggregate report: generator journal, unit states, setup checks, drift, health |
-| [`drift`](#drift) | Diff running systemd units against what would be generated from current TOMLs |
-| [`duplicate`](#duplicate-alias-clone) / `clone` | Copy a live workload's TOML under a new name |
-| [`edit`](#edit) | Edit the workload TOML, or copy-on-write override a bundle control file |
-| [`egress`](#egress) | Read a filtered workload's per-request egress record — what it actually sent |
-| [`enable`](#enable) | Create user, transfer image, start service (idempotent) |
-| [`exec`](#exec) | Run a command inside a container or VM (via SSH) |
-| [`health`](#health) | Show container health check status |
-| [`images`](#images) | List or prune container images across workload users |
-| [`incant`](#incant) | Raw podman command as the workload user, or QMP command for VMs |
-| [`info`](#info) | Show config, user, UID, image, ports, volumes (`--files` for control-file view) |
-| [`init`](#init) | Instantiate a catalog bundle into `/etc/workloads.d/` |
-| [`install`](#install) | Promote a local workload directory into `/etc/workloads.d/` |
-| [`list`](#list) | List all workloads and their enabled/running state |
-| [`logs`](#logs) | View workload logs via `journalctl` |
-| [`pcap`](#pcap) | Capture packets from a workload's host or guest vantage |
-| [`reboot`](#reboot) | Soft-reboot a workload (systemd re-exec inside container or VM) |
-| [`recreate`](#recreate) | Regenerate units and restart (apply TOML edits or post-build) |
-| [`restart`](#restart) | Bounce a workload service, keeping its overlay/disk (does not apply TOML edits) |
-| [`restore`](#restore) | Restore a workload from a `backup` archive (optionally `--force`, `--enable`) |
-| [`rollback`](#rollback) | Revert to the previous container image or VM disk generation |
-| [`rules`](#rules) | Report a filtered VM's effective egress rules for a host, or enumerate them |
-| [`secret`](#secret-management) | Manage encrypted systemd credentials (subcommands: `create list show rotate delete export import`) |
-| [`shell`](#shell) | Open an interactive shell in a container or VM (SSH or serial console) |
-| [`start`](#start) | Start a workload service without changing its `enabled` state |
-| [`stats`](#stats) | Show live CPU/memory/I/O usage |
-| [`status`](#status) | Show systemd service status |
-| [`stop`](#stop) | Stop a workload service without changing its `enabled` state |
-| [`update`](#update) | Pull the latest image (or rebuild VM disk) and restart with auto-rollback |
-| [`validate`](#validate) | Validate a workload TOML for syntax and semantic errors |
+| [`backup`](#backup) | Archive a workload's `data/`, TOML and referenced secrets to a `.tar.zst` |
+| [`build`](#build) | Build a container workload's image from its bundle build context |
+| [`catalog`](#catalog) | List the bundles the package ships |
+| [`cleanup`](#cleanup) | Find, and with `--apply` remove, users, directories and SELinux modules no TOML declares |
+| [`cp`](#cp) | Copy files into or out of a running container |
+| [`create`](#create) | Write a container workload's TOML from flags |
+| [`diagnose`](#diagnose) | Run the host-setup checks for one workload, with a fix for each failure |
+| [`disable`](#disable) | Stop a workload and stop it starting at boot; `--purge` removes its user and data |
+| [`doctor`](#doctor) | One report: generator log, unit states, setup checks, drift, health, egress counters |
+| [`drift`](#drift) | Diff the running units and loaded egress policies against what the TOML gives now |
+| [`duplicate`](#duplicate-alias-clone) / `clone` | Copy a workload's TOML under a new name |
+| [`edit`](#edit) | Edit the TOML, or override one of the bundle's control files |
+| [`egress`](#egress) | Read a filtered workload's per-request egress record |
+| [`enable`](#enable) | Provision a workload and start it, now and at every boot |
+| [`exec`](#exec) | Run a command inside a container, or in a VM over SSH |
+| [`health`](#health) | Liveness verdict for a workload; exits 0 or 1 |
+| [`images`](#images) | List workload images, or prune unreferenced ones |
+| [`incant`](#incant) | Run a raw podman command as the workload user, or a QMP command on a VM |
+| [`info`](#info) | Show a workload's configuration, user, network, storage and service; `--files` for its control files |
+| [`init`](#init) | Stamp a bundle, or a blank stub, into `/etc/workloads.d/` |
+| [`install`](#install) | Copy a local workload directory into `/etc/workloads.d/` |
+| [`list`](#list) | List every workload with its enabled and running state |
+| [`logs`](#logs) | Show a workload's journal |
+| [`pcap`](#pcap) | Capture a workload's packets from the host or guest vantage |
+| [`reboot`](#reboot) | Soft-reboot the systemd inside a container or VM |
+| [`recreate`](#recreate) | Regenerate a workload's units and restart it on them, applying TOML edits |
+| [`restart`](#restart) | Restart a workload on its existing units, without applying TOML edits |
+| [`restore`](#restore) | Restore a workload from a `backup` archive |
+| [`rollback`](#rollback) | Go back to the previous container image or VM disk generation |
+| [`rules`](#rules) | Report a filtered workload's effective egress rules |
+| [`secret`](#secrets) | Manage sealed credentials: `create`, `list`, `show`, `rotate`, `delete`, `export`, `import` |
+| [`shell`](#shell) | Open a shell in a container, or in a VM over SSH or its serial console |
+| [`start`](#start) | Start a workload without changing whether it starts at boot |
+| [`stats`](#stats) | Show CPU, memory and I/O usage |
+| [`status`](#status) | Show a workload's systemd status, or every workload's |
+| [`stop`](#stop) | Stop a workload without changing whether it starts at boot |
+| [`update`](#update) | Pull new images, or rebuild a VM's system disk, and restart; containers roll back on failure |
+| [`validate`](#validate) | Check a TOML against the schema and the host |
 
 ---
 
-## Global Options
+## Global options
 
 ```
-workloadctl [-h] <command> [options]
+workloadctl [-h] [--version] <command> [options]
 ```
 
----
+`--version` prints the version and exits. `workloadctl <command> -h` prints
+one command's options.
 
-## Output Options on Mutating Commands
+Exit status is 0 on success and 1 on failure. A command line the parser
+rejects, such as an unknown flag or a missing argument, prints the usage and
+exits 2. Exit statuses particular to one command are given under it.
+
+## Naming a container
+
+A multi-container workload ([Several containers in one
+workload](manual/04-containers.md#several-containers-in-one-workload)) has
+one name per container. These commands act on one container when you name
+it as `<workload>/<container>`:
+
+```bash
+workloadctl logs blog            # every container, merged in time order
+workloadctl logs blog/db         # one container
+sudo workloadctl exec blog/db psql -U app
+sudo workloadctl shell blog/web
+sudo workloadctl cp blog/web:/etc/nginx/nginx.conf ./nginx.conf
+sudo workloadctl health blog     # one row per container
+```
+
+`exec`, `shell` and `cp` need the container named when a workload has more
+than one; a bare workload name is refused with the list of containers.
+`logs` and `health` cover every container unless you name one. `pcap` needs
+one only for a guest capture in `bridge` mode. Every other command acts on
+the whole workload.
+
+## Quiet and JSON output
 
 `build`, `disable`, `enable`, `reboot`, `recreate`, `restart`, `rollback`,
-`start`, `stop` and `update` each take two output flags. They are offered only
-on these verbs because only these verbs *narrate* — the read/report commands
-(`list`, `status`, `drift`, …) print output rather than progress, and have
-carried their own `--json` for a long time.
+`start`, `stop` and `update` print progress as they go, and take two flags
+that change that:
 
 | Flag | Effect |
-|------|--------|
-| `-q`, `--quiet` | Drop the progress narration. Warnings and errors still print, on stderr — `--quiet` silences the commentary, never a failure. |
-| `--json` | Print a JSON result object on stdout instead of the narration, so `workloadctl update --all --json \| jq` is safe. |
+|---|---|
+| `-q`, `--quiet` | Drop the progress lines. Warnings and errors still print, on stderr. |
+| `--json` | Print one JSON result object on stdout instead of the progress lines. |
 
-Progress goes to stdout, warnings and errors to stderr, so the two survive a
-redirect (`workloadctl update --all >run.log 2>errors.log`).
+Progress goes to stdout and warnings and errors to stderr, so
+`workloadctl update --all >run.log 2>errors.log` keeps them apart. What a
+command was asked to produce, such as a `--dry-run` plan or `rollback
+--list`'s targets, is not progress: `--quiet` still prints it, and `--json`
+puts it in the result object.
 
-A command's *output* — a `--dry-run` plan, `rollback --list`'s targets — is not
-narration and is never suppressed: with `--quiet` it still prints, and with
-`--json` it moves into the result object.
+The report commands (`list`, `status`, `drift` and the rest) have a `--json`
+of their own, which prints that report as JSON; its shape is given under
+each command.
 
 ### The result object
 
-Every mutating verb reports the same shape, so a script can treat them alike:
+Every one of those ten commands reports in the same shape:
 
 ```console
 $ sudo workloadctl update --all --json
@@ -117,184 +152,113 @@ $ sudo workloadctl update --all --json
 }
 ```
 
-- `ok` is the command's overall verdict, and tracks the exit code. A rollback is
-  a *handled* outcome, not a failure: auto-rollback working as designed leaves
-  `ok: true` and exit 0. A failed pull, or a VM rebuild that didn't come back,
+- `ok` is the overall verdict and matches the exit status. A rollback is a
+  handled outcome, not a failure: an update that rolled back leaves `ok:
+  true` and exits 0. A failed pull, or a VM rebuild that did not come back,
   gives `ok: false` and exit 1.
-- `result` per workload is one of `enabled`, `already-running`, `disabled`,
-  `purged`, `started`, `stopped`, `restarted`, `rebooted`, `recreated`, `built`,
-  `updated`, `unchanged`, `skipped`, `failed`, `rolled-back`, `listed`, or
+- `result` is one of `enabled`, `already-running`, `disabled`, `purged`,
+  `started`, `stopped`, `restarted`, `rebooted`, `recreated`, `built`,
+  `updated`, `unchanged`, `skipped`, `failed`, `rolled-back`, `listed` or
   `dry-run`.
-- `reason` explains a `skipped` or `failed` row; `verify` carries the
-  post-restart health verdict; `images` the per-container old→new image IDs.
-- `summary` (update only) counts the rows by result.
-- A command that dies before it can report — bad arguments, not root, an
-  unexpected crash — still emits the document, with `ok: false` and an `error`
-  string. The human-readable diagnostic is on stderr, as always.
+- Other keys on a row, where the command has them: `service`, the unit
+  acted on; `reason`, why a row is `skipped` or `failed`; `errors`, the
+  teardown steps `disable` could not complete; `verify`, the health verdict
+  after an update's restart; `images`, each container's old and new image
+  ID; `plan`, the steps of a `--dry-run`; `purge`, on a `disable --dry-run`;
+  `targets`, on `rollback --list`.
+- `summary` counts the rows by result, on `update --all` only.
+- A command that fails before it can report, because it is not run as root,
+  the workload does not exist or something unexpected went wrong, still
+  prints the object, with `ok: false`, an empty `workloads` and an `error`
+  string. The diagnostic itself is on stderr.
+
+## The operations log
+
+Every command that changes a workload appends one JSON line to
+`/var/lib/workloads/<name>/operations.log`, with or without `--json`: the
+command's result row for that workload, plus the time in UTC, the command,
+whether it succeeded, and who ran it. The ten commands above write there,
+and so do `create`, `init`, `duplicate`, `install`, `edit`, `backup`,
+`restore` and a `cp` into a workload. A command that changed nothing writes
+nothing. [The operations log](manual/09-operating.md#the-operations-log)
+describes the fields and what the log is and is not.
 
 ---
 
-## The Operations Log
-
-Every command that changes a workload appends one JSON object per touched
-workload to `/var/lib/workloads/<name>/operations.log`, whether or not you passed
-`--json`. It answers the question the journal can't: not *that* someone ran
-`workloadctl update web` — `sudo` already logs that — but what the update
-actually did.
-
-That covers the lifecycle verbs (`enable`, `disable`, `start`, `stop`,
-`restart`, `recreate`, `reboot`, `build`, `update`, `rollback`) and the ones that
-author or rewrite a workload (`create`, `init`, `duplicate`, `install`, `edit`,
-`backup`, `restore`, `cp` *into* a workload). Two stay out by design: `secret`,
-whose credstore is host-global and belongs to no single workload, and `cleanup`,
-which reaps orphans — workloads whose config is already gone, leaving nothing to
-own the record.
-
-```console
-$ sudo tail -1 /var/lib/workloads/web/operations.log | jq
-{
-  "ts": "2026-07-13T18:04:22Z",
-  "command": "update",
-  "ok": true,
-  "user": "ben",
-  "user_source": "login",
-  "workload": "web",
-  "kind": "container",
-  "result": "rolled-back",
-  "verify": "crashed",
-  "images": {
-    "web": {
-      "image": "docker.io/library/nginx:alpine",
-      "old": "sha256:1f2e3d4c5b6a",
-      "new": "sha256:9a8b7c6d5e4f"
-    }
-  }
-}
-```
-
-Each line is the `--json` result row plus `ts`, `command`, `ok`, `user` and
-`user_source` — the same dict, so the log and `--json` cannot drift apart.
-
-`user_source` says how much to trust `user`:
-
-| Source | Means | Notes |
-|--------|-------|-------|
-| `login` | The kernel's audit loginuid (`/proc/self/loginuid`) | The human who logged in, even several privilege hops later. Survives `su -`, which `SUDO_USER` does not, and is the one field here that userspace cannot forge. |
-| `sudo` | `$SUDO_USER` | Fallback when the kernel has no audit support. Just an environment variable, so spoofable — which costs nothing, since root can rewrite this file anyway. |
-| `system` | No login session at all | A systemd unit, a timer, cron. Distinguishing this from a person at a root console is why `loginuid` is consulted first. |
-
-- **It is a record, not an audit trail.** Only root can run these verbs, and
-  root can equally edit or delete the file. It is not tamper-evident and is not
-  offered as a security control.
-- **It lives beside the workload**, not in a host-global file. Lines lead with a
-  UTC timestamp, so `cat /var/lib/workloads/*/operations.log | sort` still gives
-  a host-wide timeline.
-- **Backup skips it.** Only `data/` is captured, so a restore doesn't import
-  another host's history into a fresh workload.
-- **`disable --purge` deletes it** along with the rest of the workload
-  directory. The workload is gone; its history goes with it.
-- **Nothing that changed nothing is recorded.** Dry-runs and reports
-  (`--dry-run`, `rollback --list`), and — this is the one that matters — an
-  `update` that found the image already current. `update --all` is the verb most
-  likely to be on a timer, and a quiet fleet must leave the log exactly as it
-  found it rather than burying its own history under one "nothing happened" line
-  per workload per run.
-- **Writing is best-effort.** If the workload doesn't exist at all, the command
-  warns on stderr and carries on. A log line that didn't land is never why an
-  operation fails.
-
-There is no rotation, and with no-ops excluded it doesn't need one: a line per
-*real* change is a few kilobytes a year.
-
----
-
-## Targeting a Container in a Multi-Container Workload
-
-A workload may run more than one container (see [Multi-Container Workloads](workloads.md#multi-container-workloads)). Commands that operate on a container — `exec`, `shell`, `logs`, `health` — accept either the workload alone or a `<workload>/<container>` reference:
-
-```bash
-workloadctl logs   myapp           # merged logs from every container
-workloadctl logs   myapp/web       # just the "web" container
-workloadctl exec   myapp/db psql   # exec into a specific container
-workloadctl shell  myapp/proxy     # shell in a specific container
-workloadctl health myapp           # per-container health table
-```
-
-For multi-container workloads, `exec` and `shell` **require** the `<workload>/<container>` form — a bare `<workload>` errors and lists the available containers. `logs` and `health` accept both forms.
-
-Lifecycle commands (`enable`, `disable`, `start`, `stop`, `restart`, `recreate`, `reboot`, `update`, `rollback`) always operate on the whole workload. For **container** workloads, `update` pulls every container's image and `rollback` reverts them all. For **VM** workloads, `update` rebuilds the system disk from its image source and `rollback` restores the previous disk generation. `status`, `info`, `stats`, `cp` likewise take a bare workload name.
-
----
-
-## Bundle Commands
-
-Shipped workloads live as **bundles** under `/usr/share/workloadctl/workloads/<bundle>/`,
-each co-locating a template `workload.toml` with its control files (Containerfile,
-`build.sh`, `setup.sh`, `policy.cil`, cloud-init seed). These verbs turn a bundle —
-or an existing workload — into a new authoritative declaration in `/etc/workloads.d/`.
-Control files are **not** copied: the new TOML's resolved `bundle` falls through to
-the shared `/usr` tree until you override something.
+## Creating workloads
 
 ### `catalog`
 
-List shippable bundles.
+List the bundles under `/usr/share/workloadctl/workloads/`, each with its
+substrate.
 
 ```
 workloadctl catalog [--json]
 ```
 
+`--json` prints a list of `{"bundle", "kind"}`, where `kind` is `container`
+or `vm`.
+
 [↑ top](#workloadctl-command-reference)
 
 ### `init`
 
-Instantiate a catalog bundle into `/etc/workloads.d/<name>/workload.toml`.
+Stamp a new workload into `/etc/workloads.d/<name>/workload.toml`.
 
 ```
 sudo workloadctl init <bundle> [--as <name>]
 sudo workloadctl init --scratch <name>
+sudo workloadctl init --scratch-vm <name>
 ```
 
-Stamps the bundle's template `workload.toml` at `/etc/workloads.d/<name>/workload.toml`.
-Control files (Containerfile, `setup.sh`, `policy.cil`, …) are **not** copied —
-they're resolved from `/usr/share/workloadctl/workloads/<bundle>/` at build/enable
-time and automatically inherit package upgrades. Use `workloadctl edit <name> <file>`
-to override individual control files copy-on-write.
+| Argument | Description |
+|---|---|
+| `<bundle>` | The bundle to copy (see `catalog`) |
+| `--as NAME` | The instance's name (default: the bundle's name) |
+| `--scratch NAME` | Write a container stub with no bundle behind it |
+| `--scratch-vm NAME` | Write a VM stub with no bundle behind it |
 
-`--as` names the instance (default: the bundle name). When the instance name diverges
-from the bundle, `init` records `[workload] bundle = "<bundle>"` so the new TOML's
-control-file lookups still resolve to the source bundle's tree.
+Give exactly one of `<bundle>`, `--scratch` and `--scratch-vm`.
 
-See [Bundle-based approach](workloads.md#bundle-approach) for typical workflows.
+From a bundle, `init` copies only the TOML. The bundle's control files (its
+`Containerfile`, `setup.sh`, `policy.cil` and the rest) stay under
+`/usr/share/workloadctl/workloads/<bundle>/` and are read from there, so the
+instance follows package upgrades; `edit <name> <file>` overrides one of
+them. When the instance's name differs from the bundle's, `init` sets
+`[workload] bundle` so the control files still resolve.
 
-`--scratch <name>` creates a self-contained stub with no bundle backing — for novel
-workloads that aren't shipped as bundles. The generated TOML has no `bundle` field and
-resolves all control files from `/etc/workloads.d/<name>/` only. Mutually exclusive
-with the `<bundle>` positional.
+`--scratch` writes a `[container]` stub with `image = "CHANGE_ME"` for you
+to fill in. `--scratch-vm` writes a VM stub that boots Fedora 44 Cloud Base
+with `egress = "open"`, and a starter `cloud-init/user-data` beside it.
+Neither has a bundle, so every control file comes from
+`/etc/workloads.d/<name>/`.
+
+Every form validates the new TOML, prints the result and the next steps,
+and leaves the workload disabled. See [A shipped
+bundle](manual/03-first-workloads.md#a-shipped-bundle).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `duplicate` (alias `clone`)
 
-Copy a live workload's declaration under a new name.
+Copy a workload's TOML under a new name.
 
 ```
 sudo workloadctl duplicate <source> <new>
 ```
 
-The copy's `[workload] bundle` is set to the source's **resolved** bundle
-(`source.bundle or source.name`), so a duplicate-of-a-duplicate still points at the
-original `/usr` bundle. Name uniqueness is the only hard requirement; `duplicate`
-**lints** (warns, never blocks) on host-global settings a verbatim copy inherits —
-published host ports, absolute volume paths, and a mutable image tag shared with
-another enabled workload — which you resolve by editing the copy before enabling it.
+The copy's `[workload] bundle` is the source's own bundle, so a copy of a
+copy still reads the original bundle's control files. The copy is
+validated and left disabled. `duplicate` warns, without refusing, about
+settings two workloads cannot both hold or may not mean to share: published
+host ports, absolute volume paths, an image another workload also runs, and
+secrets the copy now reads too. Edit the copy before enabling it.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `install`
 
-Promote a local workload directory into `/etc/workloads.d/<name>/`. The
-destination name is derived from `[workload].name` in the source `workload.toml`,
-not the source directory name.
+Copy a local workload directory into `/etc/workloads.d/<name>/`.
 
 ```
 sudo workloadctl install <src>
@@ -302,46 +266,47 @@ sudo workloadctl install <src>
 
 | Argument | Description |
 |---|---|
-| `src` | Path to a directory containing `workload.toml` |
+| `<src>` | A directory holding a `workload.toml` |
 
-The entire directory is copied (`.git` and `__pycache__` excluded, file modes
-preserved). Errors if a workload with that name already exists in
-`/etc/workloads.d/`. The source directory is never modified.
+The name comes from `[workload] name` in the TOML, not from the directory.
+The whole directory is copied with its file modes, except `.git`,
+`__pycache__` and an `.enabled` marker, so the installed workload starts
+disabled. `install` refuses a name that already exists and leaves the
+source alone.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `create`
 
-Scaffold a from-scratch workload config (no bundle) at `/etc/workloads.d/<name>/workload.toml`.
+Write a container workload's TOML from flags.
 
 ```
-workloadctl create <name> --image IMAGE [OPTIONS]
+sudo workloadctl create <name> --image IMAGE [options]
 ```
 
 | Argument | Description |
 |---|---|
-| `name` | Workload name: lowercase letters, numbers, hyphens, max 27 chars |
+| `<name>` | Workload name: starts with a letter; lowercase letters, digits and hyphens; at most 27 characters |
 | `--image IMAGE` | Container image (required) |
-| `--gpu {amd,nvidia,none}` | GPU type for hardware acceleration |
-| `--groups GROUP ...` | Additional system groups (e.g., `video render audio kvm`) |
-| `--ports PORT ...` | Port mappings (e.g., `8080:80 8443:443`) |
-| `--network MODE` | Network mode: `pasta` (default), `host`, `none`, or a custom network name |
-| `--volumes VOL ...` | Volume mounts (e.g., `/host/path:/container/path:ro`) |
-| `--device DEVICE ...` | Generic device passthrough (e.g., `/dev/ttyUSB0`) |
-| `--input` | Enable input devices (`/dev/input` + `/dev/uinput`) |
-| `--audio` | Enable audio (`/dev/snd` + auto-mount PulseAudio/PipeWire sockets) |
-| `--systemd {always,true,false}` | Systemd container mode (skips `--init`, adds `KillSignal`) |
-| `--shm-size SIZE` | Shared memory size (e.g., `256m`, `2g`; default: `64m`) |
-| `--cpu-quota PERCENT` | CPU quota (e.g., `50%`, `200%` for 2 cores) |
-| `--cpu-weight WEIGHT` | CPU scheduling weight (1–10000, default 100) |
-| `--memory-max SIZE` | Hard memory limit (e.g., `512M`, `2G`) |
-| `--memory-high SIZE` | Soft memory limit for throttling (e.g., `1.5G`) |
-| `--memory-swap-max SIZE` | Swap limit (`0` to disable) |
-| `--io-weight WEIGHT` | I/O scheduling weight (1–10000, default 100) |
-| `--tasks-max NUM` | Maximum number of tasks/threads |
-| `--enable` | Enable and start the workload immediately after creating the config |
+| `--gpu SPEC` | `amd`, `nvidia`, `intel`, `auto`, `none`, or `nvidia:<index or UUID>` to pin one NVIDIA GPU |
+| `--groups GROUP` | A supplementary group, such as `video`. Repeat per group |
+| `--ports PORT` | A port mapping, such as `8080:80`. Repeat per port. Ignored with `--network host` or `none` |
+| `--network MODE` | `pasta` (default), `host`, `none`, or the name of a podman network |
+| `--volumes VOL` | A volume, such as `/srv/media:/media:ro`. Repeat per volume |
+| `--device DEVICE` | A device to pass through, such as `/dev/ttyUSB0`. Repeat per device |
+| `--input` | Pass through `/dev/input` and `/dev/uinput` |
+| `--audio` | Pass through `/dev/snd` and mount the PulseAudio or PipeWire socket |
+| `--systemd {always,true,false}` | Run the container with systemd as its init |
+| `--shm-size SIZE` | Size of `/dev/shm`, such as `256m` (default: `64m`) |
+| `--cpu-quota PERCENT` | CPU quota, such as `50%`, or `200%` for two cores |
+| `--cpu-weight WEIGHT` | CPU weight, 1 to 10000 (default: 100) |
+| `--memory-max SIZE` | Hard memory limit, such as `512M` |
+| `--memory-high SIZE` | Memory level at which the workload is throttled |
+| `--memory-swap-max SIZE` | Swap limit; `0` disables swap |
+| `--io-weight WEIGHT` | I/O weight, 1 to 10000 (default: 100) |
+| `--tasks-max NUM` | Maximum number of tasks |
+| `--enable` | Enable and start the workload once the TOML is written |
 
-**Example:**
 ```bash
 sudo workloadctl create webserver \
   --image docker.io/nginxinc/nginx-unprivileged:alpine \
@@ -350,295 +315,348 @@ sudo workloadctl create webserver \
   --enable
 ```
 
-See also: [Manual TOML approach](workloads.md#manual-toml) and [bootc approach](workloads.md#bootc-approach).
+`create` validates what it wrote. If validation fails it exits 1 without
+enabling anything; fix the TOML with `edit`. Each flag sets the TOML key of
+the same meaning, described in [Container
+workloads](manual/04-containers.md#from-the-command-line) and the [schema
+reference](schema-reference.toml).
+
+[↑ top](#workloadctl-command-reference)
+
+### `edit`
+
+Edit a workload's TOML, or override one of its bundle's control files.
+
+```
+sudo workloadctl edit [-y] <workload>
+sudo workloadctl edit <workload> <file>
+```
+
+| Option | Description |
+|---|---|
+| `<file>` | A control file to override, such as `Containerfile` or `rootfs/etc/app.conf` |
+| `-y`, `--yes` | Apply the edited TOML without asking |
+
+**The TOML.** `edit` opens the TOML in `$EDITOR` (`nano` if unset). If you
+change nothing, it stops there. Otherwise it validates the file. On a
+failure it asks whether to put the previous file back, keeping your edit
+unless you answer `y`, and exits 1. On success it shows the change as a
+diff and, for an enabled workload, asks whether to apply it; `-y` answers
+yes. Applying regenerates the units and restarts the workload (for a VM,
+its setup unit too, which renders a new seed). It does not run a
+container's setup step; for a pet container, or a change that adds an
+egress filter, a credential or a share, answer `n` and run `recreate`
+([Applying a change](manual/09-operating.md#applying-a-change)).
+
+**A control file.** `edit <workload> <file>` copies the shipped file from
+the bundle to `/etc/workloads.d/<name>/<file>` (an empty file if the bundle
+has none) and opens it. The override is kept only if you change it: one
+left identical to the shipped file, or a new file left empty, is
+discarded, so the file goes on following the package. A kept override
+wins for `build`, `enable` and `recreate`. Paths may be nested; absolute
+paths, `..` and symbolic links out of the directory are refused.
+`info --files` lists what can be overridden, and deleting the override
+returns to the shipped file. See [Changing a bundle's
+files](manual/04-containers.md#changing-a-bundles-files).
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-### `build`
-
-Build a container workload's image from its bundle build context — the **merged**
-`/usr` bundle tree with any `/etc/workloads.d/<name>/` overrides laid on top, so an
-overridden `Containerfile` (or a `COPY`-ed asset) actually takes effect. Runs as
-root, building into root's store; `enable`/`recreate` then transfer the resulting
-`pull = never` image to the workload user.
-
-```
-sudo workloadctl build <workload>
-```
-
-Applies to **container** workloads only (VMs provision via `update`/`recreate`). The
-built image is tagged exactly as `[container].image`, so a `pull = never` container
-always matches what was built — there is no separate build tag to drift out of sync.
-What gets built is driven by the optional `[build]` section (see
-[schema-reference.toml](schema-reference.toml)): the built-in `podman build` of the
-merged context by default, or an escape-hatch `[build].script` run against that same
-context. A workload that pulls a published image has nothing to build and says so.
-
-Typical override-and-rebuild flow: `init` → `edit <name> Containerfile` → `build` →
-`recreate` (if already enabled) or `enable`.
-
-[↑ top](#workloadctl-command-reference)
-
----
+## Running workloads
 
 ### `enable`
 
-Run preflight checks, create the workload's `.enabled` marker (`/etc/workloads.d/<name>/.enabled`, which is what tells the generator to emit its units), create the workload user, set up subuid/linger, transfer the image if needed, and start the service.
+Provision a workload and start it, now and at every boot.
 
 ```
-sudo workloadctl enable <workload>
+sudo workloadctl enable [-q] [--json] <workload>
 ```
 
-This is idempotent — safe to re-run if a previous enable was interrupted.
+`enable` creates the workload's `.enabled` marker, runs the pre-flight
+checks, runs its `[host] setup` script and loads its SELinux module if it
+has them, generates its units, creates its user and directories, copies an image
+built on the host into the workload's store, and starts it. If a step fails
+before the start, it removes the marker again, so the workload is left
+disabled.
+
+`enable` is safe to run again. On a workload that is already running it
+brings the units up to date without restarting it (result
+`already-running`); `recreate` applies them. See [Enabling and
+disabling](manual/09-operating.md#enabling-and-disabling).
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `disable`
 
-Stop the workload service and remove its `.enabled` marker (`/etc/workloads.d/<name>/.enabled`), so the generator stops emitting its units.
+Stop a workload and stop it starting at boot.
 
 ```
-sudo workloadctl disable [--purge] [--dry-run] <workload>
+sudo workloadctl disable [--purge] [--dry-run] [-q] [--json] <workload>
 ```
 
 | Option | Description |
 |---|---|
-| `--purge` | Also delete the workload user, home directory, and subuid/subgid entries |
-| `--dry-run` | Print the teardown plan and exit without changing anything |
+| `--purge` | Also delete the workload's user, ID ranges and everything under `/var/lib/workloads/<name>/` |
+| `--dry-run` | Print what would be removed, and change nothing |
 
-`--dry-run` enumerates exactly what teardown would touch — the units it would stop, the generated unit files it would remove, and (with `--purge`) the subuid/subgid entries, the user, and the data directory with its size. It reports only what is actually present, so anything it doesn't list, `disable` won't touch.
+`disable` stops the workload's units, removes its generated unit files,
+runs its `[host] setup` script with the argument `disable`, removes its
+SELinux module, a VM's file-context rule and its share membership, removes
+the `.enabled` marker and stops the workload user's systemd manager. The user,
+its data and the TOML stay, for a later `enable`.
+
+`--purge` also kills the workload user's processes and deletes its runtime
+and decrypted-secret files, the user and its subordinate ID ranges,
+`/var/lib/workloads/<name>/` (data, state and the operations log), its
+egress CA and egress record, and for a VM its runtime directory and its
+entries in the host's firewall sets. The TOML in `/etc/workloads.d/<name>/`
+is never touched.
+
+`--dry-run` lists exactly what is present to remove, with the size of the
+data directory; what it does not list, `disable` does not touch. Teardown
+carries on past a failed step; the failures are listed at the end, the
+result row carries them as `errors`, and the exit status is 1.
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `start`
 
-Start a workload service without changing its `enabled` state.
+Start a workload without changing whether it starts at boot.
 
 ```
-sudo workloadctl start <workload>
+sudo workloadctl start [-q] [--json] <workload>
 ```
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `stop`
 
-Stop a workload service without changing its `enabled` state.
+Stop a workload without changing whether it starts at boot.
 
 ```
-sudo workloadctl stop <workload>
+sudo workloadctl stop [-q] [--json] <workload>
 ```
+
+An enabled workload that is stopped starts again at the next boot.
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `restart`
 
-Bounce a workload service without changing its `enabled` state.
+Restart a workload on the units it has.
 
 ```
-sudo workloadctl restart <workload>
+sudo workloadctl restart [-q] [--json] <workload>
 ```
 
-This restarts the workload's main unit and nothing else. **Container workloads:** the container overlay is preserved. **VM workloads:** the system and data disks and the existing cloud-init seed are preserved — QEMU is power-cycled onto them.
-
-`restart` does **not** apply TOML edits: the unit files are not regenerated and the VM's cloud-init seed is not re-rendered. Use [`recreate`](#recreate) for that.
+`restart` restarts the workload's main unit and nothing else. It does not
+regenerate the units, so it does not apply TOML edits; use
+[`recreate`](#recreate). What survives depends on the workload: a `cattle`
+container is created afresh from its image and loses its writable layer,
+as at every stop; a `pet` container keeps its writable layer; a VM is
+power-cycled onto the same disks and the same cloud-init seed. See
+[Starting, stopping and
+restarting](manual/09-operating.md#starting-stopping-and-restarting).
 
 [↑ top](#workloadctl-command-reference)
 
----
+### `recreate`
 
-### `pcap`
-
-Capture packets from a workload's network vantages. Wraps `tcpdump`, decoding to stdout by default or writing pcapng with `-w`.
+Regenerate a workload's units and restart it on them.
 
 ```
-sudo workloadctl pcap [-i host|guest] [-Q in|out|inout] [-w PATH] [--detach]
-                      [-c N] [--duration D] [--max-size S] [-n] [--json]
-                      [--dry-run] [--list] [--stop] <workload>[/<container>] [FILTER ...]
+sudo workloadctl recreate [-q] [--json] <workload>
 ```
 
-| Option | Description |
-|---|---|
-| `-i`, `--interface` | Vantage: `host` or `guest`. Repeatable (default: `host`) |
-| `-D`, `--list-interfaces` | List this workload's vantages and exit |
-| `-Q`, `--direction` | `in`, `out` or `inout` (default: `inout`) |
-| `-s`, `--snapshot-length` | Bytes kept per packet, or per-vantage as `guest:1500,host:0`. `0` means no truncation |
-| `-w`, `--write` | Write pcapng instead of decoding. `-` is stdout; a directory when capturing more than one vantage |
-| `--detach` | Start the capture and return (requires `-w`) |
-| `-c`, `--packet-count` | Stop after N packets |
-| `-C` / `-W` / `-G` | Rotate at N million bytes / keep N files / rotate every N seconds |
-| `--duration`, `--max-size` | Stop after a wall-clock duration or an output size |
-| `--list`, `--stop` | List or stop detached captures |
-| `--dry-run` | Print the `tcpdump` command that would run |
+`recreate` is how an edited TOML reaches a running workload. It regenerates
+the units, clears any failed state, updates the workload's SELinux file
+contexts and share membership, reruns its setup step, copies an image
+built on the host into its store, and restarts it:
 
-`FILTER` is ordinary tcpdump BPF syntax and everything after the workload is passed through.
+- a `cattle` container is created afresh from its image;
+- a `pet` container's writable layer is first committed to
+  `localhost/workload-snapshot/<name>:<timestamp>` (the newest
+  `snapshot_keep`, default 3, are kept), then the container is replaced;
+- a VM's setup unit renders a new cloud-init seed from the TOML and the VM
+  is power-cycled onto it; its disks are kept.
 
-**Two vantages, and they are not the same traffic.** For a VM the `host` vantage sees the re-originated sockets passt opens on the host, already carrying the workload user's uid; the `guest` vantage sees the guest's own stack before passt touches it. A guest that believes it is talking to `93.184.216.34` and a host socket connecting to an inspector on loopback are the same connection seen from the two ends, and only the `guest` side shows what the guest thinks is happening.
+`recreate` does not validate the TOML first: when the generator rejects
+it, the old units stay and the workload restarts on them. Run `validate`
+before it. `systemctl daemon-reload` is not a substitute, because it does
+not regenerate a workload's units. See [Applying a
+change](manual/09-operating.md#applying-a-change).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `reboot`
 
-Soft-reboot a workload: re-executes systemd (PID 1) and restarts all services inside the guest without destroying its disk. Useful for picking up config changes made inside the workload.
+Soft-reboot the systemd inside a workload.
 
 ```
-sudo workloadctl reboot <workload>
+sudo workloadctl reboot [-q] [--json] <workload>
 ```
 
-**Container workloads:** runs `systemctl soft-reboot` in the container (overlay preserved). Only works with systemd containers (`container.systemd` set).
-
-**VM workloads:** runs the same `systemctl soft-reboot` inside the guest over SSH (the disk is preserved). Requires the VM to be reachable (see `exec`/`shell` IP resolution).
-
-Requires systemd 254+ inside the guest.
+`reboot` runs `systemctl soft-reboot` inside the workload: every service
+inside restarts, and the container or the VM's disk is kept. For a
+container that works only when it runs systemd as its init (`[container]
+systemd`). For a VM it goes over SSH and needs passwordless `sudo` in the
+guest. Either way the workload needs systemd 254 or later inside.
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-### `recreate`
+## Images and updates
 
-Apply a TOML edit (or rebuild a workload). This re-runs the per-workload unit generator, reloads systemd, and restarts the service.
+### `build`
+
+Build a container workload's image from its bundle build context.
 
 ```
-sudo workloadctl recreate <workload>
+sudo workloadctl build [-q] [--json] <workload>
 ```
 
-**Container workloads:** this **destroys the container overlay**, so any state written inside the container is lost.
+`build` runs as root and builds into root's image store, from the merged
+build context: the bundle's directory with any overrides from
+`/etc/workloads.d/<name>/` laid over it, so an edited `Containerfile` or
+`COPY`ed file takes effect. With `[build] script` set, it runs that script
+against the same context instead. The image is tagged with the name the
+TOML gives it; `enable`, `recreate` and `update` copy it into the
+workload's own store.
 
-**VM workloads:** this also restarts the setup oneshot (`workload-<name>-setup.service`) so the cloud-init seed is re-rendered from the current TOML — `[vm.cloud_init].template_vars`, volumes, etc. — before QEMU reboots onto the fresh ISO. The system disk and data disk are preserved. (Restarting only the main VM service would **not** rebuild the seed, because the setup oneshot is `RemainAfterExit=yes` and doesn't re-run on a plain restart.)
-
-Use this whenever you change a workload's TOML and want the change to take effect. A plain `systemctl daemon-reload && systemctl restart workload-NAME.service` is **not** equivalent — daemon-reload only re-runs the systemd shell-generator (which emits a oneshot that won't fire until next boot), so the unit file content keeps its previous values. Inlined fields like `[container.environment]`, `[security.extra_groups]`, resource limits, and image references all need `recreate` to take effect.
-
-Values that flow through `EnvironmentFile=` (`XDG_RUNTIME_DIR`, `HOST_IP`, decrypted `${SECRET:...}` env vars) are re-read on each service start, so for those a plain `systemctl restart` is sufficient.
+A workload that only pulls published images has nothing to build, and
+`build` says so. In a multi-container workload, each container built on
+the host needs a `[containers.build]` block of its own. `build` refuses a
+VM. After a build, `recreate` an enabled workload to run the new image.
+See [Building your own
+image](manual/04-containers.md#building-your-own-image).
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `update`
 
-Pull the latest image and restart the workload.
+Pull new images, or rebuild a VM's system disk, and restart.
 
 ```
-sudo workloadctl update [--force] [--all] [--dry-run] [<workload>]
+sudo workloadctl update [--force] [--dry-run] [-q] [--json] <workload>
+sudo workloadctl update --all [--force] [--dry-run] [-q] [--json]
 ```
 
 | Option | Description |
 |---|---|
-| `--force` | Restart even if the image hasn't changed |
-| `--all` | Update all enabled workloads (skips `pull=never` containers) |
-| `--dry-run` | Print what would be pulled and restarted, without changing anything |
+| `--all` | Update every enabled workload, containers and VMs |
+| `--force` | Restart a container workload even when no image changed |
+| `--dry-run` | Print what would be pulled and restarted, and change nothing |
 
-`--dry-run` names the images it would pull (with the image ID each would roll back to), the workloads it would skip as `pull=never`, and the services it would restart. It does not contact the registry, so it reports the plan rather than predicting whether a pull would actually find a new image.
+**Containers.** `update` pulls each container's image. If none changed,
+it stops there (result `unchanged`). Otherwise it tags each previous image
+as `localhost/workload-rollback/<name>:latest` (with `-<container>` after
+the name in a multi-container workload), snapshots a `pet` container's
+writable layer, and restarts the workload. It then waits for the longest
+`start_period` plus `interval` among the health checks, at least 5
+seconds, and checks every container's health, or that its service is
+still running when it has no health check. A workload that fails is
+rolled back to its previous images, when it had them, and restarted (result
+`rolled-back`).
+With `--all`, every workload is pulled and restarted first, then all are
+checked after one shared wait. A workload whose images are all
+`pull = "never"` is skipped by `--all`, and refused when named alone.
 
-**Container workloads:** Pulls the latest image, restarts, then monitors health checks (or service liveness) and automatically rolls back on failure. With `--all`, all workloads are pulled and restarted first, then verified in a single wait period.
+**VMs.** A `cattle` VM's system disk is rebuilt from its image source, the
+old one kept as `system.qcow2.gen-N`, and the VM is restarted on the new
+one. A `pet` VM is only restarted. Nothing checks the guest afterwards and
+nothing rolls back on its own; check it, and use `rollback` if the new
+disk is bad. `--force` makes no difference to a VM. A downloaded
+`cloud_image_url` is cached under `/var/lib/workloads/<name>/.image-cache/`
+against its checksum, so to move to a newer image, change both
+`cloud_image_url` and `cloud_image_checksum`.
 
-**VM workloads:** Rebuilds `system.qcow2` from the configured image source, rotating the old disk to `system.qcow2.gen-N` for rollback. The VM is restarted after the new disk is ready. `--force` has no effect on VM workloads (disk is always rebuilt). `--all` includes VM workloads; a VM whose rebuild or restart fails is reported in the summary and makes the command exit nonzero (other workloads still run).
+`--dry-run` names, per workload, the images it would pull with the image
+each would roll back to, those it would skip, and what it would restart.
+It does not contact the registry, so it cannot say whether a pull would
+find anything new. With `--json`, each row is `dry-run` with a `plan`.
 
-For `cloud_image_url`, the downloaded image is cached at `/var/lib/workloads/<name>/.image-cache/<filename>` and keyed by `cloud_image_checksum`. `update` only re-downloads when the cached file fails its checksum or is missing — to pull a newer upstream image, update both `cloud_image_url` and `cloud_image_checksum` in the config first.
-
-> **No auto-rollback for VMs.** Unlike container updates, a VM update does not verify guest health after restart and does not auto-rollback on failure. If the new disk fails to boot, restore the previous generation manually with `sudo workloadctl rollback <name>`.
+See [Updating container
+images](manual/09-operating.md#updating-container-images) and, for VMs,
+[Update and rollback](manual/05-vms.md#update-and-rollback).
 
 [↑ top](#workloadctl-command-reference)
-
----
 
 ### `rollback`
 
-Roll back a workload to its previous image or disk generation.
+Go back to the previous container image or VM disk generation.
 
 ```
-sudo workloadctl rollback [--list] <workload>
+sudo workloadctl rollback [--list] [-q] [--json] <workload>
 ```
 
 | Option | Description |
 |---|---|
-| `--list` | List the available rollback targets instead of rolling back |
+| `--list` | List the rollback targets instead of rolling back |
 
-**Container workloads:** Restores the image saved during the last `update` (tagged as `localhost/workload-rollback/<name>:latest`) and restarts the service. Exits with an error if no rollback image exists.
+**Containers.** `rollback` gives each container's saved rollback image the
+name the TOML uses and restarts the workload. It does not check health
+afterwards, and it exits 1 if `update` never saved a rollback image. Only
+one earlier image is kept per container. A `pet` container restarts from
+the container it already has, so run `recreate` afterwards to rebuild it
+from the old image.
 
-**VM workloads:** Restores the latest `system.qcow2.gen-N` saved during the last `update` and restarts the VM. `vm.rollback_keep` (default 2) is the number of *older* generations retained beyond the one created by the current update, so `rollback_keep + 1` generations are kept in total (default: 3). Exits with an error if no generation exists. A `pet` VM never rotates `system.qcow2`, so it has no generations to roll back to.
+**VMs.** `rollback` stops the VM, swaps the newest `system.qcow2.gen-N`
+in as `system.qcow2`, and starts it again. The disk it replaces becomes a
+new generation, so a second `rollback` returns to it. `[vm] rollback_keep`
+(default 2) older generations are kept beside the newest. A `pet` VM has
+no generations.
+
+With `--list --json`, the row is `listed` and carries `targets`. See
+[Rolling back](manual/09-operating.md#rolling-back).
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-### `edit`
-
-Two modes, selected by whether you name a control file.
-
-**Edit the workload TOML** (no file argument) — opens the config in `$EDITOR`,
-validates after saving, shows a diff, and (when the workload is enabled) offers to
-apply the change by regenerating units and restarting. Restores the previous config
-if validation fails.
-
-```
-sudo workloadctl edit [-y] <workload>
-```
-
-| Option | Description |
-|---|---|
-| `-y` / `--yes` | Apply changes without the interactive confirmation prompt |
-
-**Edit a bundle control file** (`<file>` argument) — the copy-on-write override
-ergonomic, mirroring systemd's `systemctl edit`. Seeds `/etc/workloads.d/<name>/<file>`
-from the shipped `/usr` default (or an empty file if the bundle ships none), opens it
-in `$EDITOR`, then keeps the override **only if you actually changed it** — an edit
-byte-identical to the default, or an untouched empty new file, is discarded so it
-never freezes upgrade-tracking. Once kept, the override wins control-file resolution
-for `build`/`enable`/`recreate`. Nested paths (e.g. `rootfs/Containerfile`) are
-allowed; traversal and symlink escapes are rejected.
-
-```
-sudo workloadctl edit <workload> <file>
-```
-
-Use `info --files` to see what can be overridden, `build`/`recreate` to apply it,
-and revert to the shipped default by deleting the override:
-`sudo rm /etc/workloads.d/<name>/<file>`.
-
-[↑ top](#workloadctl-command-reference)
-
----
-
-## Introspection Commands
+## Inspecting workloads
 
 ### `list`
 
-List all workloads and their enabled/running state.
+List every workload in `/etc/workloads.d/`, enabled or not.
 
 ```
 workloadctl list [--json]
 ```
 
+Each row has the workload's name, whether it is enabled, its state, image
+ID, published ports and image. A VM whose setup or build unit failed shows
+as `failed`, with a warning naming the unit. `--json` prints
+`{"workloads": [...]}`, each entry with `name`, `kind`, `enabled`, `state`,
+`mode`, `containers`, `image`, `image_id`, `ports`, `username` and `uid`.
+
 [↑ top](#workloadctl-command-reference)
 
 ### `status`
 
-Show the systemd service status for a workload.
+Show a workload's systemd status.
 
 ```
-workloadctl status [--json] <workload>
+workloadctl status [--json] [<workload>]
 ```
 
-| Option | Description |
-|---|---|
-| `--json` | Output state, PID, memory, and timestamps as JSON |
+With a workload, `status` runs `systemctl status` on its main unit, on a
+VM's setup and build units as well, and on every unit of a multi-container
+workload. It first warns when the TOML is newer than the units, when the units came from
+another workloadctl build, and when the workload runs in the host's user
+namespace. Without a workload it is `list`.
+
+`--json` prints `workload`, `service`, `state`, `enabled`, `active_since`,
+`main_pid`, `memory_current`, `tasks_current`, `result`, `config_stale`,
+`units_generated_by`, `host_userns` and `state_deployment`, and for a
+multi-container workload `mode` and `containers`.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `info`
 
-Show detailed workload information: config, user, UID, subuid/subgid ranges, home directory, image, ports, volumes.
+Show a workload's configuration and what it has on the host.
 
 ```
 workloadctl info [--json] <workload>
@@ -647,336 +665,362 @@ workloadctl info --files [--json] <workload>
 
 | Option | Description |
 |---|---|
-| `--files` | Show the **merged control-file view** instead: every control file (Containerfile, `setup.sh`, `policy.cil`, …) from the shipped `/usr` bundle, unioned with any `/etc/workloads.d/<name>/` overrides — each tagged with its winning source: `override` (your `/etc` copy), `shipped` (the `/usr` default), or `missing` (declared but absent). The `systemctl cat` analogue for bundle control files; nested paths are shown. Edit any of them with `edit <workload> <file>`. |
-| `--json` | Output as JSON |
+| `--files` | List the bundle's control files and which copy of each wins |
+| `--json` | Print the same as a JSON object |
+
+For a container workload, `info` shows its containers and images, its
+user (UID, home, groups, subordinate ID ranges), its network mode, ports
+and the addresses they answer on, the size of its home, and its service
+state. For a VM it shows memory, vCPUs, image source, disks, rollback
+generations, the guest's addresses as `qemu-guest-agent` reports them, and
+QEMU's run state.
+
+`--files` merges the control files shipped in the bundle with the
+overrides in `/etc/workloads.d/<name>/` and tags each with where it comes
+from: `override` (your copy), `shipped` (the bundle's), `absolute` (a
+`[host] setup` given as an absolute path), `missing` (named but absent) or
+`invalid`. Nested paths are included. Edit any of them with `edit
+<workload> <file>`.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `logs`
 
-View workload logs via `journalctl`.
+Show a workload's journal.
 
 ```
-workloadctl logs [-f] [-n N] [--since TIME] <workload>[/<container>] [extra journalctl args]
+workloadctl logs [-f] [-n N] [--since TIME] <workload>[/<container>] [journalctl args...]
 ```
 
 | Option | Description |
 |---|---|
-| `-f` / `--follow` | Stream live log output |
-| `-n N` / `--lines N` | Show last N lines |
-| `--since TIME` | Show logs since TIME (journalctl format, e.g., `"1 hour ago"`) |
+| `-f`, `--follow` | Follow new entries |
+| `-n N`, `--lines N` | Show the last N lines |
+| `--since TIME` | Start at TIME, in `journalctl`'s format, such as `"1 hour ago"` |
 
-A container given the host's journal socket sets its own entries' identifier
-and priority: the bundles that run systemd as PID 1 forward their journal
-through it. journald stamps `_UID` and `_SYSTEMD_UNIT` from the sender, which
-no client can set, and `logs` selects a workload by its `_UID`; alloy labels
-each entry with both.
+Without `-f`, `-n`, `--since` or any `journalctl` argument, `logs` shows
+the last 50 lines. Everything after the workload is passed to `journalctl`
+unchanged, so `workloadctl logs web -b -p err` works, and `-f`, `-n` and
+`--since` mean the same there. For a container workload `logs` selects
+the unit's own lines, the containers' output and the entries a systemd
+inside the container forwards; `podman logs` does not work. For a VM it
+shows the VM unit's journal, which holds QEMU's messages, not the guest's.
+See [Logs](manual/09-operating.md#logs).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `stats`
 
-Show live resource usage (CPU, memory, I/O) for a workload or all workloads.
+Show CPU, memory and I/O usage.
 
 ```
-workloadctl stats [--json] [-f] [<workload>]
+sudo workloadctl stats [--json] [-f] [<workload>]
 ```
 
 | Option | Description |
 |---|---|
-| `-f` / `--follow` | Keep updating (live view); incompatible with `--json` and with VM workloads |
-| `--json` | Output raw numeric stats as JSON |
+| `-f`, `--follow` | Keep updating. Not with `--json`, and not for a VM |
+| `--json` | Print `{"stats": [...]}` with raw numbers |
 
-**Container workloads** are measured with `podman stats`. **VM workloads** are measured over QEMU's read-only QMP monitor: CPU percent is derived from the vCPU thread times sampled twice, memory from the guest's balloon against the configured `[vm] memory`. A VM reports `null` for network and block I/O — QEMU is not asked for them, and a zero would read as an idle disk rather than as a gap.
+Without a workload, `stats` covers every enabled workload that is running,
+and `-f` follows only the first. A container's figures are podman's. A
+VM's come from QEMU's read-only monitor: CPU from the vCPU threads' time
+over half a second, memory from the balloon against `[vm] memory`. A VM
+has no network or block I/O figures, and `--json` gives them as `null`,
+not 0. See [Resource usage](manual/09-operating.md#resource-usage).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `health`
 
-Check the health status of a workload container.
+Give a workload's liveness verdict, exiting 0 when healthy and 1 when not.
 
 ```
 workloadctl health [--json] <workload>[/<container>]
 ```
 
+For a single-container workload, `health` checks that the service is
+active, the user exists, the container is running and passes its health
+check, and each published port accepts a connection. For a multi-container
+workload it checks each container's service and that it is running, and
+`/<container>` narrows it to one. For a VM it checks that the service is
+active and the user exists. `--json` prints `workload`, `overall` and
+either `checks` or `containers`. See [Checking
+health](manual/04-containers.md#checking-health).
+
 [↑ top](#workloadctl-command-reference)
 
 ### `images`
 
-List or prune container images for workload users.
+List the images workloads run, or prune unreferenced ones.
 
 ```
-workloadctl images [--json] [list|prune]
+sudo workloadctl images [--json] [list]
+sudo workloadctl images prune
 ```
+
+`list`, the default, shows each container workload's image per container,
+with its size and when it was pulled; VMs have no images. `--json`, for
+`list` only, prints `{"images": [...], "total": N}`, each entry with
+`workload`, `container`, `image`, `size_bytes` and `created`.
+
+`prune` removes every image no tag refers to from every workload user's
+store. Rollback images and pet snapshots are tagged, so it keeps them.
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-## Container Access Commands
+## Getting inside a workload
 
 ### `shell`
 
-Open an interactive shell inside the running workload.
+Open an interactive shell inside a workload.
 
 ```
-sudo workloadctl shell <workload>[/<container>] [--console]
+sudo workloadctl shell [--console] <workload>[/<container>]
 ```
 
-**Container workloads:** Enters the running container. If `CONTAINER_USER` or `CONTAINER_UID` is set in `[container.environment]`, the shell runs as that user; otherwise it enters as root. For multi-container workloads, the `/<container>` suffix is required.
+| Option | Description |
+|---|---|
+| `--console` | VM only: skip SSH and attach to the serial console |
 
-**VM workloads:** Connects over SSH by default (same path as `exec`), so the guest tty inherits the host terminal's window size and signal handling. Falls back to the QEMU serial console via `socat` if the VM has no IP yet or SSH can't connect — press `Ctrl+]` to detach from the console. Pass `--console` to skip the SSH attempt and go straight to the serial console, which is the right tool when the VM is broken enough that the network is unreachable.
+**Containers.** `shell` runs `/bin/bash` in the container, or `/bin/sh` if
+the image has no bash. If `[container.environment]` sets `CONTAINER_USER`
+or `CONTAINER_UID`, the shell runs as that user; otherwise it runs as the
+container's own user.
+
+**VMs.** `shell` logs in over SSH, as [`exec`](#exec) does, so the guest's
+terminal follows your window size and signals. If SSH cannot connect, it
+falls back to the serial console. `--console` goes straight there, which
+works at any point in boot and with the guest's network down. Press
+`Ctrl+]` to detach.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `exec`
 
-Execute a command inside the running workload.
+Run a command inside a workload and return its exit status.
 
 ```
-workloadctl exec <workload>[/<container>] <command> [args...]
+sudo workloadctl exec <workload>[/<container>] [--] <command> [args...]
 ```
 
-**Container workloads:** Runs the command inside the container. For multi-container workloads, the `/<container>` suffix is required.
-
-**VM workloads:** Runs the command over SSH using the per-workload key at `/var/lib/workloads/<name>/state/.ssh/id_ed25519`. The guest user is `[vm].user` from the workload config, defaulting to `workload` — not `root`.
-
-Under passt — the default — the guest has no address of its own to resolve: it is assigned the *host's* address, and `exec`/`shell` reach it on the workload's own management address (`127.128.x.y`, derived from the uid).
-
-On an operator-provided `[vm.network].bridge` the guest does have its own LAN address, and the host infers it from three sources, in descending order of authority:
-
-1. **qemu-guest-agent**, over the `org.qemu.guest_agent.0` virtio-serial channel every VM is wired with. The guest's own answer, so it never goes stale — install and enable `qemu-guest-agent` in the guest to get it. Only the interface carrying the MAC workloadctl assigned the VM is trusted; a guest reports its podman/docker bridges and VPN tunnels too, and those are not addresses the host can reach.
-2. **The host neighbour table**, matched on the VM's derived MAC. Passive — it only lists a guest the host has talked to recently, so a healthy but idle VM can drop out of it.
-3. **mDNS** (`<name>.local`), when the host has avahi/nss-mdns wired up.
-
-If none resolve, `workloadctl shell <name>` still reaches the serial console.
-
-Both substrates pass the command as argv, not as a shell line: the arguments you write are the arguments the process receives, with no second round of word-splitting inside the guest. Shell syntax therefore needs an explicit shell, exactly as it does for a container:
+The `--` is optional. The arguments reach the process exactly as you wrote
+them, with no second round of word splitting, so shell syntax needs an
+explicit shell:
 
 ```bash
-workloadctl exec fedora-vm -- sh -c 'dnf list --installed | wc -l'
+sudo workloadctl exec webserver nginx -t
+sudo workloadctl exec myapp/db psql -U app
+sudo workloadctl exec devbox -- sh -c 'dnf list --installed | wc -l'
 ```
 
-**Examples:**
-```bash
-workloadctl exec webserver nginx -t
-workloadctl exec myapp/db psql -U app
-workloadctl exec fedora-vm -- dnf upgrade -y
-```
+**Containers.** The command runs in the container through the workload
+user's podman.
+
+**VMs.** The command runs over SSH as `[vm] user` (default `workload`),
+with the workload's own key from `/var/lib/workloads/<name>/state/.ssh/`.
+A VM on passt, the default, has no address of its own, so SSH goes to the
+workload's management address: `127.128.0.0` plus the workload user's
+offset from UID 10000, port 2222, reachable only from the host itself. A
+VM on an
+operator-provided `[vm.network] bridge` is reached at its LAN address on
+port 22, which the host learns from three sources, most trusted first:
+
+1. **qemu-guest-agent**, over the virtio-serial channel every VM has. Only
+   the interface with the MAC address workloadctl gave the VM counts; the
+   guest's container bridges and VPN tunnels are not addresses the host can
+   reach. Install and enable `qemu-guest-agent` in the guest to use it.
+2. **The host's neighbour table**, matched on that MAC address. It lists
+   only a guest the host has talked to recently, so an idle VM can drop out
+   of it.
+3. **mDNS**, as `<name>.local`, when the host runs avahi and nss-mdns.
+
+If none answers, `shell <name> --console` still reaches the guest. See
+[Getting into the guest](manual/05-vms.md#getting-into-the-guest).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `cp`
 
-Copy files to or from a running workload container.
+Copy files into or out of a running container.
 
 ```
-workloadctl cp <source> <destination>
+sudo workloadctl cp <workload>[/<container>]:<path> <host-path>
+sudo workloadctl cp <host-path> <workload>[/<container>]:<path>
 ```
 
-Use `workload:path` syntax for container paths:
+Exactly one side names the workload. The host side of the copy runs as
+root, so a root-only source can be copied in, and a copy out lands where
+you asked, owned by root. As with `docker cp`, copying out to an existing
+directory puts the result inside it under its own name; otherwise the
+destination path names it, replacing what is there. `cp` works on
+containers only; for a VM, use `exec` or a shared directory.
 
 ```bash
-workloadctl cp webserver:/etc/nginx/nginx.conf ./nginx.conf
-workloadctl cp ./nginx.conf webserver:/etc/nginx/nginx.conf
+sudo workloadctl cp webserver:/etc/nginx/nginx.conf ./nginx.conf
+sudo workloadctl cp ./nginx.conf webserver:/etc/nginx/nginx.conf
 ```
 
 [↑ top](#workloadctl-command-reference)
 
 ### `incant`
 
-Run a raw command against the workload's runtime **control plane** as the owning identity, with the fiddly invocation supplied for you. This is an escape hatch — it bypasses the declarative TOML → units model, so prefer the purpose-built verbs (`update`, `rollback`, `shell`, `exec`, …) when they cover your use case.
+Run a raw command against a workload's runtime: its podman, or its QEMU
+monitor.
 
 ```
-workloadctl incant <workload>[/<container>] -- <command> [args...]
+sudo workloadctl incant <workload> [--] <command> [args...]
 ```
 
-**Container workloads:** runs `podman <command>` as the owning `_wl-<name>` user with the correct rootless environment (`XDG_RUNTIME_DIR`/session bus) — you never hand-build the `sudo … podman` invocation yourself.
+`incant` works around the TOML rather than through it: what it changes is
+not recorded in the TOML or the operations log, and the next `recreate` or
+reboot restores what the units describe. Prefer the purpose-built commands
+where one fits, and use `exec` and `shell` for anything inside the
+workload.
 
-**VM workloads:** sends a QMP command to the QEMU monitor. The first token after `--` is the QMP command name; additional `key=value` tokens become the arguments dict. The JSON reply is printed.
+**Containers.** `incant` runs `podman <command>` as `_wl-<name>`, with the
+runtime directory, home and session bus set.
 
-> **Note:** `incant` reaches the *manager* of the runtime (podman / the QEMU monitor), not the workload interior. To run a command *inside* the workload, use `exec`/`shell`.
+**VMs.** The first word is a QMP command and each `key=value` after it
+becomes an argument, passed as a string. `incant` prints QEMU's JSON reply
+and exits 1 if it is an error.
 
-**Examples:**
 ```bash
-workloadctl incant webproxy -- network create mynet
-workloadctl incant webproxy -- volume ls
-workloadctl incant git -- query-status        # VM: QMP command
-workloadctl incant git -- system_powerdown     # VM: QMP command
+sudo workloadctl incant webproxy -- network create mynet
+sudo workloadctl incant webproxy -- volume ls
+sudo workloadctl incant devbox -- query-status
+sudo workloadctl incant devbox -- system_powerdown
 ```
+
+**By hand.** The container form is `sudo -n -u _wl-<name>` with three
+variables set: `XDG_RUNTIME_DIR=/run/user/<uid>`,
+`HOME=/var/lib/workloads/<name>/state`, where the workload's image store
+lives (pointed anywhere else, podman reads an empty store and reports
+nothing), and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus`,
+without which `podman exec` later fails on `cgroup.procs: Permission
+denied`. The VM form must answer QMP's greeting before any command, on a
+socket in a `0750` directory owned by the workload user:
+
+```bash
+sudo sh -c 'printf "%s\n%s\n" \
+    "{\"execute\":\"qmp_capabilities\"}" \
+    "{\"execute\":\"query-status\"}" \
+  | socat -t2 - UNIX-CONNECT:/run/workload-vm/devbox/qmp.sock'
+```
+
+See [Working in a workload's
+podman](manual/09-operating.md#working-in-a-workloads-podman).
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-## Validation & Diagnostics
+## Checking and repairing
 
 ### `validate`
 
-Validate a workload's TOML configuration for syntax and semantic errors.
+Check a workload's TOML against the schema and against the host.
 
 ```
-workloadctl validate [--all] [--json] [<workload>]
+workloadctl validate [--json] <workload>
+workloadctl validate --all [--json]
 ```
 
 | Option | Description |
 |---|---|
-| `--all` | Validate all workload configs |
-| `--json` | Output results as JSON |
+| `--all` | Validate every workload in `/etc/workloads.d/` |
+| `--json` | Print the results as JSON |
+
+`validate` exits 1 if any workload fails. Some checks, such as whether the
+secrets a TOML references exist, see more as root. `--json` prints
+`workload`, `passed`, `errors`, `warnings` and `checks` (each `check`,
+`passed`, `severity`, `message`); with `--all`, `{"validation_results":
+[...], "all_passed": ...}`.
+
+[↑ top](#workloadctl-command-reference)
+
+### `drift`
+
+Diff what is running against what the TOML gives now.
+
+```
+workloadctl drift [--json] [<workload>]
+```
+
+| Argument | Description |
+|---|---|
+| `<workload>` | Compare only this workload (default: every workload) |
+| `--json` | Print the differences as JSON |
+
+`drift` generates every workload's units into a scratch directory and
+compares them with those in `/run/systemd/system/`. It also compares each
+filtered workload's egress policy, as its inspector loaded it at start,
+with the policy its TOML renders now, and for each that differs prints the
+`systemctl restart workload-<name>-inspect.socket` that reloads it. It
+prints a unified diff per difference and exits 1, or prints `No drift
+detected` and exits 0. It changes nothing. Run it as root: the loaded
+policies are readable only by root and the workload user, and a non-root
+run skips them.
+
+`--json` prints `{"drifted": ..., "units": [...], "documents": [...]}`,
+where each unit is `{"unit", "drifted", "diff"}` and each policy is
+`{"document", "drifted", "diff"}`. See [Drift](manual/09-operating.md#drift).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `diagnose`
 
-Diagnose a workload's runtime setup: user exists, subuid/subgid configured, linger active, SELinux label correct.
+Check a workload's setup on this host, with a fix for each failure.
 
 ```
-workloadctl diagnose [--json] <workload>
+sudo workloadctl diagnose [--json] <workload>
 ```
 
-| Option | Description |
-|---|---|
-| `--json` | Output per-check results as JSON; exit non-zero if any check failed |
+`diagnose` checks the workload's user, home and subordinate ID ranges, its
+user manager and runtime directory, SELinux modules and labels, images,
+units, volumes, shares and, for a filtered workload, that the filter is in
+force. It prints `✓` or `✗` per check, with a `Fix:` line under each
+failure and a numbered list of failures at the end, and exits 1 if any
+check failed, with or without `--json`. A VM gets a narrower set: it has no
+subordinate IDs or user manager, and has checks of its own for its runtime
+directory, cloud-init and clock.
 
-Useful for diagnosing a workload that fails to start.
-
-**VM workloads get a narrower battery.** The subuid/subgid, linger, user-session,
-`/run/user/<uid>` and container-running checks describe how a *container*
-workload runs; a VM uses no user namespaces and its QEMU is a system service with
-its own runtime directory, so `workload-ensure-user` skips those setup steps for
-`[vm]` bundles and `diagnose`/`doctor` skip the matching checks. What remains —
-identity, home directory, unit files and service state — applies to both
-substrates.
-
-**A running VM gets one more line, `vm_guest_clock`.** The clock keeper
-(`workload-<name>-clock.timer`) puts a paused or suspended guest's clock back
-once a minute, and is deliberately silent about a guest it cannot reach — a
-guest whose image lacks `qemu-guest-agent` is a supported configuration, and a
-timer that said so every minute would be a journal nobody reads. So this is
-where it is said: `diagnose` asks the agent once and fails the line either
-when nothing answers (the fix is in the guest: install the agent) or when the
-offset is past the keeper's five-minute threshold (the fix is on the host: the
-keeper should have acted within a minute of a resume; check its timer). Absent,
-not failed, while the VM is stopped.
-
-**Subid range checks.** Beyond "subuid/subgid configured", two checks assert the
-range is the *right* one. `subid_derived` compares it against the derived range
-for the workload's UID. `subid_overlap` fails if it starts below `SUB_UID_MAX`
-from `/etc/login.defs`, i.e. inside the window `useradd` allocates from; it is
-omitted entirely — not passed — when `/etc/login.defs` cannot be read.
-
-`useradd` reads `/etc/subuid` and skips ranges already listed there, so a range
-inside the window is not an imminent collision. The exposure runs the other way:
-nothing stops *workloadctl* writing over a range a human user already holds, so
-what keeps the two apart is the derivation placing workload ranges above the
-window at all. That makes `subid_derived` the load-bearing check, and the
-residual `subid_overlap` covers is ordering — a workload provisioned after a
-colliding range, or a rollback booting an `/etc/subuid` that never listed it.
-
-Neither can self-heal: `workload-ensure-user` grandfathers an existing entry on
-purpose, because shifting a UID mapping under a running container corrupts its
-namespace. Remap by hand with the workload stopped, and `chown` only `state/` —
-`data/` is owned by the workload UID itself, not out of the subordinate range.
-
-**Two symptoms of a terminating inspector that no check can see.** With
-`[vm.network].tls = "inspect"` (the default) the inspector completes the guest's
-TLS itself, and two things then go wrong quietly enough that `diagnose` stays
-green:
-
-- *A host that requires a **client** certificate* answers `502` naming itself,
-  which is loud. A host that merely **offers** client authentication does not:
-  the session completes, the guest is simply unauthenticated, and the host
-  starts answering its own `401`/`403` — only under termination, while it worked
-  under `splice` and works from anywhere else. Nothing failed, so nothing counts
-  it. If a host regresses that way after a workload starts terminating, give it
-  a `[[vm.network.splice]]` entry; `tls = "splice"` (which needs a
-  `tls_reason`) gives up the other hosts too.
-- *A private root that only the guest trusts.* Verification of the origin now
-  happens on **this host's** anchors, not the guest's, so an internal service
-  signed by a private root answers `502` until that root is installed in
-  `/etc/pki/ca-trust/source/anchors` on the host and `update-ca-trust` has run.
-  Installing it in the guest changes nothing, which is the part that costs an
-  afternoon.
-
-**A host that worked until the day it stopped speaking HTTP.** Under
-termination the guest's connection is refused unless its first bytes parse as an
-HTTP/1.1 request — the `http/1.1` ALPN offer is not enforcement, so a client
-that ignores it is refused rather than relayed. `diagnose` reports those
-closures **per host**, and that report is the list of hosts to give a
-`[[vm.network.splice]]` entry; there is no way to learn it from the file, since
-whether a host speaks HTTP over 443 is only knowable from a connection. If the
-host is one a `[[vm.network.policy]]` entry names, the report says so
-separately — those method and path rules can never run, and splicing the host
-means deleting that entry, because a host in both keys is a `validate` error.
-
-**When the inspector says the CA "is not there" and it plainly is.** The
-listener refuses to start under `tls = "inspect"` without
-`/var/lib/workloadctl/egress/<name>/ca/egress-ca.crt`, and the message names the
-path. If that file exists and is readable by `_wl-<name>`, the problem is not
-the file: `Path.exists()` cannot tell a denied traversal from a missing file, so
-an SELinux label or a sandbox mount failure reads as absence. Check
-`ausearch -m avc -ts recent` for `wlinspect_t`, and that the three PKI
-directories carry their own types, at the workload's level:
-
-```bash
-sudo ls -Zd /var/lib/workloadctl/egress/<name>/{ca,leaves,leaves-denied}
-# ca -> wlinspect_ca_t, both caches -> wlinspect_leaf_t
-```
-
-The policy module types them, and the setup unit stamps the level at each
-boot; `sudo systemctl restart workload-<name>-setup.service` restamps them.
-
-An RPM reinstall drops the `semanage` rules (the same failure mode as the QMP
-socket's), and `restorecon -RF` on the workload tree puts them back once the
-rules are registered. A workload enabled before this version has the rules
-registered by the next `workloadctl enable <name>`.
-
-**Trust anchor check.** `ca_trust_anchors` fails when a certificate in
-`/etc/pki/ca-trust/source/anchors` is absent from the extracted TLS bundle —
-the anchor is installed but grants no trust, so pulls from a registry it signs
-fail `unable to get local issuer certificate` while the trust store looks
-correct. Run for container workloads only, and omitted rather than passed when
-the store cannot be read.
-
-On a bootc host the usual cause is the ostree `/etc` merge: `update-ca-trust`
-writes into `/etc/pki/ca-trust/extracted/`, so a host that has ever run it by
-hand has that path marked locally modified and keeps its own copy forever,
-discarding the image's extraction. New anchor *files* still land; nothing
-extracts them.
-
-The fix depends on whether any anchor is locally added. When they all come from
-the image, restoring `extracted/` from `/usr/etc` is preferred over
-`update-ca-trust` — it brings `ostree admin config-diff` clean, so the merge
-tracks the image again and later anchor rotations apply by themselves. When the
-host carries a hand-added anchor, the check names `update-ca-trust` instead:
-restoring would drop that anchor from the bundle and revoke trust the operator
-installed deliberately.
+`--json` prints `{"workload", "passed", "checks_passed", "checks_total",
+"checks"}`, each check with `check`, `passed`, `message` and, when it
+failed, `fix`. [diagnose: what is wrong with this host's
+setup](manual/10-troubleshooting.md#diagnose-what-is-wrong-with-this-hosts-setup)
+lists every check and links to its remedy; [Is it in force:
+diagnose](manual/06-networking.md#is-it-in-force-diagnose) covers the
+egress checks.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `doctor`
 
-One-shot aggregate diagnosis. Collapses the manual failure-hunt — generator journal → unit states → setup checks → drift → health — into a single skimmable report. Read-only; `doctor` never mutates state.
+Gather everything about one workload into one report.
 
 ```
 sudo workloadctl doctor [--json] <workload>
 ```
 
-| Option | Description |
-|---|---|
-| `--json` | Emit the whole report as one JSON object |
-
-Exit 0 when healthy, 1 when any problem was found, 1 with a one-line reason if the config will not load at all — which is deliberate, since `doctor` is what you reach for when something is *already* broken.
-
-A journal tail is attached only to units that have a problem, so a healthy report stays short. `NRestarts > 0` counts as a problem even when the unit is active: that is the silent restart-loop class which `is-active` alone hides.
-
-For any filtered workload — a VM with `egress = "filtered"`, or a container with a `[network]` trigger — the report gains an **Egress (inspected)** section carrying the inspector's counters: connections by disposition, drop reasons, the minter's figures, and the resolver's where the workload has a responder (a filtered VM, or a filtered container on pasta). Those figures are **evidence, never a verdict**: they add nothing to the problem count, because a workload being denied is the filter working. The inspector's actual faults — a listener enforcing a different policy than the one on disk, a CA mismatch, a missing nft element — arrive through the setup checks like everything else.
+`doctor` reports the generator's lines about the workload from this boot,
+every unit's state with the last 15 journal lines of any that failed, is
+stuck starting or has restarted, the `diagnose` failures, drift, health
+and, for a filtered workload, the inspector's counters. The counters are
+evidence and never count as a problem. It changes nothing. It exits 0 when
+it finds no problem and 1 when it finds one, including a TOML that cannot
+be loaded, which it explains in one line. A masked workload is reported as
+such, with exit 0. `--json` prints the whole report as one object. See
+[doctor: everything at
+once](manual/10-troubleshooting.md#doctor-everything-at-once).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `cleanup`
 
-Find (and optionally remove) orphaned workload users and home directories — system users in the `_wl-*` range whose config file no longer exists.
+Find state that no TOML in `/etc/workloads.d/` declares, and remove it.
 
 ```
 sudo workloadctl cleanup [--apply] [--json]
@@ -984,143 +1028,208 @@ sudo workloadctl cleanup [--apply] [--json]
 
 | Option | Description |
 |---|---|
-| `--apply` | Actually remove orphans (default is dry-run) |
-| `--json` | Output orphan lists and removal results as JSON |
+| `--apply` | Remove what was found (default: only list it) |
+| `--json` | Print the findings and removals as JSON |
 
-**Rollback safety.** On a bootc host `/etc` is per-deployment and `/var` is shared,
-so `bootc rollback` takes a workload's config, `_wl-*` user and subuid range away
-while its `/var/lib/workloads/<name>` tree stays behind — which fits this
-command's definition of an orphan exactly, without the state being orphaned at
-all. Each workload root therefore carries a `provenance.json` naming the
-deployment that last provisioned it (written by `workload-ensure-user`, so it
-appears on the workload's first start). State stamped with a deployment that
-still exists but is not the booted one is listed under **"State from another
-deployment — not swept"** and left alone; boot that deployment and
-`disable --purge` there to remove it for good. State stamped with the booted
-deployment, with a deployment that has since been pruned, or with no stamp at
-all (anything predating this, and any non-bootc host) is treated exactly as
-before. See [ADR 005](adr/005-var-state-deployment-provenance.md) for why the
-marker records *last provisioned* rather than *created*, and what is deliberately
-left out of it.
+An orphan is a `_wl-*` user, a directory under `/var/lib/workloads/`, or a
+loaded `wl_*` SELinux module that no TOML declares. A workload that is only
+disabled still has its TOML and is never touched, and the backups
+directory is never an orphan. `--apply` removes each orphaned user with its
+ID ranges, the user's whole directory under `/var/lib/workloads/` and its
+egress CA, and each orphaned module. `cleanup` is for state that outlived
+its TOML; to remove a workload you still have a TOML for, use `disable
+--purge`, which also removes the egress record, the runtime files and a
+VM's firewall set entries.
 
-[↑ top](#workloadctl-command-reference)
+On a bootc host, state stamped with another deployment that still exists is
+listed under "State from another deployment — not swept" and never
+removed: after a `bootc rollback` it belongs to the deployment you left.
+Boot that deployment and run `disable --purge` there to remove it. See
+[State from another bootc
+deployment](manual/09-operating.md#state-from-another-bootc-deployment) and
+[ADR 005](adr/005-var-state-deployment-provenance.md).
 
----
-
-### `drift`
-
-Diff running systemd units against what would be generated from the current TOMLs. Outputs nothing if units are in sync; exits 1 if drift is detected. Read-only — no changes are applied.
-
-```
-workloadctl drift [--json] [<workload>]
-```
-
-| Option | Description |
-|---|---|
-| `<workload>` | Filter to units belonging to a specific workload (default: all workloads) |
-| `--json` | Output diff as JSON instead of unified diff text |
-
-Useful after editing a TOML without running `recreate`, or to verify that the running units match the current config after a `bootc upgrade`.
+`--json` prints `dry_run`, `orphan_users`, `orphan_dirs`,
+`orphan_modules`, `skipped_other_deployment` (each `name`, `path`,
+`deployment`), `removed_users`, `removed_dirs` and `removed_modules`.
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-## Egress Inspection
+## Network traffic
 
-The pair answers the operator's two questions about one filter: `rules` is what the workload *may* do, `egress` is what it *did*. Both are read-only. See [the walkthrough](vm-egress-walkthrough.md) for how the filter is built.
-
-`egress` reads the record for **either substrate** — a VM with `[vm.network].egress = "filtered"` or a container with a `[network]` trigger — because the inspector is the same binary and the record path is keyed by workload name alone. `rules` is **VM-only for now**: its renderer reads `[vm.network]` and defaults `tls` the VM way. Asked about an inspected container it says so and names the policy document that does exist on disk, rather than claiming the workload has no filter.
+`rules` says what a filtered workload may reach and `egress` what it
+reached. Both work for a filtered VM and a filtered container alike, and
+both need root or the workload's user. [Reading a
+filter](manual/06-networking.md#reading-a-filter) explains them.
 
 ### `rules`
 
-Report a filtered VM's **effective** egress rules — which is not the same as reading its TOML. Host patterns union among themselves, so `*.example.com` and `api.example.com` both govern `api.example.com` and neither overrides the other; and a host any `[[vm.network.policy]]` entry matches is governed by *those entries alone*, with `hosts` not consulted for it. `rules` calls the same matcher the listener does, so the report cannot disagree with the filter.
+Report a filtered workload's effective egress rules.
 
 ```
 sudo workloadctl rules [--json] <workload> [HOST]
 ```
 
-| Option | Description |
+| Argument | Description |
 |---|---|
-| `HOST` | A hostname to ask about. Omit to enumerate every non-wildcard name in the document |
-| `--json` | Print the report as a JSON object |
+| `HOST` | A host name to ask about. Omit it to go through every literal name in the policy |
+| `--json` | Print the report as JSON |
 
-**Two forms, because there is no host set to iterate.** Every host field is an fnmatch pattern, so "the rules per host" has nothing to loop over.
+`rules` calls the inspector's own matcher, so its answer is what the filter
+does, which reading the TOML is not: host patterns combine, and a host any
+`policy` entry matches is governed by those entries alone. Asked about a
+host, it answers even for a name the policy never mentions. Asked with no
+host, it reports every literal name and how many wildcard patterns it did
+not expand.
 
-- The **query** form names a host and reports what applies to it. It answers *why was this denied*, and it works for a name the file does not mention at all.
-- The **enumeration** form walks every non-wildcard name anywhere in the document and gives each the query form's verdict. It says how many wildcards it could not expand, so an all-wildcard document reads as that rather than as "no rules".
-
-Pattern subsumption — which patterns overlap which — is deliberately not computed. Query a name directly to see which wildcards cover it.
-
-The report names which document it read: `/run/workload-vm/_policy/<name>/inspect.json` for a running workload (what the listener was *given*), or a render from `[vm.network]` for one that has not started this boot. Neither is "what the listener is enforcing right now" — a listener started before an edit holds the previous document in memory with both files agreeing. `diagnose` is where that is checked.
+It reads the policy the inspector was given at its last start,
+`/run/workload-vm/_policy/<name>/inspect.json`, or for a workload not
+started this boot renders one from the TOML, and says which. Whether the
+running inspector holds that policy is `diagnose`'s question. `--json`
+prints `workload`, `origin` (`disk` or `config`), `path`,
+`unreadable_policy_elements`, and either `query` or `literals` and
+`wildcards`. `rules` exits 1 for a workload with no inspected egress or a
+policy it cannot read.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `egress`
 
-Read the per-request record the inspector writes for a filtered workload, VM or container: one line per request with its host, method, path, status, upstream address actually dialled, timing, and connection id. The record is private to the host — it is not in the journal, and the workload cannot read it.
+Read a filtered workload's per-request egress record.
 
 ```
-sudo workloadctl egress [-n N] [-g] [--json] [--id ID] [--decision forward|drop]
-                        [--mode forward|terminate|splice] [--plane cleartext|tls]
+sudo workloadctl egress [-n N] [-g] [--json] [--id ID] [--decision {forward,drop}]
+                        [--mode {forward,terminate,splice}] [--plane {cleartext,tls}]
                         [--reason REASON] [--host PATTERN] [--method METHOD]
                         [--status STATUS] [--since TIME] [--until TIME] <workload>
 ```
 
 | Option | Description |
 |---|---|
-| `-n`, `--lines` | Show the last N records; `0` for all (default: 50) |
-| `-g`, `--group` | Group by connection, showing the query and the drop reason |
-| `--json` | Print the record objects verbatim |
-| `--id` | Connection id, as pasted from a journal line. Repeatable |
-| `--decision` | `forward` or `drop`. Repeatable |
-| `--mode` | `forward`, `terminate` or `splice`. Repeatable |
-| `--plane` | `tls` or `cleartext`. Repeatable |
-| `--reason` | Drop reason, or an unambiguous part of one. Repeatable |
-| `--host` | Host, as an fnmatch pattern. Repeatable |
-| `--method`, `--status` | HTTP method / response status. Repeatable |
-| `--since`, `--until` | Time bounds |
+| `-n N`, `--lines N` | Show the last N matching records; `0` for all (default: 50) |
+| `-g`, `--group` | Group records by connection, showing each request's query, drop reason and upstream |
+| `--json` | Print the records as JSON |
+| `--id ID` | A connection id, as it appears in the journal |
+| `--decision` | `forward` or `drop` |
+| `--mode` | `forward`, `terminate` or `splice` |
+| `--plane` | `cleartext` or `tls` |
+| `--reason REASON` | A drop reason, or an unambiguous part of one |
+| `--host PATTERN` | A host, as an fnmatch pattern |
+| `--method METHOD` | An HTTP method |
+| `--status STATUS` | A response status, such as `403`, or a class, such as `4xx` |
+| `--since TIME`, `--until TIME` | A time window: `2h`, `30m ago`, or an ISO date and time such as `2026-10-28T09:00`, local unless it carries an offset |
 
-**Allows are recorded as well as drops.** "What did this agent send" is not answerable from denials alone, and a denied path is evidence too. The journal keeps the decision, the host and the remedy sentence for an operator watching in real time; the record keeps the per-request detail.
+Every filter except the time window can be repeated. The record has one
+line per request, allowed or refused: time, connection id, decision, mode,
+host, method and path, status and duration. It lives in
+`/var/log/workloadctl/egress/<name>/`, is not in the journal and cannot be
+read by the workload. Bodies are never recorded.
 
-Bodies are never recorded, and records are redacted at construction rather than at rendering — a record redacted on the way to the screen is one `--verbose` away from being the thing it was written not to be.
+The record belongs to the workload, not to one container. Every container
+in a `pod` or `bridge` workload runs as the same user, so a line says the
+workload sent the request. When that distinction has to be structural, give
+the container a workload of its own.
 
-**The record is per workload, not per container.** For a `single`-mode container or a VM that is the same statement. For a `pod`- or `bridge`-mode workload it is not: every container in it runs under the one `_wl-<name>` uid and shares one netns or one network, so the inspector has no identity to tell them apart with. A line says *this workload* asked for that. `host`, `path` and the connection id usually separate the members in practice; when the distinction has to be structural, give the sandboxed container its own workload, which gives it its own uid, policy, record and broker instance.
+`--json` prints `{"workload", "generations", "limit", "truncated",
+"records", "malformed"}`; `truncated` says that `-n` left records out.
+`egress` exits 1 for a workload with no inspected egress or a record it
+cannot read, and 2 for a filter value that cannot match anything.
+
+[↑ top](#workloadctl-command-reference)
+
+### `pcap`
+
+Capture a workload's packets with tcpdump.
+
+```
+sudo workloadctl pcap [-i VANTAGE] [-Q {in,out,inout}] [-s SPEC] [-w PATH]
+                      [--detach] [-c N] [-C N] [-W N] [-G N] [--duration D]
+                      [--max-size S] [-n] [-q] [--json] [--dry-run]
+                      <workload>[/<container>] [FILTER ...]
+sudo workloadctl pcap -D <workload>
+sudo workloadctl pcap --list
+sudo workloadctl pcap --stop <workload>
+```
+
+| Option | Description |
+|---|---|
+| `-i`, `--interface VANTAGE` | `host` or `guest`. Repeat for both (default: `host`) |
+| `-D`, `--list-interfaces` | List the workload's vantages, and why any is missing |
+| `-Q`, `--direction` | `in`, `out` or `inout` (default: `inout`) |
+| `-s`, `--snapshot-length SPEC` | Bytes kept per packet, or per vantage as `guest:1500,host:0`; `0` keeps whole packets (default: 1500) |
+| `-w`, `--write PATH` | Write the capture to a file instead of decoding it; `-` is stdout; with two vantages, a directory |
+| `--detach` | Start the capture and return; needs `-w` to a path |
+| `-c`, `--packet-count N` | Stop after N packets |
+| `-C`, `--rotate-size N` | Start a new file every N million bytes |
+| `-W`, `--file-count N` | Keep at most N rotated files, reused as a ring |
+| `-G`, `--rotate-seconds N` | Start a new file every N seconds |
+| `--duration D` | Stop after D, such as `30s` or `1h`; `0` for no limit (default: `5m`) |
+| `--max-size S` | Stop at S, such as `2G` (default: `100M`) |
+| `-n` | Do not resolve addresses to names |
+| `-q`, `--quiet` | Drop the progress lines; warnings and errors still print |
+| `--json` | Print a JSON result object; needs `-w` to a path |
+| `--dry-run` | Print the plan, including the firewall rule it would add, and change nothing |
+| `--list` | List the captures running on this host |
+| `--stop` | Stop the capture running on the workload |
+
+`FILTER` is a tcpdump expression; everything after the workload is passed
+on as it is. Only a container's guest vantage can apply one, and a VM's
+guest vantage cannot honour `-Q` or rotation either; a request a vantage
+cannot honour is refused rather than half applied.
+
+The host vantage sees the host sockets opened on the workload's behalf,
+which for a filtered workload shows ports 80 and 443 already redirected to
+its inspector. The guest vantage sees the workload's own packets before
+passt or pasta translated them. The capture runs as the transient unit
+`workload-pcap-<name>.service`, which removes its firewall rule when it
+stops; without `--detach`, `pcap` follows it until you press Ctrl-C. The
+host vantage needs `tcpdump`. Starting and stopping a capture needs root;
+`-D`, `--list` and `--dry-run` do not. See [Capturing
+packets](manual/06-networking.md#capturing-packets).
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-## Data Management
+## Backup and restore
 
 ### `backup`
 
-Archive a workload's precious `data/` subtree, referenced credentials, and config to a compressed tarball (`.tar.zst`).
+Archive a workload's `data/`, its TOML and the secrets it references.
 
 ```
-sudo workloadctl backup [--json] [--all] [--output PATH] [--consistency {cold,crash}] [<workload>]
+sudo workloadctl backup [--json] [--consistency {cold,crash}] [-o PATH] <workload>
+sudo workloadctl backup --all [--json] [--consistency {cold,crash}] [-o DIR]
 ```
 
 | Option | Description |
 |---|---|
-| `--all` | Back up all enabled workloads |
-| `--output PATH` | Directory to write archive(s) to (default: current directory) |
-| `--consistency {cold,crash}` | Consistency level (default `cold`). `cold` stops the service, copies, then restarts — always safe. `crash` copies without stopping the service: for VMs the vCPUs are paused via QMP for the copy (crash-consistent, resume-safe); for containers the rootfs/volumes are copied live (may be inconsistent). |
-| `--json` | Output archive paths and sizes as JSON instead of printing progress |
+| `--all` | Back up every workload in `/etc/workloads.d/`, enabled or not |
+| `-o`, `--output PATH` | A file to write, or a directory to write into; with `--all`, a directory (default: `/var/lib/workloads/backups/`) |
+| `--consistency {cold,crash}` | `cold` (default) stops the workload for the copy and starts it again; `crash` copies it running, pausing a VM's vCPUs through QMP for the copy |
+| `--json` | Print the archives and their sizes as JSON instead of progress |
 
-**Backup stops at mount points.** Anything mounted inside `data/` — a network
-share, a second disk, a bind mount — is skipped, with a warning naming each path,
-because capturing it would pull a whole foreign filesystem into the archive and
-`restore` would refuse to write it back. Whatever owns the mount owns its backup.
-See [Mounts under `data/` are not captured](workloads.md#mounts-under-data-are-not-captured).
+An archive is named `<name>-<YYYYmmdd-HHMMSS>.tar.zst` unless `--output`
+names a file. It holds the TOML, the sealed secrets its TOML references,
+and `data/`, which holds the `./` volumes and a VM's data disk. It never
+holds `state/`: images, the podman store, a VM's system disk and its image
+cache are rebuilt by `enable` and `update`, so a `pet` VM's changes to its
+system disk are not in any backup. Credentials sealed for a workload's
+broker are left out, and so is anything mounted under `data/`, with a
+warning naming each mount.
 
-A backup captures **only the precious `data/` subtree** (for every substrate). The reconstructible `state/` subtree — podman graphroot, container images, and a VM's `system.qcow2` (+ `system.qcow2.gen-N`) — and the VM's image cache beside it are deliberately excluded and rebuilt on `enable`/`update`. For VMs this means the durable `data.qcow2` is archived but the OS disk is not: a **`pet` VM's in-place changes to `system.qcow2` are not recoverable from a backup** (a `pet` VM never rotates its system disk, so it also has no generation to roll back to). Bake durable VM state into a `data.qcow2` volume, or into the guest image, rather than the system disk.
+`--json` prints `{"backups": [...]}`, each with `workload`, `archive` and
+`size_bytes`, plus `failed` (each `workload` and `error`) when any failed.
+One workload's failure does not stop `--all`; the exit status is 1 if any
+failed. See [Backup and restore](manual/09-operating.md#backup-and-restore).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `restore`
 
-Restore a workload from a backup archive created by `backup`.
+Restore a workload from a `backup` archive.
 
 ```
 sudo workloadctl restore [--force] [--enable] <archive>
@@ -1128,111 +1237,84 @@ sudo workloadctl restore [--force] [--enable] <archive>
 
 | Option | Description |
 |---|---|
-| `--force` | Overwrite existing config, credentials, and home directory if they exist |
-| `--enable` | Enable the workload immediately after restoring |
+| `--force` | Replace an existing TOML, secrets and `data/` |
+| `--enable` | Run `enable` once the restore is done |
 
-> **Restore refuses to run over a mounted `data/`.** If anything is mounted
-> under the data directory — or if `data/` is itself a mount — the command stops
-> and names the path, on both paths and not just `--force`. Unmounting is a
-> deliberate operator action, and a half-replaced `data/` is worse than a restore
-> that declined to start: `--force` empties the target first, so following a
-> mount would delete the mounted filesystem's contents (for a bind mount, the
-> original directory's) and only then fail on the busy mount point. Without
-> `--force` nothing is deleted, but the merge would write *through* the mount.
-> See [Mounts under `data/` are not captured](workloads.md#mounts-under-data-are-not-captured).
+`restore` takes the workload's name from the TOML in the archive. It
+refuses a workload that already exists unless you pass `--force`, stops the
+workload, and writes the TOML, the secrets (skipping any that exist, unless
+`--force`) and `data/`. An existing `data/` is merged into, or with
+`--force` replaced. It refuses to write through anything mounted under
+`data/`, through a symbolic link in the existing `data/`, or from an
+archive whose links point outside it.
 
-> **DR caveat — secrets are host-bound.** A backup archives the encrypted
-> credential blobs from `/etc/credstore` but not the unlock material. Secrets
-> are sealed to this host (TPM2 binding, or `/var/lib/systemd/credential.secret`
-> for the host-key fallback). An in-place restore on the same machine decrypts
-> normally; a restore on different hardware — or after a TPM reset — cannot
-> decrypt them. For cross-host DR, also preserve `/var/lib/systemd/credential.secret`
-> (host-key case), or re-encrypt the affected secrets on the target with
-> `workloadctl secret`.
-
-> **Broker credentials are not archived at all.** `backup` copies the
-> credentials a workload's config references; the material a VM's credential
-> broker holds, sealed under `broker/<workload>/`, is deliberately outside that
-> set. It would not decrypt on another host in any case (see above), and an
-> archive that appeared to carry a provider key would be a worse thing to hand
-> around than one that plainly does not. Re-seal them on the target with
-> `workloadctl secret create broker/<workload>/<name>`.
+Sealed secrets open only on the host that sealed them, so on another host
+restore without `--enable`, import each secret over the restored copy, then
+validate and enable ([Restoring on another
+host](manual/09-operating.md#restoring-on-another-host)). Re-seal a broker's
+credentials with `secret create broker/<workload>/<name>`.
 
 [↑ top](#workloadctl-command-reference)
 
 ---
 
-## Secret Management
+## Secrets
 
-Manage encrypted systemd credentials in `/etc/credstore.encrypted/`. See [secrets.md](secrets.md) for full details.
+`secret` manages credentials sealed with `systemd-creds` in
+`/etc/credstore.encrypted/`. A name is letters, digits, `_` and `-`, or a
+scoped name, `broker/<workload>/<name>`, for a credential a workload's
+broker holds. A scoped credential is stored at
+`/etc/credstore.encrypted/broker/<workload>/<name>` and sealed under the
+name `broker-<workload>-<name>`, so a unit pointed at another workload's
+file cannot decrypt it. Every subcommand takes either form. See
+[Secrets](manual/07-secrets.md) and, for the broker, [Keeping API keys out
+of the workload](manual/06-networking.md#keeping-api-keys-out-of-the-workload).
 
 ```
-workloadctl secret {create,list,show,rotate,delete,export,import}
+workloadctl secret {create,list,show,rotate,delete,export,import} ...
 ```
 
 ### `secret create`
 
-Encrypt a new credential and store it in `/etc/credstore.encrypted/`.
+Seal a new credential.
 
 ```
 sudo workloadctl secret create [--key-type {tpm2,host,host+tpm2}] [--file FILE] [--force] <name>
 ```
 
-Interactive prompt to create secret:
-```
-systemd-ask-password -n | sudo systemd-creds encrypt --with-key=host --name=KRDP_PASSWORD - /etc/credstore.encrypted/KRDP_PASSWORD
-```
-
 | Option | Description |
 |---|---|
-| `--key-type` | Encryption key type (default: `tpm2`) |
-| `--file FILE` | Read secret from a file instead of stdin |
-| `--force` | Overwrite if the credential already exists |
+| `--key-type` | What the seal is bound to (default: `tpm2`) |
+| `--file FILE` | Seal this file's contents as they are |
+| `--force` | Replace an existing credential |
 
-Reads from stdin if `--file` is not given.
-
-**Example:**
-```bash
-echo -n "my-api-key" | sudo workloadctl secret create --key-type tpm2 myapp-api-key
-```
-
-**Scoped names.** `<name>` takes a second form, `broker/<workload>/<name>`, for
-material a VM workload's credential broker holds
-([agent-broker.md](agent-broker.md)). It is a name form rather than a flag, so
-it works on every `secret` subcommand:
+Without `--file`, a value piped in is sealed byte for byte, with a warning
+if it ends in a newline; at a terminal, `create` prompts twice with echo
+off.
 
 ```bash
-echo -n "sk-ant-..." | sudo workloadctl secret create broker/agent-vm/anthropic
+printf '%s' "$API_KEY" | sudo workloadctl secret create myapp-api-key
+sudo workloadctl secret create myapp-tls-key --file ./key.pem
 ```
-
-The file lands at `/etc/credstore.encrypted/broker/agent-vm/anthropic` and is
-sealed under the name `broker-agent-vm-anthropic`. Both halves matter. The
-subtree keeps one workload's provider keys out of the flat namespace every other
-unit on the host shares, and the seal name is bound into the blob and verified
-on decrypt — so a generated unit pointed at another workload's file, whose path
-is guessable, gets a decryption failure at start rather than that workload's
-key. Each segment is one path component (`[a-zA-Z0-9_-]+`), so a name can
-neither traverse out of the subtree nor collide with an unscoped credential.
 
 [↑ top](#workloadctl-command-reference)
 
 ### `secret list`
 
-List all credentials in `/etc/credstore.encrypted/`.
+List the credentials, scoped ones included.
 
 ```
-workloadctl secret list [--json]
+sudo workloadctl secret list [--json]
 ```
 
-| Option | Description |
-|---|---|
-| `--json` | Output credential names, sizes, and modification timestamps as JSON |
+`--json` prints `{"credentials": [...]}`, each with `name`, `size` and
+`modified` (Unix time).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `secret show`
 
-Decrypt and print a credential's value to stdout.
+Decrypt a credential and print it.
 
 ```
 sudo workloadctl secret show <name>
@@ -1242,17 +1324,23 @@ sudo workloadctl secret show <name>
 
 ### `secret rotate`
 
-Replace a credential's encrypted value (re-reads from stdin) and restart any workloads that reference it.
+Replace a credential's value and restart the workloads that use it.
 
 ```
 sudo workloadctl secret rotate [--key-type {tpm2,host,host+tpm2}] <name>
 ```
 
+`rotate` reads the new value as `create` does, seals it with `--key-type`
+(default `tpm2`, whatever the old seal was), and restarts every workload
+whose TOML references the name in `[secrets]` or a `${SECRET:...}` value.
+See [Rotating a secret](manual/07-secrets.md#rotating-a-secret) for what it
+does not find.
+
 [↑ top](#workloadctl-command-reference)
 
 ### `secret delete`
 
-Delete an encrypted credential file.
+Delete a credential.
 
 ```
 sudo workloadctl secret delete [--force] <name>
@@ -1260,37 +1348,52 @@ sudo workloadctl secret delete [--force] <name>
 
 | Option | Description |
 |---|---|
-| `--force` | Skip confirmation prompt |
+| `--force` | Do not ask for confirmation |
 
 [↑ top](#workloadctl-command-reference)
 
 ### `secret export`
 
-Export an encrypted credential as a passphrase-protected portable file (`.secret`). The exported file is not TPM-bound and can be transferred to another machine.
-
-The blob uses a versioned format (v2): AES-256-CBC with PBKDF2 (600,000 iterations) plus an HMAC-SHA256 integrity tag, so a tampered or truncated file is detected on import. `secret import` still reads legacy v1 exports (see [ADR 004](adr/004-secret-export-versioned-crypto.md)).
+Decrypt a credential and write it to a file protected by a passphrase, to
+move it to another host.
 
 ```
-sudo workloadctl secret export [--output FILE] <name>
+sudo workloadctl secret export [-o FILE] [--passphrase-file PATH | --passphrase-stdin] <name>
 ```
 
 | Option | Description |
 |---|---|
-| `--output FILE` | Output path (default: `./<name>.secret`) |
+| `-o`, `--output FILE` | Where to write (default: `<name>.secret` in the current directory) |
+| `--passphrase-file PATH` | Read the passphrase from PATH; `-` is stdin |
+| `--passphrase-stdin` | Read the passphrase from stdin |
+
+Without either passphrase option, `export` prompts twice. A passphrase is
+one line; one trailing newline is dropped. The file uses format v2:
+AES-256-CBC keyed by PBKDF2 (600,000 iterations), with an HMAC-SHA256 tag,
+so `import` detects a tampered, truncated or wrongly unlocked file
+([ADR 004](adr/004-secret-export-versioned-crypto.md)). Give `--output` for
+a scoped name. See [Moving a secret to another
+host](manual/07-secrets.md#moving-a-secret-to-another-host).
 
 [↑ top](#workloadctl-command-reference)
 
 ### `secret import`
 
-Import a previously exported `.secret` file and re-encrypt it as a local credential.
+Unlock an exported file and seal its value on this host.
 
 ```
-sudo workloadctl secret import [--force] [--key-type {tpm2,host,host+tpm2}] <name> <file>
+sudo workloadctl secret import [--force] [--key-type {tpm2,host,host+tpm2}]
+                               [--passphrase-file PATH | --passphrase-stdin] <name> <file>
 ```
 
 | Option | Description |
 |---|---|
-| `--force` | Overwrite if the credential already exists |
-| `--key-type` | Encryption key type for the new credential (default: `tpm2`) |
+| `--force` | Replace an existing credential |
+| `--key-type` | What the new seal is bound to (default: `tpm2`) |
+| `--passphrase-file PATH` | Read the passphrase from PATH; `-` is stdin |
+| `--passphrase-stdin` | Read the passphrase from stdin |
+
+Without either passphrase option, `import` prompts once. It reads only the
+v2 format `export` writes, and refuses a file without its header.
 
 [↑ top](#workloadctl-command-reference)

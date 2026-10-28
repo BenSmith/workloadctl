@@ -7,7 +7,7 @@ address is reachable either. That is deliberate (ADR 006) — the only door a
 guest has onto its own host should be the one we make.
 
 The design already derives one non-loopback, guest-reachable address per
-workload: the 198.18.x.y inspector address, put on the workload-proxy dummy
+workload: the 198.18.x.y inspector address, put on the wl-egress dummy
 link when the workload is *filtered*. This helper puts the SAME address on the
 link for every VM, so a host service can publish on it and an *open*
 workload's guest can reach it — e.g. a forge container's API, for a build
@@ -34,7 +34,7 @@ import pwd
 
 from helper_main import log, run
 from nft import add_listener_addresses, remove_listener_addresses
-from workload_addr import ensure_advertised_interface
+from workload_addr import ensure_egress_interface
 
 
 def up(name: str) -> int:
@@ -46,7 +46,7 @@ def up(name: str) -> int:
     tolerates "already assigned" for the same reason.
     """
     uid = pwd.getpwnam(f"_wl-{name}").pw_uid
-    ensure_advertised_interface(run)
+    ensure_egress_interface(run)
     add_listener_addresses(uid)
     log(f"  Derived address armed for {name}")
     return 0
@@ -55,7 +55,7 @@ def up(name: str) -> int:
 def down(name: str) -> int:
     """Remove this VM's own derived address. Warns rather than raising.
 
-    The link and the advertised address are shared and stay; only this
+    The link is shared and stays; only this
     workload's /32 and /128 go. Absence is tolerated: a start that died before
     arming left nothing to remove, and a stop must not fail over it.
     """

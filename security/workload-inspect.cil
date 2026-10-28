@@ -1,16 +1,5 @@
 ; workload-inspect — an SELinux domain for the per-workload egress inspector.
 ;
-; WHY THIS WAS NOT AN EXTENSION OF workload-proxy.cil
-;
-; Recorded because the module it declined to extend is now deleted, and the
-; reasoning is what says whether this one should have absorbed anything from it.
-; wlproxy_t was defined by two things the inspector does not share: the binary
-; it entrypointed (/usr/bin/tinyproxy) and a filesystem boundary drawn at
-; /run/workload-vm/<name>. The inspector is a Python script,
-; /usr/libexec/moatery/moat-inspect, and its sockets are opened by init, so
-; nothing about the shape transferred. Rung 2 deleted wlproxy_t entirely; nothing moved here,
-; because there was nothing in it that this domain lacked.
-;
 ; THE ENTRYPOINT IS A SCRIPT, AND THAT WORKS
 ;
 ; Retyping the interpreter is out of the question — /usr/bin/python3 is every
@@ -34,9 +23,7 @@
 ; The filecon names a single path. /usr/libexec/moatery holds moat-broker
 ; too, which reads the provider key this domain must never reach. A glob
 ; over that directory would make every program in it an entrypoint into this
-; domain — the same class of silent over-reach as the /usr/sbin symlink trap
-; workload-proxy.cil documents, and in the same direction, since nothing would
-; fail. Everything under libexec/ is bin_t, and bin_t carries both exec_type
+; domain, a silent over-reach, since nothing would fail. Everything under libexec/ is bin_t, and bin_t carries both exec_type
 ; and entry_type, which is exactly why the retype is necessary rather than a
 ; bin_t:file entrypoint.
 ;
@@ -76,8 +63,7 @@
 ;
 ; THE TWO PLANES CARRY DIFFERENT PORT LABELS
 ;
-; Read from `semanage port -l` rather than guessed, which is why
-; workload-proxy.cil's squid_port_t comment exists:
+; Read from `semanage port -l` rather than guessed:
 ;
 ;   8080 (cleartext) -> http_cache_port_t
 ;   8443 (tls)       -> http_port_t
@@ -89,11 +75,10 @@
 ; HARVESTING
 ;
 ; Derived by enforcing iterations against a real guest dialling the listener,
-; not by a single permissive pass. A permissive run gets further here than it
-; did for the retired tinyproxy domain — Python reaches its imports and its
-; inherited socket before it needs anything else, where tinyproxy exited 70 at
-; the first gate — but the accept path is still a gate behind a
-; gate, so the last rules only appear once the earlier ones are granted.
+; not by a single permissive pass. Python reaches its imports and its
+; inherited socket before it needs anything else, but the accept path is a
+; gate behind a gate, so the last rules only appear once the earlier ones are
+; granted.
 ;
 ; ONE RESIDUAL DENIAL IS DELIBERATELY NOT GRANTED, AND IS DONTAUDIT'D
 ;
@@ -143,7 +128,7 @@
 (typeattributeset entry_type (wlinspect_exec_t))
 (filecon "/usr/libexec/moatery/moat-inspect" file (system_u object_r wlinspect_exec_t ((s0) (s0))))
 
-; Straight out of systemd, like wlproxy_t and unlike QEMU: the module declares
+; Straight out of systemd, unlike QEMU: the module declares
 ; the transition itself, so the unit's ExecStart is the plain script path.
 (typetransition init_t wlinspect_exec_t process wlinspect_t)
 (allow init_t wlinspect_exec_t (file (getattr open read execute map)))
@@ -219,8 +204,8 @@
 ; reaches the inspector at all, so forward and splice can be dead code under
 ; SELinux while the suite reports green.
 ;
-; The path is reached by a guest that IGNORES the proxy variables and dials an
-; allowlisted host directly -- not a corner case but the adversarial case this
+; The path is reached by a guest that dials an allowlisted host directly, past
+; the redirect -- not a corner case but the adversarial case this
 ; whole rung exists for: the drop is what makes the allowlist binding. A
 ; cooperating guest proves nothing about it.
 ;
@@ -385,11 +370,10 @@
 ; rig's STATUS_SETTLE against STATUS_INTERVAL is what makes it appear.
 ; `setattr` is the fchmod that holds the file at 0600 whatever the umask.
 ; The same harvest trimmed `lock` from this line, and getattr,
-; open and read from the dir line below, as used by nothing. wlproxy_t writes its log and pid file in place and never renames;
-; the status write is a temp-file-plus-os.replace so that a reader never sees a
-; half-written document. Copying wlproxy_t's file line verbatim therefore
-; produces a grant that gets all the way to the replace and fails there — the
-; silent half of the table above, reached by a route that looks correct.
+; open and read from the dir line below, as used by nothing. The status write
+; is a temp-file-plus-os.replace so that a reader never sees a half-written
+; document, so a file line without rename gets all the way to the replace and
+; fails there.
 (allow wlinspect_t qemu_var_run_t (dir (add_name remove_name search write)))
 (allow wlinspect_t qemu_var_run_t (file (create getattr open read rename setattr unlink write)))
 

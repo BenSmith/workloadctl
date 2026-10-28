@@ -18,7 +18,6 @@ from vm_defs import (
     EGRESS_DEFAULT,
     REGISTRATION_DOMAIN_PARENTS,
     SEED_PROVIDES_CHOICES,
-    SEED_PROVIDES_RETIRED,
     parse_memory_mib,
     parse_vm_port,
 )
@@ -186,7 +185,7 @@ def validate_vm_network(net: dict) -> list[str]:
             "serves is stated per policy entry -- declare the material in a "
             "[[vm.network.credential]] table and name it with `credential = "
             "\"<name>\"` on the [[vm.network.policy]] entries it applies to. "
-            "See docs/agent-broker.md")
+            "See docs/manual/06-networking.md")
 
     outbound_if = net.get("outbound_if")
     if outbound_if is not None:
@@ -300,24 +299,7 @@ def validate_vm_config(config: dict) -> list[str]:
                     "[vm.cloud_init].seed_provides must be a list of strings"
                 )
             else:
-                # A retired entry is refused BY NAME, ahead of the unknown-entry
-                # message, and told what to write instead. Folding it into
-                # "unknown entries ['proxy']" would be true and useless: the
-                # operator's seed does provide something, the concern it
-                # provides was renamed under them, and the generic message
-                # would send them looking for a typo they did not make.
-                for entry in sorted(set(sp) & set(SEED_PROVIDES_RETIRED)):
-                    errors.append(
-                        f"[vm.cloud_init].seed_provides = [{entry!r}] is no "
-                        f"longer accepted: the per-workload proxy was "
-                        f"replaced with a transparent redirect, so a guest is "
-                        f"given no proxy environment for a seed to provide. "
-                        f"Write {SEED_PROVIDES_RETIRED[entry]!r} instead if "
-                        f"the seed installs and trusts the egress CA bundle "
-                        f"itself, or drop the entry if it does not."
-                    )
-                unknown = sorted(set(sp) - SEED_PROVIDES_CHOICES
-                                 - set(SEED_PROVIDES_RETIRED))
+                unknown = sorted(set(sp) - SEED_PROVIDES_CHOICES)
                 if unknown:
                     errors.append(
                         f"[vm.cloud_init].seed_provides has unknown entries "

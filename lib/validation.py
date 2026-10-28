@@ -235,6 +235,7 @@ def validate_workload_config(config: dict) -> list[str]:
     errors.extend(validate_kernel_modules(config, kind))
     for where, volumes in _volume_lists(config):
         errors.extend(rro_volume_errors(volumes, where))
+    errors.extend(_container_choice_errors(config))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
     # (mode) in lockstep so `is_multi <=> mode != "single"` holds. The generator
@@ -283,6 +284,37 @@ def validate_workload_config(config: dict) -> list[str]:
             f'namespace.'
         )
 
+    return errors
+
+
+VALID_SYSTEMD_MODES = ("always", "true", "false")
+VALID_PULL_POLICIES = ("missing", "always", "newer", "never")
+
+
+def _container_choice_errors(config: dict) -> list[str]:
+    """`systemd` and `pull` values the unit would carry and podman or the
+    generator would refuse only at start. `systemd` is lowercased as the
+    generator lowercases it, so a TOML bool passes; `pull` is matched
+    exactly."""
+    blocks = []
+    if isinstance(config.get("container"), dict):
+        blocks.append(("container", config["container"]))
+    ctrs = config.get("containers")
+    if isinstance(ctrs, list):
+        for c in ctrs:
+            if isinstance(c, dict) and isinstance(c.get("container"), dict):
+                blocks.append((f"containers[{c.get('name')}].container",
+                               c["container"]))
+    errors = []
+    for where, block in blocks:
+        mode = block.get("systemd")
+        if mode is not None and str(mode).lower() not in VALID_SYSTEMD_MODES:
+            errors.append(f"{where}.systemd = {mode!r} must be one of "
+                          f"{', '.join(VALID_SYSTEMD_MODES)}")
+        pull = block.get("pull")
+        if pull is not None and pull not in VALID_PULL_POLICIES:
+            errors.append(f"{where}.pull = {pull!r} must be one of "
+                          f"{', '.join(VALID_PULL_POLICIES)}")
     return errors
 
 

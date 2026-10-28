@@ -24,7 +24,7 @@ paths, upstream repo paths, test fixture strings, and outputs being created by
 the command on that line. Exempting all of that is a list that grows every time
 a test gains a path-shaped string. Link targets have none of that problem: 68
 in the tree, 24 of them non-`.md`, and the only three that did not resolve were
-real — `workloadctl/docs/workloads.md` pointing into `../workloads.d/`, the
+real — the old workload guide pointing into `../workloads.d/`, the
 pre-bundle layout, which has zero tracked files. A `[text](target)` is
 syntactically a promise the reader can follow it; a path in prose or in a code
 line is not.
@@ -101,7 +101,7 @@ def _resolves_against(tracked, citing: Path, cite: str) -> bool:
     if "/" in bare:
         # A path is resolved against each ancestor directory of the citing
         # file, innermost first: `cli_surface/README.md` inside tests/
-        # means tests/cli_surface/README.md, and `docs/workloads.md`
+        # means tests/cli_surface/README.md, and `docs/cli.md`
         # anywhere means the root docs/. Both are legitimate.
         for base in citing.parents:
             candidate = (base / bare).resolve()
@@ -228,12 +228,12 @@ class TestDocCitations(unittest.TestCase):
         self.assertFalse(self._resolves(probe, "docs/wip/does-not-exist.md"))
         self.assertFalse(self._resolves(probe, "totally-made-up-name.md"))
         # And a real one still resolves, so it is not just rejecting everything.
-        self.assertTrue(self._resolves(probe, "docs/workloads.md"))
+        self.assertTrue(self._resolves(probe, "docs/cli.md"))
 
     def test_link_targets_are_checked_at_any_extension(self):
         """The Q3-9 class: a `.md` → non-`.md` link. The extension filter on
         CITATION means only the link rule can see these."""
-        probe = GIT_ROOT / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "cli.md"
         self.assertFalse(self._link_resolves(probe, "../workloads.d/gone.toml"))
         self.assertFalse(
             self._link_resolves(probe, ".forgejo/workflows/nonesuch.yml"))
@@ -242,12 +242,12 @@ class TestDocCitations(unittest.TestCase):
             self._link_resolves(probe, "../workloads/webproxy-demo/workload.toml"))
 
     def test_link_anchor_is_not_part_of_the_path(self):
-        probe = GIT_ROOT / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "cli.md"
         self.assertTrue(self._link_resolves(probe, "cli.md#logs"))
         self.assertFalse(self._link_resolves(probe, "no-such-doc.md#logs"))
 
     def test_link_may_point_at_a_directory_that_has_tracked_content(self):
-        probe = GIT_ROOT / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "cli.md"
         self.assertTrue(self._link_resolves(probe, "../workloads/webproxy-demo"))
         self.assertFalse(self._link_resolves(probe, "../workloads/no-such-bundle"))
         # docs/wip/ is gitignored: it exists on this machine but has nothing
@@ -270,12 +270,12 @@ class TestDocCitations(unittest.TestCase):
         self.assertIsNone(CITATION.search(_scannable(line)))
         # Only the tilde path is removed: a real citation on the same line
         # still has to resolve.
-        both = "see docs/workloads.md and ~/.config/notes.md"
+        both = "see docs/cli.md and ~/.config/notes.md"
         self.assertEqual(
             [m.group(1) for m in CITATION.finditer(_scannable(both))],
-            ["docs/workloads.md"])
+            ["docs/cli.md"])
         # And a link target is skipped by its own guard, not by _scannable.
-        probe = GIT_ROOT / "docs" / "workloads.md"
+        probe = GIT_ROOT / "docs" / "cli.md"
         self.assertFalse(self._link_resolves(probe, "~/.claude/CLAUDE.md"))
 
     def test_a_path_inside_a_url_is_not_a_citation(self):

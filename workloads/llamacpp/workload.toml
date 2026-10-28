@@ -6,7 +6,7 @@
 # Intel). For CPU-only inference, swap the image tag to "server".
 #
 # Models: drop GGUF files into /var/lib/workloads/llamacpp/data/models/ and set the
-# --model flag below. Restart the workload to switch models.
+# --model flag below. Recreate the workload to switch models.
 #
 # Setup:
 #   1. Add a GGUF model:

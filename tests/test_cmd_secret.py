@@ -452,9 +452,13 @@ class ExportImportFlowTest(SecretTestBase):
         self.assertEqual(code, 1)
         self.assertIn("Failed to encrypt with passphrase", err)
 
+    def _v2_blob(self, passphrase):
+        """A real export blob; built before any subprocess patch applies."""
+        return cmd_secret._secret_export_encrypt_v2(b"plaintext", passphrase)
+
     def test_import_decrypt_failure_wrong_passphrase(self):
         infile = self.tmp / "in.secret"
-        infile.write_bytes(b"enc")
+        infile.write_bytes(self._v2_blob("not-pw123"))
 
         def fake_run(cmd, **kw):
             raise cmd_secret.subprocess.CalledProcessError(1, cmd)
@@ -470,7 +474,7 @@ class ExportImportFlowTest(SecretTestBase):
 
     def test_import_encrypt_failure(self):
         infile = self.tmp / "in.secret"
-        infile.write_bytes(b"enc")
+        infile.write_bytes(self._v2_blob("pw123"))
 
         def fake_run(cmd, **kw):
             if cmd[0] == "openssl":
@@ -488,7 +492,7 @@ class ExportImportFlowTest(SecretTestBase):
 
     def test_import_success_suggests_restart(self):
         infile = self.tmp / "in.secret"
-        infile.write_bytes(b"enc")
+        infile.write_bytes(self._v2_blob("pw123"))
         (self.wl_dir / "web").mkdir()
         (self.wl_dir / "web" / "workload.toml").write_text(
             '[workload]\nname = "web"\n[container]\nimage = "x"\n'
@@ -796,8 +800,9 @@ class SecretExportCryptoTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cmd_secret._secret_export_decrypt(blob, "not-the-passphrase")
 
-    def test_v1_legacy_blob_still_imports(self):
-        # A v1 blob (openssl aes-256-cbc -pbkdf2, no header) stays restorable.
+    def test_headerless_blob_is_refused(self):
+        # A bare `openssl enc` blob carries no v2 header and no MAC, so import
+        # refuses it rather than decrypt something it cannot authenticate.
         with tempfile.NamedTemporaryFile("w", suffix=".pass") as pf:
             pf.write(self.PW)
             pf.flush()
@@ -808,7 +813,8 @@ class SecretExportCryptoTest(unittest.TestCase):
                 input=self.PT, capture_output=True, check=True,
             ).stdout
         self.assertFalse(v1.startswith(cmd_secret.SECRET_EXPORT_V2_MAGIC))
-        self.assertEqual(cmd_secret._secret_export_decrypt(v1, self.PW), self.PT)
+        with self.assertRaises(ValueError):
+            cmd_secret._secret_export_decrypt(v1, self.PW)
 
     def test_v2_uses_high_iteration_pbkdf2(self):
         self.assertGreaterEqual(cmd_secret._SECRET_PBKDF2_ITERS, 600000)

@@ -1,8 +1,8 @@
 # ADR 004: `secret export` uses a versioned, integrity-protected format
 
 **Status:** Implemented. `secret export` writes v2 (AES-256-CBC, PBKDF2 600k
-iterations, encrypt-then-HMAC-SHA256); `secret import` detects the header and
-reads both v1 and v2.
+iterations, encrypt-then-HMAC-SHA256); `secret import` reads v2 only. Reading
+v1 was kept at first and has since been dropped (see Consequences).
 
 ## Context
 
@@ -43,7 +43,9 @@ model — off-host storage and transport — is exactly where integrity matters.
 
 ## Consequences
 
-- Export output format changes (v2 header); import stays compatible with v1.
-- `docs/cli.md` and `docs/workloads.md` state the format version and the
-  integrity guarantee.
+- Export output format changes (v2 header). Import first stayed compatible
+  with v1; that was dropped once no v1 export needed restoring, so `import`
+  now refuses a file without the v2 header rather than decrypt it
+  unauthenticated.
+- `docs/cli.md` states the format version and the integrity guarantee.
 - Implemented in `lib/cmd_secret.py`.

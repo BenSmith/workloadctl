@@ -206,7 +206,7 @@ is.** Giving the broker its own hostname matcher means a second fnmatch
 implementation, a second apex-trap rule, and two allowlists that can disagree.
 
 **Keying on `Host` is a threat-model change, and decision 3 takes the conservative
-answer twice.** `docs/agent-broker.md` states the property being qualified —
+answer twice.** `docs/manual/06-networking.md` states the property being qualified —
 "`upstream` is fixed and never taken from a request" — and the important half
 survives: the upstream is still a lookup into a closed set an operator wrote, so
 this is not a general proxy and the guest cannot name a destination. What changes

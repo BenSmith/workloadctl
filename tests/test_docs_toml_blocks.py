@@ -5,7 +5,7 @@ WHY THIS EXISTS
 Same reason as tests/test_docs_examples.py one level out: a config that no gate
 parses rots at the speed of the schema, and a fenced block in prose is a config
 a reader will copy. Three had already rotted where nothing could see it --
-docs/workloads.md carried a multi-line inline table (TOML has no such thing, so
+the workload guide carried a multi-line inline table (TOML has no such thing, so
 it fails the moment you paste it), a basic VM config the validator rejects for
 having no [vm.network], and a [[vm.volumes]] table with host_path/guest_path
 keys for a schema whose volumes are "host:guest[:opts]" strings.

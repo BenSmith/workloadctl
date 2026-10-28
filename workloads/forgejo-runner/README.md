@@ -137,7 +137,7 @@ Both are provision-time: the seed bakes `capacity` into
   isolation boundary; nothing inside it is unprivileged.
 - **Egress is open.** A build host reaches arbitrary registries and mirrors, so
   there is no allowlist that both works and means anything. See
-  `docs/workloads.md` on egress posture.
+  `docs/manual/06-networking.md` on choosing a stance.
 - **Reaching the forge from the VM — two shapes.**
 
   *Same-host (the homelab shape):* `FORGEJO_URL` empty. A passt guest cannot

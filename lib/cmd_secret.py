@@ -31,12 +31,10 @@ from service_runtime import restart_workload_service
 
 # --- Portable secret export format (ADR 004) ---
 #
-# v1 was `openssl enc -aes-256-cbc -pbkdf2` with no explicit iteration count and
-# no integrity — a stored, off-host blob with a weak KDF and no tamper
-# detection. v2 adds a modern KDF (pbkdf2, 600k iters) AND integrity via
-# encrypt-then-HMAC-SHA256: `openssl enc` cannot safely do AEAD/GCM (the CLI
-# doesn't handle the auth tag), so we authenticate the ciphertext explicitly.
-# `import` detects the version by header, so existing v1 blobs stay restorable.
+# A modern KDF (pbkdf2, 600k iters) and integrity via encrypt-then-HMAC-SHA256:
+# `openssl enc` cannot safely do AEAD/GCM (the CLI doesn't handle the auth
+# tag), so the ciphertext is authenticated explicitly. `import` reads only a
+# blob carrying the v2 header.
 SECRET_EXPORT_V2_MAGIC = b"WLCTLsecret-v2\n"
 _SECRET_PBKDF2_ITERS = 600000
 _SECRET_MAC_SALT_LEN = 16
@@ -72,31 +70,29 @@ def _secret_export_encrypt_v2(plaintext: bytes, passphrase: str) -> bytes:
 
 
 def _secret_export_decrypt(blob: bytes, passphrase: str) -> bytes:
-    """Decrypt a v1 or v2 exported blob, detected by header.
+    """Decrypt an exported blob.
 
-    Raises ValueError on v2 integrity failure (a tampered blob or a wrong
-    passphrase — the MAC key is passphrase-derived, so both fail here before any
-    decryption is attempted). Propagates subprocess.CalledProcessError on an
-    openssl decrypt failure (v1 wrong passphrase).
+    Raises ValueError for a blob without the v2 header, and on an integrity
+    failure (a tampered blob or a wrong passphrase — the MAC key is
+    passphrase-derived, so both fail here before any decryption is attempted).
     """
-    if blob.startswith(SECRET_EXPORT_V2_MAGIC):
-        body = blob[len(SECRET_EXPORT_V2_MAGIC):]
-        mac_salt = body[:_SECRET_MAC_SALT_LEN]
-        tag = body[_SECRET_MAC_SALT_LEN:_SECRET_MAC_SALT_LEN + _SECRET_MAC_LEN]
-        ciphertext = body[_SECRET_MAC_SALT_LEN + _SECRET_MAC_LEN:]
-        mac_key = hashlib.pbkdf2_hmac(
-            "sha256", passphrase.encode(), mac_salt, _SECRET_PBKDF2_ITERS, dklen=32)
-        expected = hmac.new(
-            mac_key, SECRET_EXPORT_V2_MAGIC + mac_salt + ciphertext, hashlib.sha256
-        ).digest()
-        if not hmac.compare_digest(expected, tag):
-            raise ValueError(
-                "integrity check failed — tampered export or wrong passphrase")
-        return _openssl_pass_enc(
-            ["-d", "-aes-256-cbc", "-pbkdf2", "-iter", str(_SECRET_PBKDF2_ITERS)],
-            ciphertext, passphrase)
-    # Legacy v1: openssl enc -aes-256-cbc -pbkdf2 (default iters), no integrity.
-    return _openssl_pass_enc(["-d", "-aes-256-cbc", "-pbkdf2"], blob, passphrase)
+    if not blob.startswith(SECRET_EXPORT_V2_MAGIC):
+        raise ValueError("not a workloadctl secret export (no v2 header)")
+    body = blob[len(SECRET_EXPORT_V2_MAGIC):]
+    mac_salt = body[:_SECRET_MAC_SALT_LEN]
+    tag = body[_SECRET_MAC_SALT_LEN:_SECRET_MAC_SALT_LEN + _SECRET_MAC_LEN]
+    ciphertext = body[_SECRET_MAC_SALT_LEN + _SECRET_MAC_LEN:]
+    mac_key = hashlib.pbkdf2_hmac(
+        "sha256", passphrase.encode(), mac_salt, _SECRET_PBKDF2_ITERS, dklen=32)
+    expected = hmac.new(
+        mac_key, SECRET_EXPORT_V2_MAGIC + mac_salt + ciphertext, hashlib.sha256
+    ).digest()
+    if not hmac.compare_digest(expected, tag):
+        raise ValueError(
+            "integrity check failed — tampered export or wrong passphrase")
+    return _openssl_pass_enc(
+        ["-d", "-aes-256-cbc", "-pbkdf2", "-iter", str(_SECRET_PBKDF2_ITERS)],
+        ciphertext, passphrase)
 
 
 def _read_passphrase(args, *, prompt: str, confirm: bool) -> str:
@@ -486,7 +482,6 @@ def cmd_secret(args, manager: WorkloadManager):
         # Read passphrase (non-interactive source or interactive prompt)
         passphrase = _read_passphrase(args, prompt="Passphrase: ", confirm=False)
 
-        # Decrypt — detects v2 (integrity-checked) vs legacy v1 by header.
         try:
             plaintext = _secret_export_decrypt(input_file.read_bytes(), passphrase)
         except ValueError as exc:

@@ -1364,6 +1364,52 @@ class TestCmdHealthMore(unittest.TestCase):
                 [('192.0.2.10', 2222)])
             self.assertEqual(cm.exception.code, 0)
 
+    def _probed_addresses(self, toml, env_text):
+        """Run health with a HOST_IP env file and return what it dialled."""
+        def fake_run(cmd, **kw):
+            if cmd[:2] == ['systemctl', 'is-active']:
+                return _ok(stdout='active\n', returncode=0)
+            return _ok()
+
+        env_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, env_dir)
+        if env_text is not None:
+            (env_dir / 'workload-test-wl.env').write_text(env_text)
+        with _WorkloadDir(toml), \
+                patch.dict('os.environ', {'WORKLOAD_ENV_DIR': str(env_dir)}):
+            manager = MagicMock()
+            manager.user_exists.return_value = True
+            manager.podman.return_value.container_status.return_value = 'running'
+            manager.podman.return_value.container_health.return_value = 'healthy'
+            with patch.object(WorkloadConfig, 'uid', new_callable=PropertyMock,
+                               return_value=10046), \
+                    patch.object(cmd_health, 'manager_active', return_value=False), \
+                    patch('socket.socket') as sock_cls, \
+                    patch('subprocess.run', side_effect=fake_run), \
+                    patch('sys.stdout', io.StringIO()), \
+                    self.assertRaises(SystemExit):
+                sock_cls.return_value.connect_ex.return_value = 0
+                cmd_health.cmd_health(_args(json=True, workload='test-wl'), manager)
+            return [c.args[0] for c in sock_cls.return_value.connect_ex.call_args_list]
+
+    def test_health_probes_a_pasta_port_on_the_host_address(self):
+        """pasta publishes on every address but loopback, so an all-addresses
+        pasta port is probed at the HOST_IP setup recorded, not localhost."""
+        env = 'XDG_RUNTIME_DIR=/run/user/10046\nHOST_IP=192.0.2.7\n'
+        self.assertEqual(self._probed_addresses(PORTS_HEALTH_TOML, env),
+                         [('192.0.2.7', 8080)])
+
+    def test_health_pasta_port_without_host_ip_falls_back_to_localhost(self):
+        self.assertEqual(self._probed_addresses(PORTS_HEALTH_TOML, None),
+                         [('localhost', 8080)])
+        self.assertEqual(self._probed_addresses(PORTS_HEALTH_TOML, 'HOST_IP=\n'),
+                         [('localhost', 8080)])
+
+    def test_health_probes_a_host_network_port_on_localhost(self):
+        toml = PORTS_HEALTH_TOML.replace('mode = "pasta"', 'mode = "host"')
+        env = 'HOST_IP=192.0.2.7\n'
+        self.assertEqual(self._probed_addresses(toml, env), [('localhost', 8080)])
+
     def test_publish_bind_address_parsing(self):
         cases = {
             "8080:80": "localhost",

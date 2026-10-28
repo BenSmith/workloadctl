@@ -40,7 +40,7 @@ from netfilter_state import (
 )
 from nft import nft_json
 from nft_constants import (
-    NFT_TABLE, NFT_PROXY_TABLE,
+    NFT_TABLE, NFT_REDIRECT_TABLE,
     NFT_MAP_INSPECT4, NFT_MAP_INSPECT6, NFT_SET_INSPECT_SELF,
     NFT_SET_INSPECT_SELF6, NFT_SET_INSPECT_DST, NFT_SET_INSPECT_DST6,
     NFT_SET_INSPECT_LIVE, NFT_SET_INSPECT_LIVE6,
@@ -70,16 +70,6 @@ def inspect_digest_short(digest: str | None) -> str:
     return digest[:INSPECT_DIGEST_SHORT] if digest else "unknown"
 
 
-# vm_proxy_check lived here, with _proxy_map_keys and _proxy_address_present.
-# It reported whether a workload's hostname policy was REACHABLE: an element in
-# wl_proxy_dest for this uid, and the advertised address present on the dummy
-# link. Rung 2 deleted both objects, and inspect_check below is the same
-# check against the objects that replaced them -- the redirect maps and the
-# inspector's socket unit. Nothing was lost with it except the count of `hosts`
-# patterns in its healthy line, which was reporting rather than diagnosis and
-# belongs to rung 5's status reader.
-
-
 def _map_key_uid(elem) -> str | None:
     """The leading uid of one nft map element, whatever shape nft rendered it in.
 
@@ -91,10 +81,9 @@ def _map_key_uid(elem) -> str | None:
 
     owned_elements handles a *set*'s concat and would return nothing for the
     first of these, because a map element is a two-item [key, value] list and
-    not a dict with "concat" at the top. That exact mismatch already reported a
-    working proxy redirect as missing once (see _proxy_map_keys); the inspect
-    maps are keyed the same way, so reading them with the set helper would
-    report every inspected VM as uninspected — a false alarm on every host.
+    not a dict with "concat" at the top, so reading the inspect maps with the
+    set helper would report every inspected VM as uninspected — a false alarm
+    on every host.
     """
     key = elem
     if isinstance(elem, dict) and "elem" in elem:
@@ -407,7 +396,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     if elements4 is None or elements6 is None:
         return ("vm_inspect", False,
                 f"egress inspection is on for this {noun} but the "
-                f"{NFT_PROXY_TABLE} table is absent, so nothing redirects this "
+                f"{NFT_REDIRECT_TABLE} table is absent, so nothing redirects this "
                 f"{inside}'s traffic to its inspector — it is reaching the "
                 f"internet directly. Rebuilt on the next start: {restart}")
 
@@ -702,7 +691,7 @@ def _inspect_self_counter(uid):
 
 def _inspect_map_elements(map_name):
     """Elements of one inspect map, or None if the table could not be read."""
-    payload = nft_json("list", "map", *NFT_PROXY_TABLE.split(), map_name)
+    payload = nft_json("list", "map", *NFT_REDIRECT_TABLE.split(), map_name)
     return None if payload is None else nft_set_elements(payload)
 
 
@@ -739,8 +728,7 @@ def _inspect_filter_sets(uid: int) -> dict:
     Membership by UID, not by comparing against inspect_dst_elements()'s
     exact strings. An exact comparison would be stricter and would also fire on
     any nft version that renders a concatenation differently -- which is not
-    hypothetical here: see _map_key_uid, where exactly that mismatch reported a
-    working proxy redirect as missing on every host.
+    hypothetical here: see _map_key_uid.
 
     ONE `nft list table`, not four `nft list set`. This runs on the healthy
     path of every inspected VM, and `doctor` multiplies it by the number of
