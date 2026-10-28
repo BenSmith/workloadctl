@@ -18,6 +18,7 @@ from unittest import mock
 import workload_lib            # noqa: E402
 import cmd_catalog            # noqa: E402
 from scratch_vm import SCRATCH_VM_USER_DATA  # noqa: E402
+from validation import validate_workload_config  # noqa: E402
 import vm_defs                # noqa: E402
 from workloadctl_core import WorkloadManager  # noqa: E402
 
@@ -171,6 +172,13 @@ class TestInitScratchVM(CatalogTestBase):
         self.assertNotIn("enabled", data["workload"])
         self.assertFalse((self.tmp / "myvm" / ".enabled").exists())
         self.assertIn("vm", data)
+
+    def test_scratch_vm_toml_validates(self):
+        """The stub is enable-ready: it passes validation as written."""
+        cmd_catalog.cmd_init(
+            _ns(scratch_vm="myvm", bundle=None, scratch=None, as_name=None), self.manager)
+        data = tomllib.loads((self.tmp / "myvm" / "workload.toml").read_text())
+        self.assertEqual(validate_workload_config(data), [])
 
     def test_scratch_vm_user_data_file_is_relative(self):
         """vm.cloud_init.user_data_file must be the relative path 'cloud-init/user-data'."""
