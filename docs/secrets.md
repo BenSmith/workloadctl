@@ -797,6 +797,12 @@ Environment="API_KEY=secret-value"
 - ❌ No encryption at rest
 - ❌ Stored in `/etc/systemd/system/` as plaintext
 
+### vs. `podman secret`
+
+Podman's own secrets driver keeps the value as plaintext JSON in the
+user's home (`~/.local/share/containers/storage/secrets/`), so it has
+every problem of a plain file plus a backup of the workload's state.
+
 ### vs. External Secrets Management (Vault, SOPS, etc.)
 
 | Feature | systemd-creds | HashiCorp Vault | SOPS |

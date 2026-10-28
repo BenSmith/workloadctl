@@ -470,7 +470,7 @@ def normalize_containers(config: dict) -> list[dict]:
 # widening the shared container_t: a CIL module `wl_<name>` defining the process
 # domain `wl_<name>.process`. The CLI (which loads the policy) and the generator
 # (which labels the container) both derive identifiers through these functions
-# so they can't drift. See llms.txt "SELinux confinement" for the rationale.
+# so they can't drift.
 #
 # hyphen->underscore is injective: NAME_PATTERN forbids underscores, so two
 # distinct workload names can never collide on the same type.

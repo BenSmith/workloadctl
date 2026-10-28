@@ -6,8 +6,6 @@ the primitives both of them share, and the router function get_substrate().
 The implementations live in ``substrate_container`` and ``substrate_vm``;
 callers reach them only through ``get_substrate()`` and this ABC.
 
-Design: llms.txt, "Substrate dispatch"
-
 Usage pattern:
     substrate = get_substrate(config, manager)
     try:

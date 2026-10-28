@@ -1733,8 +1733,7 @@ audio = true
 #         (blockinherit container)        ; required — full container domain
 #         (blockinherit net_container)    ; if the workload needs the network
 #         (allow process <target_type> (<class> (<perms>))))
-# Author new policy with `udica` against a running container. See
-# llms.txt "SELinux confinement" for the rationale.
+# Author new policy with `udica` against a running container.
 #
 # ON A VM WORKLOAD THIS MEANS SOMETHING DIFFERENT. A VM makes no podman call, so
 # the wl_<name>.process type this declares is never applied to anything — the VM

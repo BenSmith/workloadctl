@@ -120,9 +120,9 @@ Neither commits golden files either.
 
 - **Stdlib-only for shipped code.** `lib/`, `bin/`, `generators/`,
   `libexec/`, and the `unittest` suites under `tests/` depend on stdlib +
-  `tomllib` and moatery only — no third-party packages (see `llms.txt` "Stdlib-only
-  constraint"). The out-of-band acceptance harness (`tests/cli_surface/`) is
-  the one exception: it's pytest, because it never ships in the RPM.
+  `tomllib` and moatery only — no third-party packages. The out-of-band
+  acceptance harness (`tests/cli_surface/`) is the one exception: it's
+  pytest, because it never ships in the RPM.
 - **No GPU, no TPM assumed.** Tests must pass on a plain dev box. Gate any
   hardware-dependent assertion behind a capability check (`shutil.which`,
   `/dev/kvm`, TPM2 presence) and skip cleanly when the capability is absent

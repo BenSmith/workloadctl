@@ -458,7 +458,7 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
     # cgroup and Type=notify reaches active in 0s. Adopting it would revert the
     # split tax 1b was chosen to shed, so exec stays the default. Readiness
     # gating uses --health-cmd + the CLI's health-verified flow. See ADR 001
-    # (item 8 and its addendum) and llms.txt.
+    # (item 8 and its addendum).
     service_type = container.get("resources", {}).get("service_type", "exec")
     valid_types = ["simple", "exec", "forking", "oneshot", "dbus", "notify", "idle"]
     if service_type not in valid_types:

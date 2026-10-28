@@ -611,7 +611,7 @@ class TestWorkloadCrossConfigConsistency(unittest.TestCase):
         (`:vulkan`, `:server-vulkan`, `:default-cpu`). Bundles hold their image
         with "missing" (or "never") and drift only through `workloadctl
         update`, which tags a rollback target, health-checks, and reverts on
-        failure. See the "Image trust" section of llms.txt.
+        failure.
 
         Reads the raw TOMLs rather than ALL_WORKLOADS so multi-container
         bundles, which SKIP_FILES excludes, are covered too.
