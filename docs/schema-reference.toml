@@ -1032,7 +1032,9 @@
 # See: 05-vms.md "A seed of your own", "What a seed file must carry"
 
 # The #cloud-config file, used whole: nothing is merged into it. A relative
-# path is taken from the directory of the workload's TOML.
+# path is looked up in the directory of the workload's TOML, then in the
+# bundle's local layer, then in the shipped bundle; an absolute path is used
+# as written.
 # It is substituted when the seed is built: ${VAR} (template_vars, then the
 # environment), ${SECRET:name} (a sealed secret; a missing one fails the
 # build), ${SECRET?name} (empty when missing), $$ (a literal $), and the

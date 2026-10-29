@@ -184,11 +184,12 @@ class TestGeneratedConfigs(unittest.TestCase):
                     for arrays, scalars, section in (
                             (vm_arrays, vm_scalars, "[vm.network]"),
                             (ct_arrays, ct_scalars, "[network]")):
-                        starts = [text.index(a) for a in arrays if a in text]
+                        lines = text.splitlines()
+                        starts = [i for i, ln in enumerate(lines)
+                                  if ln.split("#")[0].strip() in arrays]
                         if not starts:
                             continue
-                        tail = text[min(starts):]
-                        for line in tail.splitlines():
+                        for line in lines[min(starts):]:
                             if line.lstrip().startswith("#"):
                                 continue
                             key = line.split("=")[0].strip()

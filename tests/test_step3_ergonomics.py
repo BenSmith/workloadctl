@@ -53,7 +53,7 @@ class Step3Base(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.etc, ignore_errors=True))
         self.addCleanup(lambda: shutil.rmtree(self.usr, ignore_errors=True))
         for p in (
-            mock.patch.object(core, "WORKLOAD_BUNDLES_DIR", self.usr),
+            mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.usr),
             mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.etc),
             mock.patch.object(cmd_edit, "require_root", lambda: None),
             mock.patch.object(cmd_lifecycle, "require_root", lambda: None),
@@ -158,7 +158,7 @@ class TestControlFilesView(Step3Base):
         import shutil
         local = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(local, ignore_errors=True))
-        self.enterContext(mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
         self._ship("solo", "build.sh")
         (local / "solo").mkdir()
         (local / "solo" / "build.sh").write_text("local\n")
@@ -171,6 +171,16 @@ class TestControlFilesView(Step3Base):
         with redirect_stdout(buf):
             cmd_info._print_control_files(cfg, json_mode=False)
         self.assertRegex(buf.getvalue(), r"build\.sh\s+local\s")
+        self.assertNotIn("(none)", buf.getvalue())
+
+    def test_absent_bundle_layers_are_marked(self):
+        self._ship("solo", "build.sh")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cmd_info._print_control_files(self._config("solo"), json_mode=False)
+        lines = {l.split(":")[0].strip(): l for l in buf.getvalue().splitlines() if ":" in l}
+        self.assertTrue(lines["local dir"].endswith("(none)"), lines["local dir"])
+        self.assertFalse(lines["bundle dir"].endswith("(none)"), lines["bundle dir"])
 
     def test_print_no_control_files(self):
         cfg = self._config("solo")

@@ -706,7 +706,8 @@ class TestDiagnoseJson(unittest.TestCase):
 
     def test_top_level_shape(self):
         data = self._run_no_user()
-        for key in ('workload', 'passed', 'checks_passed', 'checks_total', 'checks'):
+        for key in ('workload', 'passed', 'checks_passed', 'checks_total',
+                    'checks_warned', 'checks'):
             self.assertIn(key, data, f'missing key: {key}')
 
     def test_workload_name_correct(self):
@@ -726,6 +727,8 @@ class TestDiagnoseJson(unittest.TestCase):
         passed = sum(1 for c in data['checks'] if c['passed'])
         self.assertEqual(data['checks_passed'], passed)
         self.assertEqual(data['checks_total'], len(data['checks']))
+        self.assertEqual(data['checks_warned'],
+                         sum(1 for c in data['checks'] if c.get('warning')))
 
     def test_each_check_has_required_fields(self):
         data = self._run_no_user()

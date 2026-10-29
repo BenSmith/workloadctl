@@ -1174,6 +1174,14 @@ class TestVmCloudInit(unittest.TestCase):
         errs = validate_workload_config(self._base(template_vars={"LIST": [1, 2, 3]}))
         self.assertTrue(any("must be a scalar" in e for e in errs), errs)
 
+    def test_user_data_file_relative_traversal_rejected(self):
+        errs = validate_workload_config(self._base(user_data_file="../shared/user-data"))
+        self.assertTrue(any("user_data_file" in e and "'..'" in e for e in errs), errs)
+
+    def test_user_data_file_relative_and_absolute_accepted(self):
+        for ud in ("cloud-init/user-data", "./cloud-init/user-data", "/srv/seeds/user-data"):
+            self.assertEqual(validate_workload_config(self._base(user_data_file=ud)), [], ud)
+
     def test_seed_provides_known_values_accepted(self):
         cfg = self._base(seed_provides=["ca", "mounts"])
         self.assertEqual(validate_workload_config(cfg), [])

@@ -748,16 +748,18 @@ sudo workloadctl health web
 - this boot's messages from unit generation;
 - the state of each of the workload's units, with a journal excerpt for any
   that has failed or restarted;
-- the setup checks;
+- the setup checks, including any warnings;
 - drift;
 - health;
 - for a filtered workload, its inspector's counters.
 
 A unit that is active but has restarted counts as a problem, because a
 restart loop otherwise looks healthy. `doctor` exits 0 when it finds nothing
-and 1 when it finds anything. `diagnose` runs only the setup checks (the
-user, ID ranges, linger, SELinux labels and, for a filtered workload, the
-egress plumbing), each with a fix when it fails. `health` is the probe
+and 1 when it finds anything. A warning, which is a setup check that passed
+and that you should still see, is shown but is not a finding. `diagnose` runs
+only the setup checks (the user, ID ranges, linger, SELinux labels and, for a
+filtered workload, the egress plumbing), each with a fix when it fails or
+warns. `health` is the probe
 described in [Health checks](04-containers.md#health-checks).
 [Troubleshooting](10-troubleshooting.md) takes it from there.
 

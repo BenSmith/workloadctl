@@ -27,9 +27,10 @@ from pathlib import Path, PurePosixPath
 
 from config_parser import parse_volume_spec, workload_root_dir
 from workload_lib import (
-    WORKLOAD_CONFIG_DIR, expand_volume_path, virtiofs_tags,
+    expand_volume_path, virtiofs_tags, workload_config_dir,
     workload_egress_dir, workload_state_dir,
 )
+from workloadctl_core import control_file_source
 from egress_policy import vm_uses_inspect
 from workload_addr import UID_MAX, UID_MIN, inspect_address
 from moatery.egress_ca import ca_cert_path
@@ -315,14 +316,15 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
             "Check the generate_vm_host_keypair step above."
         )
 
-    # Resolve user_data_file path (relative paths are anchored to the TOML's dir).
+    # A relative user_data_file resolves like any control file: the TOML's dir,
+    # then the local bundle layer, then the shipped bundle.
     user_data_override_path = None
     if ci_cfg.get("user_data_file"):
-        raw_path = ci_cfg["user_data_file"]
-        candidate = Path(raw_path)
-        if not candidate.is_absolute():
-            base_dir = config_path.parent if config_path is not None else WORKLOAD_CONFIG_DIR
-            candidate = base_dir / raw_path
+        instance_dir = (config_path.parent if config_path is not None
+                        else workload_config_dir() / name)
+        bundle = config.get("workload", {}).get("bundle") or name
+        candidate, _ = control_file_source(
+            instance_dir, bundle, ci_cfg["user_data_file"])
         if not candidate.exists():
             raise FileNotFoundError(
                 f"[vm.cloud_init].user_data_file {candidate} does not exist"

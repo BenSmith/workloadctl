@@ -1003,7 +1003,16 @@ give an instance with an edited `Containerfile` an `image` of its own.
 
 To change a file for every instance of a bundle, put your copy in
 `/etc/workloadctl/bundles/<bundle>/` instead, at the same relative path. An
-instance's own override still wins over it.
+instance's own override still wins over it. Nothing applies the change for
+you. `workloadctl catalog` lists each bundle's instances; for each one, run
+`build` and then `recreate` after changing a `Containerfile` or a file it
+copies, `enable` after changing `policy.cil` or the setup script, and
+`recreate` after anything else.
+
+A file in `/etc/workloadctl/bundles/<bundle>/` that has the same path as a
+shipped one stops following package updates. `diagnose` and `doctor` warn
+about each such file as `bundle_shadowing`; deleting the local file makes it
+follow the package again.
 
 ## Remote development from an IDE
 

@@ -43,26 +43,22 @@ validate what they wrote and print the result. Neither enables the workload.
 
 They differ in who owns the seed. `--scratch-vm` writes a copy of it to
 `/etc/workloads.d/myvm/cloud-init/user-data`, and that copy is yours to edit.
-`vm-base --as` copies only the TOML: its `user_data_file` names the seed in
-`/usr/share/workloadctl/workloads/vm-base/` by absolute path, so the instance
-picks up the package's version of the seed when the package is upgraded.
+`vm-base --as` copies only the TOML: its `user_data_file` is the relative
+`cloud-init/user-data`, which the instance finds in the shipped bundle under
+`/usr/share/workloadctl/workloads/vm-base/`, so it picks up the package's
+version of the seed when the package is upgraded.
 
 Use `--scratch-vm` when you mean to write your own seed. To take over the
-seed of a `vm-base` instance later, make the copy and point the TOML at it.
-`edit` copies the shipped seed and opens it in your editor; make your change
-there, because a copy saved unchanged is discarded:
+seed of a `vm-base` instance later, make a copy with `edit`, which copies the
+shipped seed and opens it in your editor. Make your change there, because a
+copy saved unchanged is discarded:
 
 ```bash
 sudo workloadctl edit myvm cloud-init/user-data
 ```
 
-```toml
-[vm.cloud_init]
-user_data_file = "cloud-init/user-data"
-```
-
-Without the second change the copy is never read, because the absolute path
-in the TOML still names the shipped file.
+The TOML needs no change: the copy in the instance's directory is found
+before the shipped file.
 
 Then edit the TOML to taste and enable:
 
@@ -293,10 +289,13 @@ REPO_URL = "https://git.example.com/me/project.git"
 VERSION = "1.4.2"
 ```
 
-A relative path is resolved against the directory holding the TOML. The
-file is the guest's entire user-data: workloadctl does not parse it or merge
-anything into it. It only substitutes placeholders as plain text, and adds
-the `#cloud-config` header if the file lacks one.
+A relative path is looked up like any other control file: in the directory
+holding the TOML, then in the bundle's local layer, then in the shipped
+bundle ([Changing a bundle's files](04-containers.md#changing-a-bundles-files)).
+An absolute path is used as written. The file is the guest's entire
+user-data: workloadctl does not parse it or merge anything into it. It only
+substitutes placeholders as plain text, and adds the `#cloud-config` header
+if the file lacks one.
 
 | Placeholder | Replaced with |
 |---|---|

@@ -1251,14 +1251,17 @@ and the readers are root's podman (the build context), `semodule` (the policy),
 root (the setup script) and whatever system service a setup script starts.
 
 ```
-sudo python3 tests/manual/local_bundle_rig.py [--keep]
+sudo python3 tests/manual/local_bundle_rig.py [--keep] [--no-vm]
 ```
 
 It needs the workloadctl RPM installed from the branch under test, enforcing,
-and podman. It plants two throwaway bundles: `lbr-local` lives only in the local
-layer, and `lbr-over` is planted in the shipped tree with a local layer carrying
-`asset.txt`, `setup.sh` and `helper.py` over it. Every local file says `local`
-and every shipped one says `usr`, so each row reads which copy a reader got.
+podman, and KVM unless `--no-vm`. It plants three throwaway bundles:
+`lbr-local` lives only in the local layer; `lbr-over` is planted in the shipped
+tree with a local layer carrying `asset.txt`, `setup.sh` and `helper.py` over
+it; `lbr-vm` is a VM bundle planted in the shipped tree from this checkout's
+`vm-base`, with its relative `user_data_file` answered by a seed in the local
+layer. Every local file says `local` and every shipped one says `usr`, so each
+row reads which copy a reader got.
 
 ### What it answers
 
@@ -1273,10 +1276,16 @@ and every shipped one says `usr`, so each row reads which copy a reader got.
   `wl_<name>.process`. `disable --purge` removes the module.
 - **`setup.sh` runs from the layer**, and a `systemd-run` service runs a helper
   it found through `WORKLOAD_LOCAL_BUNDLE_DIR`.
+- **A VM boots the local layer's seed.** The seed writes a marker naming its
+  layer, and the guest reads it back over `exec`, so the row sees the seed
+  the guest actually got rather than the path workloadctl resolved. A premise
+  row first checks that the installed `vm-base` names its seed relatively; a
+  build without layered seed lookup stops the run there.
 - **No AVC anywhere during the run**, unfiltered, since an AVC from one of
   these readers need not name a workload.
 
-First run on the dev host, 2026-10-29: 29/29, no denials.
+First run on the dev host, 2026-10-29: 29/29, no denials. With the VM arm, the
+same day: 35/35, no denials.
 
 ### How it lied before it told the truth
 
@@ -1289,6 +1298,6 @@ the row.
 ### What it deliberately does not measure
 
 A unit whose `ExecStart=` is a file in the layer itself (the setup script's
-service runs `python3` on the helper, not the helper directly), a VM bundle's
-`cloud-init/` or `user_data_file` from the layer, and an image-based host,
-where `/etc` is the merged ostree `/etc` rather than a plain directory.
+service runs `python3` on the helper, not the helper directly), and an
+image-based host, where `/etc` is the merged ostree `/etc` rather than a plain
+directory.

@@ -10,6 +10,10 @@ test_cmd_drift, substrate liveness via test_substrate). Pinned here:
 - A failing unit (the broken-ExecStartPre shape: Result=exit-code on the
   main service) surfaces the unit, its journal tail, and exits 1 — the
   won't-come-up case doctor exists for.
+- A warning (a check that passed and that the operator should see) is listed
+  under "Setup checks" with its fix, counted in the summary and in the
+  "Overall:" line and in the JSON, and changes neither `healthy`, `problems`
+  nor the exit status.
 """
 
 import argparse
@@ -37,6 +41,17 @@ class WiringTest(unittest.TestCase):
         args = fake.call_args.args[0]
         self.assertEqual(args.workload, "app")
         self.assertFalse(args.json)
+
+
+WARN = {"check": "bundle_shadowing", "passed": True,
+        "message": "Local bundle files shadow the shipped bundle: build.sh",
+        "fix": "diff -ru /usr/shipped /etc/local", "warning": True}
+WARN2 = {"check": "gpu_selinux", "passed": True,
+         "message": "NVIDIA device access allowed via the legacy blanket "
+                    "container_use_devices",
+         "fix": "sudo setsebool -P container_use_xserver_devices on", "warning": True}
+FAIL = {"check": "home_dir", "passed": False,
+        "message": "Home directory missing", "fix": "sudo mkdir /home/x"}
 
 
 def _fake_config(enabled=True):
@@ -164,6 +179,67 @@ class DoctorReportTest(unittest.TestCase):
         self.assertIn("✓ workload-app.service", out)
         self.assertIn("✓ 1 checks passed", out)
         self.assertNotIn("journal", out.lower())
+
+    def _run_with_checks(self, checks, json_mode=False):
+        passed = all(c["passed"] for c in checks)
+        with mock.patch.object(cmd_doctor, "_unit_rows", lambda config: []), \
+                mock.patch.object(cmd_doctor, "collect_diagnose_checks",
+                                  lambda config, manager: (checks, passed)):
+            return self._run(json_mode=json_mode)
+
+    def test_a_warning_is_listed_with_its_fix_and_the_workload_stays_healthy(self):
+        passing = self.HEALTHY_CHECKS[0][0]
+        code, out = self._run_with_checks([passing, WARN])
+        self.assertEqual(code, 0)
+        self.assertIn(
+            "Setup checks\n"
+            "  ✓ 2 checks passed (1 warning)\n"
+            "  ! Local bundle files shadow the shipped bundle: build.sh\n"
+            "    Fix: diff -ru /usr/shipped /etc/local\n"
+            "Drift\n", out)
+        self.assertTrue(out.endswith("Overall: HEALTHY (1 warning)\n"), out)
+        self.assertNotIn("✗", out)
+
+    def test_warnings_are_counted_in_the_plural(self):
+        _, out = self._run_with_checks([WARN, WARN2])
+        self.assertIn("  ✓ 2 checks passed (2 warnings)\n", out)
+        self.assertIn("  ! NVIDIA device access allowed", out)
+        self.assertTrue(out.endswith("Overall: HEALTHY (2 warnings)\n"), out)
+
+    def test_no_warning_changes_nothing_in_the_report(self):
+        code, out = self._run_with_checks(list(self.HEALTHY_CHECKS[0]))
+        self.assertEqual(code, 0)
+        self.assertIn("Setup checks\n  ✓ 1 checks passed\nDrift\n", out)
+        self.assertTrue(out.endswith("Overall: HEALTHY\n"), out)
+        self.assertNotIn("!", out)
+
+    def test_a_failure_beside_a_warning_lists_both_and_counts_only_the_failure(self):
+        code, out = self._run_with_checks([WARN, FAIL])
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "Setup checks\n"
+            "  ✗ Home directory missing\n"
+            "    Fix: sudo mkdir /home/x\n"
+            "  ! Local bundle files shadow the shipped bundle: build.sh\n"
+            "    Fix: diff -ru /usr/shipped /etc/local\n"
+            "  (1/2 passed)\n", out)
+        self.assertTrue(out.endswith("Overall: UNHEALTHY (1 problem)\n"), out)
+
+    def test_json_overall_carries_the_warning_count(self):
+        passing = self.HEALTHY_CHECKS[0][0]
+        code, out = self._run_with_checks([passing, WARN], json_mode=True)
+        data = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(data["overall"],
+                         {"healthy": True, "problems": 0, "warnings": 1})
+        self.assertEqual(data["checks"], [passing, WARN])
+
+    def test_json_overall_counts_zero_when_nothing_warns(self):
+        code, out = self._run_with_checks([FAIL], json_mode=True)
+        data = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(data["overall"],
+                         {"healthy": False, "problems": 1, "warnings": 0})
 
     def test_failed_unit_surfaces_tail_and_exits_1(self):
         # The broken-ExecStartPre shape: workload-ensure-user failed, so the

@@ -13,6 +13,7 @@ This is the single chokepoint every control-file lookup (enable/recreate/validat
 build.sh, [host].setup, SELinux policy.cil) now goes through.
 """
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -29,9 +30,9 @@ class TestControlFileResolution(unittest.TestCase):
         self.usr = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(self.etc, ignore_errors=True))
         self.addCleanup(lambda: __import__("shutil").rmtree(self.usr, ignore_errors=True))
-        # bundle_dir reads the WORKLOAD_BUNDLES_DIR imported into core's namespace;
+        # bundle_dir reads workload_lib.WORKLOAD_BUNDLES_DIR via bundle_roots();
         # override_dir reads workload_lib.WORKLOAD_CONFIG_DIR via workload_config_dir().
-        self._p1 = mock.patch.object(core, "WORKLOAD_BUNDLES_DIR", self.usr)
+        self._p1 = mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.usr)
         self._p2 = mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.etc)
         self._p1.start()
         self._p2.start()
@@ -158,7 +159,7 @@ class TestControlFileResolution(unittest.TestCase):
         if not hasattr(self, "_local_root"):
             local.mkdir()
             self.addCleanup(lambda: __import__("shutil").rmtree(local, ignore_errors=True))
-            p = mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local)
+            p = mock.patch.object(workload_lib, "WORKLOAD_LOCAL_BUNDLES_DIR", local)
             p.start()
             self.addCleanup(p.stop)
             self._local_root = local
@@ -244,6 +245,24 @@ class TestControlFileResolution(unittest.TestCase):
         path, source = cfg.resolve_control_file_with_source("/opt/x/setup.sh")
         self.assertEqual(path, Path("/opt/x/setup.sh"))
         self.assertEqual(source, "abs")
+
+
+class TestShippedVmSeeds(unittest.TestCase):
+    """A shipped VM bundle names its seed relatively, so the seed an instance
+    reads follows the same instance/local/shipped chain as every other file."""
+
+    def test_shipped_vm_bundles_name_their_seed_relatively(self):
+        shipped = Path(__file__).resolve().parent.parent / "workloads"
+        for bundle in ("vm-base", "forgejo-runner"):
+            with self.subTest(bundle=bundle):
+                data = tomllib.loads((shipped / bundle / "workload.toml").read_text())
+                rel = data["vm"]["cloud_init"]["user_data_file"]
+                self.assertEqual(rel, "cloud-init/user-data")
+                with mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", shipped):
+                    path, source = core.control_file_source(
+                        Path("/nonexistent/instance"), bundle, rel)
+                self.assertEqual((path, source), (shipped / bundle / rel, "usr"))
+                self.assertTrue(path.is_file())
 
 
 if __name__ == "__main__":

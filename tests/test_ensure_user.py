@@ -27,6 +27,7 @@ import ensure_user
 import ensure_vm
 import vm_default_seed
 import vm_ssh_keys
+import workload_lib
 from vm_provision import (PROVISION_FAILED, PROVISION_UNVERIFIED,
                           read_provision_marker, write_provision_marker)
 from workload_addr import inspect_address
@@ -283,6 +284,14 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self.runtime = Path(self.tmp) / "run"
         self.runtime.mkdir()
         self.pw = _fake_pw(self.home)
+        # The two bundle layers a relative user_data_file falls back to.
+        self.usr = Path(self.tmp) / "usr"
+        self.local = Path(self.tmp) / "local"
+        for attr, root in (("WORKLOAD_BUNDLES_DIR", self.usr),
+                           ("WORKLOAD_LOCAL_BUNDLES_DIR", self.local)):
+            patcher = mock.patch.object(workload_lib, attr, root)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def tearDown(self):
         import shutil
@@ -742,8 +751,10 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
 
     def test_template_missing_file_raises(self):
         cfg = {"vm": {"cloud_init": {"user_data_file": "does-not-exist"}}}
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(FileNotFoundError) as ctx:
             self._run_build(cfg)
+        self.assertIn("user_data_file", str(ctx.exception))
+        self.assertIn("does-not-exist does not exist", str(ctx.exception))
 
     def test_template_missing_var_raises_runtime_error(self):
         ud = self.config_dir / "user-data"
@@ -763,6 +774,80 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         }}}
         self._run_build(cfg)
         self.assertIn("x: value", self._read_user_data())
+
+    def _write_seed(self, path: Path, tag: str) -> Path:
+        """A complete seed that says which copy it is, so the rendered
+        user-data shows which layer won."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"#cloud-config\nseed: {tag}\nssh_deletekeys: false\n"
+            f"host_key: ${{WORKLOADCTL_VM_HOST_KEY}}\n"
+            f"ca_bundle_path: {self.mod.CA_BUNDLE_PATH}\n"
+        )
+        return path
+
+    def _rendered_seed_tag(self) -> str:
+        return next(line.split(": ", 1)[1]
+                    for line in self._read_user_data().splitlines()
+                    if line.startswith("seed: "))
+
+    def _relative_seed_cfg(self, bundle: str | None = None) -> dict:
+        cfg = {"vm": {"cloud_init": {"user_data_file": "cloud-init/user-data"}}}
+        if bundle:
+            cfg["workload"] = {"bundle": bundle}
+        return cfg
+
+    def test_relative_seed_instance_wins_over_both_layers(self):
+        self._write_seed(self.config_dir / "cloud-init" / "user-data", "instance")
+        self._write_seed(self.local / "myvm" / "cloud-init" / "user-data", "local")
+        self._write_seed(self.usr / "myvm" / "cloud-init" / "user-data", "shipped")
+        self._run_build(self._relative_seed_cfg())
+        self.assertEqual(self._rendered_seed_tag(), "instance")
+
+    def test_relative_seed_local_layer_wins_over_shipped(self):
+        self._write_seed(self.local / "myvm" / "cloud-init" / "user-data", "local")
+        self._write_seed(self.usr / "myvm" / "cloud-init" / "user-data", "shipped")
+        self._run_build(self._relative_seed_cfg())
+        self.assertEqual(self._rendered_seed_tag(), "local")
+
+    def test_relative_seed_falls_back_to_shipped(self):
+        self._write_seed(self.usr / "myvm" / "cloud-init" / "user-data", "shipped")
+        self._run_build(self._relative_seed_cfg())
+        self.assertEqual(self._rendered_seed_tag(), "shipped")
+
+    def test_relative_seed_layers_are_keyed_on_the_bundle(self):
+        # An instance made from a bundle reads that bundle's seed, not one
+        # named after the instance.
+        self._write_seed(self.usr / "myvm" / "cloud-init" / "user-data", "by-name")
+        self._write_seed(self.usr / "base" / "cloud-init" / "user-data", "shipped-base")
+        self._run_build(self._relative_seed_cfg(bundle="base"))
+        self.assertEqual(self._rendered_seed_tag(), "shipped-base")
+        self._write_seed(self.local / "base" / "cloud-init" / "user-data", "local-base")
+        self._run_build(self._relative_seed_cfg(bundle="base"))
+        self.assertEqual(self._rendered_seed_tag(), "local-base")
+
+    def test_relative_seed_refuses_parent_traversal(self):
+        # The target exists, so only the refusal can stop the read.
+        self._write_seed(self.config_dir.parent / "outside" / "user-data", "outside")
+        cfg = {"vm": {"cloud_init": {"user_data_file": "../outside/user-data"}}}
+        with self.assertRaises(ValueError) as ctx:
+            self._run_build(cfg)
+        self.assertIn("'..'", str(ctx.exception))
+
+    def test_relative_seed_refuses_an_invalid_bundle(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._run_build(self._relative_seed_cfg(bundle="../escape"))
+        self.assertIn("Invalid [workload] bundle", str(ctx.exception))
+
+    def test_absolute_seed_is_taken_verbatim(self):
+        elsewhere = self._write_seed(Path(self.tmp) / "elsewhere" / "user-data", "absolute")
+        # Copies a re-anchoring bug would find first.
+        rel = str(elsewhere).lstrip("/")
+        self._write_seed(self.config_dir / rel, "re-anchored-instance")
+        self._write_seed(self.local / "myvm" / rel, "re-anchored-local")
+        cfg = {"vm": {"cloud_init": {"user_data_file": str(elsewhere)}}}
+        self._run_build(cfg)
+        self.assertEqual(self._rendered_seed_tag(), "absolute")
 
     def test_fingerprint_changes_when_user_data_file_edited(self):
         # Editing the user_data_file content must trigger a rebuild.

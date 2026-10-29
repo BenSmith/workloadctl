@@ -12,6 +12,7 @@ Installed to /usr/libexec/workloadctl/vm_validate.py.
 """
 
 import re
+from pathlib import PurePosixPath
 
 from config_parser import parse_volume_spec
 from vm_defs import (
@@ -287,6 +288,12 @@ def validate_vm_config(config: dict) -> list[str]:
             if ud is not None and not isinstance(ud, str):
                 errors.append(
                     f"[vm.cloud_init].user_data_file must be a string path, got {ud!r}"
+                )
+            elif (ud is not None and not PurePosixPath(ud).is_absolute()
+                  and ".." in PurePosixPath(ud).parts):
+                errors.append(
+                    f"[vm.cloud_init].user_data_file {ud!r} must be absolute, or "
+                    f"relative with no '..' (it is looked up in the bundle's layers)"
                 )
             # seed_provides opts a custom seed out of the seed-completeness
             # checks build_cloud_init_iso applies (CA bundle, virtiofs mounts).

@@ -60,7 +60,9 @@ The report reads top to bottom:
   journal are printed under it. A unit that keeps restarting never reaches
   `failed`, so the restart count is often the only sign.
 - **Setup checks** is the `diagnose` battery below, with only the failures
-  printed.
+  and the warnings printed. A warning is marked `!` and has its `Fix:` under
+  it; when nothing failed, the section is `✓ N checks passed` followed by
+  any warnings.
 - **Drift** says whether the units in `/run/systemd/system` still match what
   the TOML would generate now.
 - **Health** says whether the service is active and its containers are
@@ -70,7 +72,9 @@ The report reads top to bottom:
   working, so none of them count as a problem.
 
 The last line is `Overall: HEALTHY` or `Overall: UNHEALTHY (N problems)`.
-`--json` prints the whole report as one object.
+A warning is not a problem, so a workload with one reads `Overall: HEALTHY (1
+warning)` and the command still exits 0. `--json` prints the whole report as
+one object, with the number of warnings in `overall.warnings`.
 
 ### diagnose: what is wrong with this host's setup
 
@@ -79,10 +83,16 @@ sudo workloadctl diagnose <name>
 ```
 
 `diagnose` runs the setup checks on their own and prints each one: `✓` for
-a pass, `✗` for a failure with a `Fix:` line under it, and at the end a
-numbered list of the failures and their fixes. It exits 1 if any check
-failed. `--json` prints each check as `{check, passed, message, fix}`, and
-the `check` names below are the ones it uses.
+a pass, `!` for a warning and `✗` for a failure, the last two with a `Fix:`
+line under them. At the end it prints a numbered list of the failures and
+their fixes, then one of the warnings. A warning is a check that passed and
+that you should still see. It counts as passed, so it never fails the
+command or changes its exit status: the summary reads `Checks: 12/12 passed,
+1 warning`, and the last line `✓ All checks passed (1 warning) - workload is
+healthy`. `diagnose` exits 1 if any check failed. `--json` prints each check
+as `{check, passed, message, fix}`, adds `"warning": true` to a warning, and
+counts the warnings in the top-level `checks_warned`. The `check` names below
+are the ones it uses.
 
 A check that cannot find out does not claim a pass: without `semanage`,
 with SELinux disabled, or with `/etc/login.defs` unreadable, the checks that
@@ -103,12 +113,13 @@ The checks, in the order they print:
 | `subid_configured`, `subid_derived`, `subid_overlap` | the subordinate ID range is missing, or is not the one derived from the UID | [Permissions and ID maps](#permissions-and-id-maps) |
 | `linger_enabled`, `user_session`, `runtime_dir` | the workload user's systemd manager or `/run/user/<uid>` is gone | [Starting](#starting) |
 | `selinux_module`, `workload_selinux_module_current`, `selinux_module_current` | a policy module is not loaded, or is older than the package's | [SELinux denials](#selinux-denials) |
-| `gpu_selinux` | an NVIDIA GPU is requested and nothing grants its device nodes | [SELinux denials](#selinux-denials) |
+| `gpu_selinux` | an NVIDIA GPU is requested and nothing grants its device nodes; it warns, and passes, when only the older blanket `container_use_devices` boolean does | [SELinux denials](#selinux-denials) |
 | `selinux_labels` | the workload's directory is wrongly labelled, or the rule that labels it is missing | [SELinux denials](#selinux-denials) |
 | `vm_socket_dir_selinux`, `vm_provisioning`, `vm_guest_clock` | a VM's runtime directory is mislabelled, its cloud-init failed, or its clock is out | [VMs](#vms) |
 | `image_available`, `image_current` | an image is missing, or older than 30 days | [Images](#images) |
 | `service_file`, `config_current`, `units_current` | the units are missing, older than the TOML, or from another version | [Starting](#starting) |
 | `host_artifact[...]` | something the workload's setup script installed is missing or failing | [Starting](#starting) |
+| `bundle_shadowing` | warns, and passes, when a file in `/etc/workloadctl/bundles/<bundle>/` has the same path as a shipped one and so no longer follows package updates; its fix compares the two trees, and deleting the local file makes it follow the package again | [Containers](04-containers.md#changing-a-bundles-files) |
 | `vm_network`, `vm_egress`, `vm_confinement`, `vm_inspect`, `vm_resolve`, `container_resolve`, `container_resolver`, `allow_drift`, `capture` | the network plane is not as the TOML says | [Networking](06-networking.md#is-it-in-force-diagnose), [VMs](#vms) |
 | `ca_trust_anchors` | a trust anchor on the host is not in its TLS bundle | [Images](#images) |
 | `service_enabled`, `service_active`, `container_running` | the workload is not running | [Starting](#starting) |
@@ -753,6 +764,12 @@ sudo setsebool -P container_use_xserver_devices on
 
 A workload with its own policy module must grant the access in its
 `policy.cil`, because the boolean covers only the default container type.
+On a host that still has the older `container_use_devices` boolean on, which
+gives every container every device node type, the check passes with a
+warning. Its fix turns the scoped boolean on and leaves the older one alone:
+other workloads, such as jellyfin transcoding on a `/dev/dri` render node,
+open their devices through it. Turn it off only when nothing on the host
+does.
 For other devices, the denial in the audit log names the device's type, and
 a workload's own `policy.cil` is the place to allow it; see [A policy of the
 workload's own](08-security.md#a-policy-of-the-workloads-own).

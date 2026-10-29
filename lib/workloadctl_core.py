@@ -22,9 +22,8 @@ import tomllib
 from validation import validate_workload_name
 from config_parser import infer_workload_mode
 from workload_lib import (
-    bundle_file, expand_volume_path, infer_workload_kind, iter_workloads,
-    normalize_containers, WORKLOAD_BUNDLES_DIR, WORKLOAD_LOCAL_BUNDLES_DIR,
-    workload_config_dir,
+    bundle_file, bundle_roots, expand_volume_path, infer_workload_kind,
+    iter_workloads, normalize_containers, workload_config_dir,
     workload_config_path, workload_is_enabled, workload_container_name,
     workload_data_dir, workload_home_dir, workload_podman_container_name,
     workload_service_name, workload_state_dir, workload_username,
@@ -211,6 +210,63 @@ def require_root():
         raise NotRoot()
 
 
+def valid_bundle(bundle: str) -> str:
+    """The bundle name, checked before it becomes a path.
+
+    The bundle dirs are the single point where the `bundle` field becomes a
+    filesystem path — and that path is read *and executed as root* (build
+    context, `[host].setup`, `policy.cil`). So validate here: anything that
+    isn't a plain workload-style name (a stray `..`, a typo, an underscored
+    SELinux type name) is rejected before it can redirect control-file
+    resolution outside the bundles tree. Construction stays lenient (callers
+    like `validate`/`info` can still inspect a bad bundle); the guarantee is
+    that no path is ever *built* from an unvalidated bundle.
+    """
+    try:
+        validate_workload_name(bundle)
+    except ValueError as e:
+        hint = ""
+        if "_" in bundle:
+            hint = (f" — did you mean {bundle.replace('_', '-')!r}? the "
+                    f"bundle is a directory name and uses hyphens, not the "
+                    f"underscores of the SELinux type name")
+        raise ValueError(f"Invalid [workload] bundle {bundle!r}: {e}{hint}")
+    return bundle
+
+
+def control_file_source(instance_dir: Path, bundle: str, relpath: str) -> tuple[Path, str]:
+    """Resolve `relpath` through the lazy-override chain, file by file: the
+    instance dir's copy wins if it exists, then the local bundle layer's, else
+    the shipped /usr bundle default. Returns the path and the winning source:
+    "etc" (instance), "local" (the local bundle layer), "usr" (shipped default)
+    or "abs" (a verbatim absolute path).
+
+    This is the single chokepoint every control-file lookup goes through, and a
+    resolved relative path is read *and executed as root* (build
+    Containerfile/`[build].script`, `[host].setup`, `policy.cil`). So any `..`
+    traversal is rejected here — not just for `bundle` (validated by
+    `valid_bundle`), but for the relpath too, so a `[build] containerfile =
+    "../../etc/x"` or `script`/`setup` can't redirect resolution outside the
+    bundle/instance trees. An absolute path is taken verbatim (the documented
+    escape hatch for a fully-qualified setup/script path) and reported as
+    "abs" — neither an override nor a shipped default.
+    """
+    p = Path(relpath)
+    if p.is_absolute():
+        return p, "abs"
+    if ".." in p.parts:
+        raise ValueError(
+            f"control-file path {relpath!r} must be relative with no '..' "
+            f"components (it resolves under the bundle/override tree)"
+        )
+    override = instance_dir / relpath
+    if override.exists():
+        return override, "etc"
+    shipped, local = bundle_roots()
+    bundle = valid_bundle(bundle)
+    return bundle_file(local / bundle, shipped / bundle, relpath)
+
+
 # ---------------------------------------------------------------------------
 # WorkloadConfig
 # ---------------------------------------------------------------------------
@@ -305,7 +361,7 @@ class WorkloadConfig:
         single shipped instance needs no `bundle` field; `duplicate`/`init`
         set it to the source's resolved bundle so a copy shares one control
         tree without copying it. Goes straight into a filesystem path, which is
-        why `bundle_dir` (the single point where it becomes a path) validates it
+        why `valid_bundle` (the single point where it becomes a path) validates it
         against NAME_PATTERN before any control file is resolved or executed.
         """
         val = self.config.get("workload", {}).get("bundle")
@@ -352,37 +408,17 @@ class WorkloadConfig:
     @property
     def bundle_dir(self) -> Path:
         """The shipped /usr control-file tree for this workload's bundle."""
-        return WORKLOAD_BUNDLES_DIR / self._valid_bundle()
+        return bundle_roots()[0] / self._valid_bundle()
 
     @property
     def local_bundle_dir(self) -> Path:
         """The admin's /etc/workloadctl/bundles/<bundle>/ layer, which wins file
         by file over `bundle_dir`. Usually absent for a shipped bundle."""
-        return WORKLOAD_LOCAL_BUNDLES_DIR / self._valid_bundle()
+        return bundle_roots()[1] / self._valid_bundle()
 
     def _valid_bundle(self) -> str:
-        """The bundle name, checked before it becomes a path.
-
-        The bundle dirs are the single point where the `bundle` field becomes a
-        filesystem path — and that path is read *and executed as root* (build
-        context, `[host].setup`, `policy.cil`). So validate here: anything that
-        isn't a plain workload-style name (a stray `..`, a typo, an underscored
-        SELinux type name) is rejected before it can redirect control-file
-        resolution outside the bundles tree. Construction stays lenient (callers
-        like `validate`/`info` can still inspect a bad bundle); the guarantee is
-        that no path is ever *built* from an unvalidated bundle.
-        """
-        bundle = self.bundle
-        try:
-            validate_workload_name(bundle)
-        except ValueError as e:
-            hint = ""
-            if "_" in bundle:
-                hint = (f" — did you mean {bundle.replace('_', '-')!r}? the "
-                        f"bundle is a directory name and uses hyphens, not the "
-                        f"underscores of the SELinux type name")
-            raise ValueError(f"Invalid [workload] bundle {bundle!r}: {e}{hint}")
-        return bundle
+        """`self.bundle`, checked by `valid_bundle` before it becomes a path."""
+        return valid_bundle(self.bundle)
 
     @property
     def override_dir(self) -> Path:
@@ -411,33 +447,9 @@ class WorkloadConfig:
         return self.resolve_control_file_with_source(relpath)[0]
 
     def resolve_control_file_with_source(self, relpath: str) -> tuple[Path, str]:
-        """Like resolve_control_file but also returns the winning source:
-        "etc" (operator override), "local" (the local bundle layer), "usr"
-        (shipped default), or "abs" (a verbatim absolute path) — the merged-view
-        truth `info --files` reports.
-
-        This is the single chokepoint every control-file lookup goes through,
-        and a resolved relative path is read *and executed as root* (build
-        Containerfile/`[build].script`, `[host].setup`, `policy.cil`). So any
-        `..` traversal is rejected here — not just for `bundle` (validated in
-        `_valid_bundle`), but for the relpath too, so a `[build] containerfile =
-        "../../etc/x"` or `script`/`setup` can't redirect resolution outside the
-        bundle/override trees. An absolute path is taken verbatim (the documented
-        escape hatch for a fully-qualified setup/script path) and reported as
-        "abs" — neither an override nor a shipped default.
-        """
-        p = Path(relpath)
-        if p.is_absolute():
-            return p, "abs"
-        if ".." in p.parts:
-            raise ValueError(
-                f"control-file path {relpath!r} must be relative with no '..' "
-                f"components (it resolves under the bundle/override tree)"
-            )
-        override = self.override_dir / relpath
-        if override.exists():
-            return override, "etc"
-        return bundle_file(self.local_bundle_dir, self.bundle_dir, relpath)
+        """Like resolve_control_file but also returns the winning source — the
+        merged-view truth `info --files` reports. See `control_file_source`."""
+        return control_file_source(self.override_dir, self.bundle, relpath)
 
     # --- [build]: image build context (see lib/imagebuild.py) --------------
 

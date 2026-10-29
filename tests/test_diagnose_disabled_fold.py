@@ -92,6 +92,18 @@ class CollapseUnitTests(unittest.TestCase):
         names = [c["check"] for c in out]
         self.assertEqual(names, ["linger_enabled", "workload_disabled"])
 
+    def test_a_warning_keeps_its_key_beside_a_fold(self):
+        """A warning is a pass the operator should see; being passed over by
+        the fold would hide it on exactly the workloads nobody is watching."""
+        warning = dict(_entry("bundle_shadowing", True, fix="diff -ru a b"),
+                       warning=True)
+        out = collapse_disabled_consequences(
+            [warning, _entry("service_active", False)], "app")
+        self.assertEqual([c["check"] for c in out],
+                         ["bundle_shadowing", "workload_disabled"])
+        self.assertIs(out[0]["warning"], True)
+        self.assertNotIn("warning", out[1])
+
     def test_findings_about_persistent_state_survive(self):
         """The point of the fold: what is left is what is worth reading. These
         describe state the next enable builds on, so being off excuses none of

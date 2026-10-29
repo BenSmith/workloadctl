@@ -82,8 +82,8 @@ only. For a VM, copy through `exec`, as in `sudo workloadctl exec myvm -- cat
 
 | Command | What it does | Root | Explained in |
 |---|---|---|---|
-| [`doctor`](../cli.md#doctor) | One report: this boot's generator messages, the state of each unit, the setup checks, drift and health. | yes | [Troubleshooting](10-troubleshooting.md#doctor-everything-at-once) |
-| [`diagnose`](../cli.md#diagnose) | The setup checks alone (user, ID ranges, linger, SELinux labels, egress plumbing), each with a fix when it fails. | yes | [Troubleshooting](10-troubleshooting.md#diagnose-what-is-wrong-with-this-hosts-setup) |
+| [`doctor`](../cli.md#doctor) | One report: this boot's generator messages, the state of each unit, the setup checks and their warnings, drift and health. | yes | [Troubleshooting](10-troubleshooting.md#doctor-everything-at-once) |
+| [`diagnose`](../cli.md#diagnose) | The setup checks alone (user, ID ranges, linger, SELinux labels, egress plumbing), each with a fix when it fails or warns. | yes | [Troubleshooting](10-troubleshooting.md#diagnose-what-is-wrong-with-this-hosts-setup) |
 | [`cleanup`](../cli.md#cleanup) | Lists users, directories and SELinux modules whose TOML is gone. `--apply` removes them. | yes | [Operating](09-operating.md#cleaning-up) |
 
 ### Network
@@ -138,7 +138,7 @@ log](09-operating.md#the-operations-log).
 
 | Status | Meaning |
 |---|---|
-| 0 | Success. For a report command, nothing wrong was found. |
+| 0 | Success. For a report command, nothing wrong was found; a warning from `diagnose` or `doctor` is not a finding. |
 | 1 | The command failed. Also returned when `validate`, `health`, `diagnose`, `doctor` or `drift` finds a problem, when a command that needs root is run without it, when the workload is masked, and when its user does not exist yet. An unexpected error also prints a traceback and asks for a bug report. |
 | 2 | A usage error: an unknown flag, a missing argument, or a container named on a single-container workload or left out on a multi-container one. |
 | 130 | Interrupted with Ctrl+C. |
@@ -197,14 +197,13 @@ same name file by file, or is a bundle of its own if nothing ships that name
 `disable` deletes it ([The enabled marker](09-operating.md#the-enabled-marker)).
 
 The other files are **control files**. A relative path the TOML gives for a
-`Containerfile`, a build script, a `[host] setup` script or a `policy.cil` is
-looked up first in the instance's own directory, then in the bundle's local
-layer under `/etc/workloadctl/bundles/`, then in its directory under
-`/usr/share/workloadctl/workloads/`. An absolute path is
+`Containerfile`, a build script, a `[host] setup` script, a `policy.cil` or a
+VM's `user_data_file` is looked up first in the instance's own directory,
+then in the bundle's local layer under `/etc/workloadctl/bundles/`, then in
+its directory under `/usr/share/workloadctl/workloads/`. An absolute path is
 used as written. `sudo workloadctl edit <name> <file>` makes the override in
 `/etc` for you, and `workloadctl info <name> --files` shows which copy of
-each file wins. A VM's relative `user_data_file` is the exception: it is
-read from the instance's directory only.
+each file wins.
 
 `shares.toml` declares directories that several container workloads mount
 ([Sharing a directory between workloads](04-containers.md#sharing-a-directory-between-workloads)).

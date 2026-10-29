@@ -14,6 +14,10 @@ Two bundles, both throwaway:
   lbr-over   is planted in the shipped tree, with a local layer carrying
              asset.txt, setup.sh and helper.py over it, so one build context
              mixes usr_t and etc_t files.
+  lbr-vm     is a VM bundle planted in the shipped tree from this checkout's
+             vm-base, whose relative user_data_file is answered by a seed in
+             the local layer. The guest reads back which seed it booted from.
+             --no-vm skips it.
 
 Each is init-ed, built, enabled, probed and purged. Every file the local layer
 carries says "local" and every shipped one says "usr", so each row reads which
@@ -21,7 +25,7 @@ copy a reader actually got. The audit row reports every AVC since the start,
 unfiltered: the rig runs on a quiet dev host, and an AVC here would not
 necessarily name a workload.
 
-    sudo python3 tests/manual/local_bundle_rig.py [--keep]
+    sudo python3 tests/manual/local_bundle_rig.py [--keep] [--no-vm]
 """
 
 import json
@@ -43,14 +47,19 @@ WORKLOAD_DIR = Path("/etc/workloads.d")
 AUDIT_LOG = Path("/var/log/audit/audit.log")
 MARK_DIR = Path("/run/lbr-rig")
 BASE_IMAGE = "docker.io/library/alpine:latest"
-LOCAL, OVER = "lbr-local", "lbr-over"
+LOCAL, OVER, VM = "lbr-local", "lbr-over", "lbr-vm"
+# The VM arm borrows vm-base's image pin and seed from this checkout, so it
+# boots what vm-base boots without a second pin to keep current.
+VM_BASE = Path(__file__).resolve().parents[2] / "workloads" / "vm-base"
+SEED = "cloud-init/user-data"
+SEED_MARK = "/etc/lbr-seed"
 
 
 class Arm(NamedTuple):
     name: str
 
 
-ARMS = [Arm(LOCAL), Arm(OVER)]
+ARMS = [Arm(LOCAL), Arm(OVER), Arm(VM)]
 
 results = []
 created = []      # dirs this run made, removed in reverse at cleanup
@@ -97,6 +106,10 @@ def label(path):
 
 def toml_for(arm):
     name = arm.name
+    if name == VM:
+        text = (VM_BASE / "workload.toml").read_text()
+        return text.replace('[workload]\nname = "vm-base"\n',
+                            f'[workload]\nname = "{VM}"\nenabled = false\n', 1)
     return (f'[workload]\nname = "{name}"\nenabled = false\n\n'
             f'[container]\nimage = "localhost/{name}:latest"\npull = "never"\n'
             f'command = ["sleep", "infinity"]\n\n'
@@ -142,12 +155,23 @@ def helper_py(tag):
     return f'import sys\nopen(sys.argv[1], "w").write("{tag} " + __file__ + "\\n")\n'
 
 
+def seed(tag):
+    # One more write_files entry, not a second write_files: key, which would
+    # replace vm-base's list (host key, clock) rather than extend it.
+    text = (VM_BASE / SEED).read_text()
+    entry = (f"write_files:\n  - path: {SEED_MARK}\n"
+             f"    content: \"{tag} {VM}\\n\"\n")
+    assert text.count("\nwrite_files:\n") == 1, "vm-base seed changed shape"
+    return text.replace("\nwrite_files:\n", "\n" + entry, 1)
+
+
 def plant(d, files):
     for parent in reversed([d, *d.parents]):
         if not parent.exists():
             parent.mkdir()
             created.append(parent)
     for fname, text in files.items():
+        (d / fname).parent.mkdir(parents=True, exist_ok=True)
         (d / fname).write_text(text)
         if fname.endswith(".sh"):
             (d / fname).chmod(0o755)
@@ -168,6 +192,11 @@ def stage():
         "asset.txt": f"local {OVER}\n", "setup.sh": setup_sh("local"),
         "helper.py": helper_py("local"),
     })
+
+
+def stage_vm():
+    plant(SHIPPED_ROOT / VM, {"workload.toml": toml_for(Arm(VM)), SEED: seed("usr")})
+    plant(LOCAL_ROOT / VM, {SEED: seed("local")})
 
 
 # --- rows ---------------------------------------------------------------------
@@ -263,6 +292,44 @@ def tear_down(name):
            not (MARK_DIR / f"{name}.setup").exists())
 
 
+def check_vm_premise():
+    shipped = SHIPPED_ROOT / "vm-base" / "workload.toml"
+    text = shipped.read_text() if shipped.exists() else ""
+    ok = f'user_data_file = "{SEED}"' in text
+    record("installed vm-base names its seed relatively", ok, str(shipped))
+    if not ok:
+        sys.exit("the installed workloadctl predates layered seed lookup; "
+                 "the VM rows would measure the wrong code")
+
+
+def vm_run():
+    say(f"\n== {VM}: a local-layer seed over a shipped VM bundle ==")
+    p = cli("init", VM)
+    record(f"{VM}: init", p.returncode == 0, last_line(p))
+    p = cli("info", VM, "--files", "--json")
+    try:
+        got = {f["file"]: f["source"] for f in json.loads(p.stdout)["control_files"]}
+    except (ValueError, KeyError, TypeError):
+        got = {}
+    record(f"{VM}: info --files names the local seed", got.get(SEED) == "local", str(got))
+    p = cli("enable", VM, timeout=900)
+    record(f"{VM}: enable", p.returncode == 0, last_line(p))
+    got = "(never answered)"
+    deadline = time.time() + 600
+    while p.returncode == 0 and time.time() < deadline:
+        r = cli("exec", VM, "--", "cat", SEED_MARK, timeout=30)
+        if r.returncode == 0:
+            got = r.stdout.strip()
+            break
+        time.sleep(5)
+    record(f"{VM}: the guest booted the local layer's seed",
+           got == f"local {VM}", got)
+    if got == "(never answered)":
+        subprocess.run(["workloadctl", "logs", "-n", "40", VM])
+    p = cli("disable", VM, "--purge", timeout=300)
+    record(f"{VM}: disable --purge", p.returncode == 0, last_line(p))
+
+
 def check_audit(marker):
     say("\n== SELinux ==")
     if run(["getenforce"]).stdout.strip() != "Enforcing":
@@ -280,26 +347,31 @@ def check_audit(marker):
 
 # --- driver -------------------------------------------------------------------
 
-def preflight():
+def preflight(with_vm):
     if os.geteuid() != 0:
         sys.exit("run as root: this rig enables and disables real workloads")
     for tool in ("workloadctl", "podman", "semodule", "systemd-run"):
         if shutil.which(tool) is None:
             sys.exit(f"missing {tool}")
-    for p in (WORKLOAD_DIR / LOCAL, WORKLOAD_DIR / OVER, LOCAL_ROOT / LOCAL,
-              LOCAL_ROOT / OVER, SHIPPED_ROOT / OVER):
+    if with_vm and not Path("/dev/kvm").exists():
+        sys.exit("no /dev/kvm for the VM arm; pass --no-vm to skip it")
+    for p in (*(WORKLOAD_DIR / n for n in (LOCAL, OVER, VM)),
+              *(LOCAL_ROOT / n for n in (LOCAL, OVER, VM)),
+              SHIPPED_ROOT / OVER, SHIPPED_ROOT / VM):
         if p.exists():
             sys.exit(f"{p} is left over from an earlier run; remove it first")
 
 
 def cleanup():
     say("\n== cleanup ==")
-    for name in (LOCAL, OVER):
+    for name in (LOCAL, OVER, VM):
         if (WORKLOAD_DIR / name).exists():
             cli("disable", name, "--purge", timeout=300)
             shutil.rmtree(WORKLOAD_DIR / name, ignore_errors=True)
+    for name in (LOCAL, OVER):
         run(["podman", "rmi", "-f", f"localhost/{name}:latest"])
-    for d in (LOCAL_ROOT / LOCAL, LOCAL_ROOT / OVER, SHIPPED_ROOT / OVER):
+    for d in (LOCAL_ROOT / LOCAL, LOCAL_ROOT / OVER, LOCAL_ROOT / VM,
+              SHIPPED_ROOT / OVER, SHIPPED_ROOT / VM):
         shutil.rmtree(d, ignore_errors=True)
     for d in reversed(created):
         if d.exists() and not any(d.iterdir()):
@@ -310,15 +382,22 @@ def cleanup():
 
 def main():
     keep = "--keep" in sys.argv
-    preflight()
+    with_vm = "--no-vm" not in sys.argv
+    preflight(with_vm)
     marker = AUDIT_LOG.stat().st_size if AUDIT_LOG.exists() else 0
     try:
         stage()
+        if with_vm:
+            stage_vm()
         check_premises()
+        if with_vm:
+            check_vm_premise()
         for name in (LOCAL, OVER):
             if bring_up(name):
                 probe(name)
             tear_down(name)
+        if with_vm:
+            vm_run()
         check_audit(marker)
     finally:
         if not keep:

@@ -159,7 +159,7 @@ class TestHostSetupTraversal(unittest.TestCase):
         self.usr = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(self.etc, ignore_errors=True))
         self.addCleanup(lambda: shutil.rmtree(self.usr, ignore_errors=True))
-        p1 = mock.patch.object(core, "WORKLOAD_BUNDLES_DIR", self.usr)
+        p1 = mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.usr)
         p2 = mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.etc)
         p1.start()
         p2.start()

@@ -22,8 +22,8 @@ import tomllib
 
 from cli_log import emit_result
 from workload_lib import (
-    bundle_file, iter_workloads, workload_config_dir, workload_config_path,
-    WORKLOAD_BUNDLES_DIR, WORKLOAD_LOCAL_BUNDLES_DIR,
+    bundle_file, bundle_names, bundle_roots, iter_workloads, loose_local_bundles,
+    workload_config_dir, workload_config_path,
 )
 from validation import validate_workload_name
 from secrets_template import auto_detect_credentials
@@ -36,8 +36,6 @@ from workloadctl_core import (
 from cmd_validate import validate_single
 from scratch_vm import SCRATCH_VM_USER_DATA, scratch_vm_toml
 
-BUNDLES_DIR = WORKLOAD_BUNDLES_DIR
-LOCAL_BUNDLES_DIR = WORKLOAD_LOCAL_BUNDLES_DIR
 
 # Edit a single field inside the [workload] section only (mirrors
 # cmd_lifecycle._set_enabled): scoping keeps the regex from touching a
@@ -105,16 +103,10 @@ def _set_workload_field(content: str, field: str, value: str) -> str:
 # Bundle discovery
 # ---------------------------------------------------------------------------
 
-def list_bundles() -> list[str]:
-    """Sorted names of bundles: a workload.toml in either bundle layer."""
-    return sorted({name for root in (BUNDLES_DIR, LOCAL_BUNDLES_DIR)
-                   for name, _ in iter_workloads(root)})
-
-
 def _template(bundle: str) -> Path:
     """The bundle's workload.toml, the local layer's if it has one."""
-    return bundle_file(LOCAL_BUNDLES_DIR / bundle, BUNDLES_DIR / bundle,
-                       "workload.toml")[0]
+    shipped, local = bundle_roots()
+    return bundle_file(local / bundle, shipped / bundle, "workload.toml")[0]
 
 
 def _bundle_kind(bundle: str) -> str:
@@ -126,9 +118,21 @@ def _bundle_kind(bundle: str) -> str:
     return "vm" if "vm" in data else "container"
 
 
+def _instances() -> dict[str, list[str]]:
+    """Instance names per bundle, from each TOML's `bundle` (default: its name)."""
+    by_bundle: dict[str, list[str]] = {}
+    for name, path in iter_workloads():
+        try:
+            wl = tomllib.loads(path.read_text()).get("workload", {})
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        by_bundle.setdefault(wl.get("bundle") or name, []).append(name)
+    return by_bundle
+
+
 def _suggest_bundle(bundle: str) -> None:
     """Print a did-you-mean hint + the available bundle list to stderr."""
-    avail = list_bundles()
+    avail = bundle_names()
     if not avail:
         return
     close = difflib.get_close_matches(bundle, avail, n=1)
@@ -143,25 +147,30 @@ def _suggest_bundle(bundle: str) -> None:
 
 def cmd_catalog(args, manager: WorkloadManager):
     """List bundles under the shipped and local bundle roots."""
-    bundles = list_bundles()
+    bundles = bundle_names()
+    for d in loose_local_bundles():
+        print(f"Ignored {d}: no workload.toml, and nothing ships '{d.name}'",
+              file=sys.stderr)
+    instances = _instances()
     if getattr(args, "json", False):
         print(json.dumps(
-            [{"bundle": b, "kind": _bundle_kind(b), "source": _source(b)}
+            [{"bundle": b, "kind": _bundle_kind(b), "source": _source(b),
+              "instances": instances.get(b, [])}
              for b in bundles], indent=2))
         return
     if not bundles:
-        print(f"No bundles found under {BUNDLES_DIR} or {LOCAL_BUNDLES_DIR}")
+        print("No bundles found under {} or {}".format(*bundle_roots()))
         return
     print("Available bundles (workloadctl init <bundle> [--as <name>]):")
     for b in bundles:
-        print(f"  {b:<32} {_bundle_kind(b):<10} {_source(b)}")
+        print(f"  {b:<32} {_bundle_kind(b):<10} {_source(b):<14} "
+              f"{', '.join(instances.get(b, []))}".rstrip())
 
 
 def _source(bundle: str) -> str:
     """"shipped", "local", or "shipped+local" for a shipped bundle the local
     layer overrides files of."""
-    return "+".join(label for root, label in ((BUNDLES_DIR, "shipped"),
-                                              (LOCAL_BUNDLES_DIR, "local"))
+    return "+".join(label for root, label in zip(bundle_roots(), ("shipped", "local"))
                     if (root / bundle).is_dir())
 
 
@@ -267,8 +276,8 @@ def cmd_init(args, manager: WorkloadManager):
 
     src = _template(bundle)
     if not src.is_file():
-        print(f"Error: no bundle '{bundle}' under {BUNDLES_DIR} or "
-              f"{LOCAL_BUNDLES_DIR}", file=sys.stderr)
+        print("Error: no bundle '{}' under {} or {}".format(bundle, *bundle_roots()),
+              file=sys.stderr)
         _suggest_bundle(bundle)
         sys.exit(1)
 

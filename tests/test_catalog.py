@@ -34,7 +34,7 @@ class CatalogTestBase(unittest.TestCase):
         self.tmp = Path(self.enterContext(__import__("tempfile").TemporaryDirectory()))
         # init/duplicate write here; WorkloadConfig/Manager read here.
         patches: list = [
-            mock.patch.object(cmd_catalog, "BUNDLES_DIR", REPO_BUNDLES),
+            mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", REPO_BUNDLES),
             mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.tmp),
             mock.patch.object(cmd_catalog, "require_root", lambda: None),
         ]
@@ -48,7 +48,7 @@ class CatalogTestBase(unittest.TestCase):
 
 class TestDiscovery(CatalogTestBase):
     def test_list_bundles_includes_known(self):
-        bundles = cmd_catalog.list_bundles()
+        bundles = workload_lib.bundle_names()
         self.assertIn("alloy", bundles)
         self.assertIn("forgejo-runner", bundles)
         self.assertEqual(bundles, sorted(bundles))
@@ -58,7 +58,7 @@ class TestDiscovery(CatalogTestBase):
         self.assertEqual(cmd_catalog._bundle_kind("alloy"), "container")
 
     def test_list_bundles_includes_vm_base(self):
-        self.assertIn("vm-base", cmd_catalog.list_bundles())
+        self.assertIn("vm-base", workload_lib.bundle_names())
 
     def test_bundle_kind_vm_base(self):
         self.assertEqual(cmd_catalog._bundle_kind("vm-base"), "vm")
@@ -238,12 +238,6 @@ class TestInitScratchVM(CatalogTestBase):
 
 class TestVmBaseBundle(CatalogTestBase):
     """Checks on the shipped vm-base bundle in workloads/."""
-
-    def test_vm_base_workload_toml_user_data_file_is_absolute(self):
-        """vm-base/workload.toml must carry the absolute /usr/share/... user_data_file."""
-        data = tomllib.loads((REPO_BUNDLES / "vm-base" / "workload.toml").read_text())
-        expected = "/usr/share/workloadctl/workloads/vm-base/cloud-init/user-data"
-        self.assertEqual(data["vm"]["cloud_init"]["user_data_file"], expected)
 
     def test_vm_base_cloud_init_user_data_matches_constant(self):
         """workloads/vm-base/cloud-init/user-data must be byte-identical to SCRATCH_VM_USER_DATA."""
@@ -543,7 +537,7 @@ class CatalogListTest(CatalogTestBase):
         self.assertEqual(by_name.get("forgejo-runner"), "vm")
 
     def test_empty_dir_reports_none(self):
-        with mock.patch.object(cmd_catalog, "BUNDLES_DIR", self.tmp / "empty"):
+        with mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.tmp / "empty"):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_catalog.cmd_catalog(_ns(json=False), self.manager)
@@ -620,13 +614,13 @@ class TestBundleKindMalformed(CatalogTestBase):
     def test_bundle_kind_unparsable_toml_returns_qmark(self):
         (self.tmp / "broken").mkdir()
         (self.tmp / "broken" / "workload.toml").write_text("not [ valid toml")
-        with mock.patch.object(cmd_catalog, "BUNDLES_DIR", self.tmp):
+        with mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.tmp):
             self.assertEqual(cmd_catalog._bundle_kind("broken"), "?")
 
 
 class TestSuggestBundle(CatalogTestBase):
     def test_suggest_bundle_no_bundles_prints_nothing(self):
-        with mock.patch.object(cmd_catalog, "BUNDLES_DIR", self.tmp / "empty"):
+        with mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.tmp / "empty"):
             buf = io.StringIO()
             with mock.patch("sys.stderr", buf):
                 cmd_catalog._suggest_bundle("whatever")
@@ -769,10 +763,8 @@ class TestLocalBundleRoot(CatalogTestBase):
             '[workload]\nname = "alloy"\n\n[vm]\n')
         (self.local / "forgejo").mkdir()
         (self.local / "forgejo" / "setup.sh").write_text("#!/bin/sh\n")
-        import workloadctl_core
-        self.enterContext(mock.patch.object(cmd_catalog, "LOCAL_BUNDLES_DIR", self.local))
-        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_BUNDLES_DIR", REPO_BUNDLES))
-        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_LOCAL_BUNDLES_DIR", self.local))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", REPO_BUNDLES))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_LOCAL_BUNDLES_DIR", self.local))
 
     def _catalog_json(self):
         out, err = io.StringIO(), io.StringIO()
@@ -787,6 +779,20 @@ class TestLocalBundleRoot(CatalogTestBase):
         self.assertEqual(by_name["caddy"]["source"], "shipped")
         self.assertEqual(by_name["alloy"]["source"], "shipped+local")
 
+    def test_catalog_lists_each_bundles_instances(self):
+        with redirect_stdout(io.StringIO()):
+            cmd_catalog.cmd_init(_ns(bundle="forgejo", as_name=None), self.manager)
+            cmd_catalog.cmd_init(_ns(bundle="forgejo", as_name="forge-two"), self.manager)
+            cmd_catalog.cmd_init(_ns(bundle="mine", as_name="mine-two"), self.manager)
+        by_name, _ = self._catalog_json()
+        self.assertEqual(by_name["forgejo"]["instances"], ["forge-two", "forgejo"])
+        self.assertEqual(by_name["mine"]["instances"], ["mine-two"])
+        self.assertEqual(by_name["caddy"]["instances"], [])
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            cmd_catalog.cmd_catalog(_ns(json=False), self.manager)
+        self.assertRegex(out.getvalue(), r"forgejo\s+container\s+shipped\+local\s+forge-two, forgejo\n")
+
     def test_local_template_overrides_the_shipped_one(self):
         by_name, err = self._catalog_json()
         self.assertEqual(by_name["alloy"]["kind"], "vm")
@@ -800,8 +806,11 @@ class TestLocalBundleRoot(CatalogTestBase):
     def test_local_dir_without_a_template_is_not_a_bundle(self):
         (self.local / "loose").mkdir()
         (self.local / "loose" / "setup.sh").write_text("#!/bin/sh\n")
-        by_name, _ = self._catalog_json()
+        by_name, err = self._catalog_json()
         self.assertNotIn("loose", by_name)
+        self.assertIn(f"Ignored {self.local / 'loose'}", err)
+        self.assertIn("nothing ships 'loose'", err)
+        self.assertNotIn("forgejo", err)
 
     def test_init_as_from_local_bundle_resolves_its_control_files(self):
         with redirect_stdout(io.StringIO()):

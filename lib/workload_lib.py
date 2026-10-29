@@ -131,6 +131,27 @@ def bundle_file(local: Path, shipped: Path, relpath: str) -> tuple[Path, str]:
         return local / relpath, "local"
     return shipped / relpath, "usr"
 
+
+def bundle_roots() -> tuple[Path, Path]:
+    """(shipped, local) bundle roots. Read here at call time, so tests patch
+    the two names in this module and nowhere else."""
+    return WORKLOAD_BUNDLES_DIR, WORKLOAD_LOCAL_BUNDLES_DIR
+
+
+def bundle_names() -> list[str]:
+    """Sorted names of bundles: a workload.toml in either root."""
+    return sorted({name for root in bundle_roots() for name, _ in iter_workloads(root)})
+
+
+def loose_local_bundles() -> list[Path]:
+    """Local-layer dirs nothing reads: no workload.toml, and no shipped bundle
+    of that name to overlay."""
+    local = bundle_roots()[1]
+    if not local.is_dir():
+        return []
+    names = set(bundle_names())
+    return sorted(d for d in local.iterdir() if d.is_dir() and d.name not in names)
+
 # Username prefix for workload system users
 USERNAME_PREFIX = "_wl-"
 

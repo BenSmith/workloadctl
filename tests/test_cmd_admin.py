@@ -1172,7 +1172,7 @@ class EditControlFileTest(unittest.TestCase):
         )
         self.bundles = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (self.bundles / "app").mkdir()
-        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_BUNDLES_DIR", self.bundles))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.bundles))
         self.manager = mock.Mock()
 
     def _run(self, filename, editor_side_effect):
@@ -1242,7 +1242,7 @@ class EditControlFileTest(unittest.TestCase):
         local = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (local / "app").mkdir()
         (local / "app" / "app.conf").write_text("local\n")
-        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
         seen = {}
 
         def fake_editor(argv, **kw):

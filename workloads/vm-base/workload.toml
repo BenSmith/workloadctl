@@ -1,7 +1,8 @@
 # vm-base — generic clean VM starting point.
 # Use: workloadctl init vm-base --as <name>
 # Copies this workload.toml to /etc/workloads.d/<name>/; the cloud-init seed
-# stays in /usr/share/workloadctl/workloads/vm-base/ and is referenced absolutely.
+# stays in /usr/share/workloadctl/workloads/vm-base/ until the instance has one
+# of its own (`workloadctl edit <name> cloud-init/user-data`).
 # After init, edit /etc/workloads.d/<name>/workload.toml, then `workloadctl enable <name>`.
 
 [workload]
@@ -61,7 +62,7 @@ user = "fedora"
 egress = "open"
 
 [vm.cloud_init]
-user_data_file = "/usr/share/workloadctl/workloads/vm-base/cloud-init/user-data"
+user_data_file = "cloud-init/user-data"
 
 # [vm.cloud_init.template_vars]
 # MY_VAR = "value"   # referenced as ${MY_VAR} in cloud-init/user-data

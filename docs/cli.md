@@ -190,15 +190,21 @@ describes the fields and what the log is and is not.
 ### `catalog`
 
 List the bundles under `/usr/share/workloadctl/workloads/` (shipped) and
-`/etc/workloadctl/bundles/` (local), each with its substrate and source.
+`/etc/workloadctl/bundles/` (local), each with its substrate, its source and
+the instances made from it.
 
 ```
 workloadctl catalog [--json]
 ```
 
-`--json` prints a list of `{"bundle", "kind", "source"}`, where `kind` is
-`container` or `vm` and `source` is `shipped`, `local`, or `shipped+local`
-for a shipped bundle with a local layer over it.
+`--json` prints a list of `{"bundle", "kind", "source", "instances"}`, where
+`kind` is `container` or `vm`, `source` is `shipped`, `local`, or
+`shipped+local` for a shipped bundle with a local layer over it, and
+`instances` names the workloads whose `bundle` is this one.
+
+A directory under `/etc/workloadctl/bundles/` with no `workload.toml`, and no
+shipped bundle of its name to lay over, is read by nothing. `catalog` names
+each one on stderr.
 
 [↑ top](#workloadctl-command-reference)
 
@@ -982,15 +988,20 @@ sudo workloadctl diagnose [--json] <workload>
 `diagnose` checks the workload's user, home and subordinate ID ranges, its
 user manager and runtime directory, SELinux modules and labels, images,
 units, volumes, shares and, for a filtered workload, that the filter is in
-force. It prints `✓` or `✗` per check, with a `Fix:` line under each
-failure and a numbered list of failures at the end, and exits 1 if any
-check failed, with or without `--json`. A VM gets a narrower set: it has no
-subordinate IDs or user manager, and has checks of its own for its runtime
-directory, cloud-init and clock.
+force. It prints `✓`, `!` or `✗` per check, with a `Fix:` line under each
+warning and failure, then a numbered list of the failures and one of the
+warnings, and exits 1 if any check failed, with or without `--json`. A
+warning is a check that passed and that you should still see, such as a
+local bundle file that shadows a shipped one. It counts as passed and never
+changes the exit status; the summary line reads `Checks: 12/12 passed, 1
+warning`. A VM gets a narrower set: it has no subordinate IDs or user
+manager, and has checks of its own for its runtime directory, cloud-init and
+clock.
 
 `--json` prints `{"workload", "passed", "checks_passed", "checks_total",
-"checks"}`, each check with `check`, `passed`, `message` and, when it
-failed, `fix`. [diagnose: what is wrong with this host's
+"checks_warned", "checks"}`, each check with `check`, `passed`, `message`
+and, when it failed or warns, `fix`; a warning also has `"warning": true`,
+and no other check has that key. [diagnose: what is wrong with this host's
 setup](manual/10-troubleshooting.md#diagnose-what-is-wrong-with-this-hosts-setup)
 lists every check and links to its remedy; [Is it in force:
 diagnose](manual/06-networking.md#is-it-in-force-diagnose) covers the
@@ -1008,12 +1019,15 @@ sudo workloadctl doctor [--json] <workload>
 
 `doctor` reports the generator's lines about the workload from this boot,
 every unit's state with the last 15 journal lines of any that failed, is
-stuck starting or has restarted, the `diagnose` failures, drift, health
-and, for a filtered workload, the inspector's counters. The counters are
-evidence and never count as a problem. It changes nothing. It exits 0 when
-it finds no problem and 1 when it finds one, including a TOML that cannot
-be loaded, which it explains in one line. A masked workload is reported as
-such, with exit 0. `--json` prints the whole report as one object. See
+stuck starting or has restarted, the `diagnose` failures and warnings,
+drift, health and, for a filtered workload, the inspector's counters. The
+counters are evidence and never count as a problem, and neither does a
+warning: it is shown with its fix and counted (`Overall: HEALTHY (1
+warning)`), but it does not change the exit status. It changes nothing. It
+exits 0 when it finds no problem and 1 when it finds one, including a TOML
+that cannot be loaded, which it explains in one line. A masked workload is
+reported as such, with exit 0. `--json` prints the whole report as one
+object, with the number of warnings in `overall.warnings`. See
 [doctor: everything at
 once](manual/10-troubleshooting.md#doctor-everything-at-once).
 

@@ -226,13 +226,15 @@ def vm_socket_dir_selinux_check(rule_present: bool | None, label: str | None,
 
 
 def gpu_selinux_check(xserver: bool | None, blanket: bool | None,
-                      module: str | None) -> tuple[bool, str, str | None]:
-    """Verdict for NVIDIA device access under SELinux: (passed, message, fix).
+                      module: str | None
+                      ) -> tuple[bool, str, str | None, bool]:
+    """Verdict for NVIDIA device access under SELinux:
+    (passed, message, fix, warning).
 
     Split out from the collector so the outcomes are testable without
     standing up a workload. `module` is the workload's own SELinux module
     name, or None if it ships no policy.cil. See the caller for why only the
-    no-path-at-all case fails.
+    no-path-at-all case fails; the legacy blanket boolean is the one warning.
 
     `module` is decided first, and deliberately: a workload with its own type
     runs as `wl_<name>.process`, and `container_use_xserver_devices` is
@@ -247,22 +249,26 @@ def gpu_selinux_check(xserver: bool | None, blanket: bool | None,
     if module:
         return (True, f"NVIDIA device access granted by the workload's own "
                       f"policy module {module} (host booleans are written "
-                      f"against container_t and do not cover its type)", None)
+                      f"against container_t and do not cover its type)",
+                None, False)
     if xserver is None and blanket is None:
         return (True, "NVIDIA GPU requested; SELinux boolean state unknown "
-                      "(getsebool unavailable or SELinux disabled)", None)
+                      "(getsebool unavailable or SELinux disabled)",
+                None, False)
     if xserver:
         return (True, "NVIDIA device access allowed "
-                      "(container_use_xserver_devices on)", None)
+                      "(container_use_xserver_devices on)", None, False)
     if blanket:
         return (True, "NVIDIA device access allowed via the legacy blanket "
-                      "container_use_devices — narrow it: setsebool -P "
-                      "container_use_xserver_devices on, then setsebool -P "
-                      "container_use_devices off", None)
+                      "container_use_devices, which gives every container "
+                      "every device node type; turn it off only if nothing "
+                      "on this host opens a device through it, such as a "
+                      "/dev/dri render node",
+                "sudo setsebool -P container_use_xserver_devices on", True)
     return (False, "NVIDIA GPU requested but nothing grants access to "
                    "/dev/nvidia* (xserver_misc_device_t) — expect permission "
                    "denied from the CUDA runtime",
-            "sudo setsebool -P container_use_xserver_devices on")
+            "sudo setsebool -P container_use_xserver_devices on", False)
 
 
 def _selinux_module_loaded(module: str) -> bool | None:

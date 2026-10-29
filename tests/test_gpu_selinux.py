@@ -13,9 +13,9 @@ Pinned here:
 - _getsebool returns None (not False) for every can't-tell case, so an
   unknown state never reads as "denied".
 - The four gpu_selinux_check outcomes, including that a host still carrying
-  the blanket boolean PASSES with the migration in its message — image-side
-  SELinux changes don't reach existing hosts on `bootc upgrade`, so that
-  state is expected, not a fault.
+  the blanket boolean PASSES as a warning with the migration as its fix —
+  image-side SELinux changes don't reach existing hosts on `bootc upgrade`,
+  so that state is expected, not a fault. No other outcome warns.
 """
 
 import subprocess
@@ -24,6 +24,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+import diagnose_battery
 import diagnose_selinux
 
 from tests import REPO_ROOT
@@ -93,30 +94,39 @@ class GetseboolTest(unittest.TestCase):
 
 class GpuSelinuxCheckTest(unittest.TestCase):
     def test_scoped_boolean_passes_clean(self):
-        passed, message, fix = diagnose_selinux.gpu_selinux_check(
+        passed, message, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=True, blanket=False, module=None)
         self.assertTrue(passed)
         self.assertIn("container_use_xserver_devices on", message)
         self.assertIsNone(fix)
+        self.assertFalse(warning)
 
-    def test_blanket_boolean_passes_but_advises_narrowing(self):
-        passed, message, fix = diagnose_selinux.gpu_selinux_check(
+    def test_blanket_boolean_passes_but_warns_with_the_migration(self):
+        passed, message, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=False, blanket=True, module=None)
         self.assertTrue(passed, "a working legacy host must not read as a fault")
-        self.assertIn("container_use_devices off", message)
-        self.assertIsNone(fix)
+        self.assertTrue(warning)
+        self.assertIn("legacy blanket container_use_devices", message)
+        self.assertEqual(fix, "sudo setsebool -P container_use_xserver_devices on")
+        # Other workloads open /dev/dri through the blanket boolean, so the
+        # fix must not switch it off; the message says when that is safe.
+        self.assertNotIn("container_use_devices", fix)
+        self.assertIn("/dev/dri", message)
 
     def test_scoped_boolean_wins_over_blanket(self):
-        _, message, _ = diagnose_selinux.gpu_selinux_check(
+        _, message, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=True, blanket=True, module=None)
         self.assertNotIn("legacy", message)
+        self.assertIsNone(fix)
+        self.assertFalse(warning)
 
     def test_own_policy_module_is_named_as_the_grant_path(self):
-        passed, message, fix = diagnose_selinux.gpu_selinux_check(
+        passed, message, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=False, blanket=False, module="wl_app")
         self.assertTrue(passed)
         self.assertIn("wl_app", message)
         self.assertIsNone(fix)
+        self.assertFalse(warning)
 
     def test_own_module_wins_over_the_boolean(self):
         """A workload with its own type is not covered by the boolean.
@@ -129,32 +139,81 @@ class GpuSelinuxCheckTest(unittest.TestCase):
         """
         for blanket in (True, False, None):
             with self.subTest(blanket=blanket):
-                passed, message, fix = diagnose_selinux.gpu_selinux_check(
-                    xserver=True, blanket=blanket, module="wl_app")
+                passed, message, fix, warning = (
+                    diagnose_selinux.gpu_selinux_check(
+                        xserver=True, blanket=blanket, module="wl_app"))
                 self.assertTrue(passed)
                 self.assertIn("wl_app", message)
                 self.assertNotIn("container_use_xserver_devices on", message)
                 self.assertIsNone(fix)
+                self.assertFalse(warning)
 
     def test_own_module_named_even_when_boolean_state_is_unknown(self):
-        _, message, _ = diagnose_selinux.gpu_selinux_check(
+        _, message, _, _ = diagnose_selinux.gpu_selinux_check(
             xserver=None, blanket=None, module="wl_app")
         self.assertIn("wl_app", message)
         self.assertNotIn("unknown", message)
 
     def test_no_path_at_all_fails_with_a_fix(self):
-        passed, message, fix = diagnose_selinux.gpu_selinux_check(
+        passed, message, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=False, blanket=False, module=None)
         self.assertFalse(passed)
         self.assertIn("xserver_misc_device_t", message)
         self.assertEqual(fix, "sudo setsebool -P container_use_xserver_devices on")
+        self.assertFalse(warning)
 
     def test_unknown_state_passes_rather_than_guessing(self):
-        passed, _, fix = diagnose_selinux.gpu_selinux_check(
+        passed, _, fix, warning = diagnose_selinux.gpu_selinux_check(
             xserver=None, blanket=None, module=None)
         self.assertTrue(passed)
         self.assertIsNone(fix)
+        self.assertFalse(warning)
 
+
+class GpuSelinuxWiringTest(unittest.TestCase):
+    """_gpu_selinux_checks hands the verdict, warning flag included, to _check."""
+
+    def _calls(self, booleans, selinux_policy=False):
+        calls = []
+
+        def check(name, passed, message, fix=None, warning=False):
+            calls.append((name, passed, fix, warning))
+
+        self.enterContext(mock.patch.object(
+            diagnose_battery, "_gpu_vendors", lambda config: {"nvidia"}))
+        self.enterContext(mock.patch.object(
+            diagnose_battery, "_getsebool", lambda name: booleans[name]))
+        diagnose_battery._gpu_selinux_checks(
+            SimpleNamespace(name="app", selinux_policy=selinux_policy), check)
+        return calls
+
+    def test_the_blanket_boolean_is_reported_as_a_warning(self):
+        (name, passed, fix, warning), = self._calls(
+            {"container_use_xserver_devices": False,
+             "container_use_devices": True})
+        self.assertEqual(name, "gpu_selinux")
+        self.assertTrue(passed)
+        self.assertTrue(warning)
+        self.assertEqual(fix, "sudo setsebool -P container_use_xserver_devices on")
+
+    def test_the_scoped_boolean_and_the_own_module_do_not_warn(self):
+        for booleans, selinux_policy in (
+                ({"container_use_xserver_devices": True,
+                  "container_use_devices": True}, False),
+                ({"container_use_xserver_devices": False,
+                  "container_use_devices": True}, True)):
+            with self.subTest(selinux_policy=selinux_policy):
+                (_, passed, _, warning), = self._calls(
+                    booleans, selinux_policy)
+                self.assertTrue(passed)
+                self.assertFalse(warning)
+
+    def test_no_path_at_all_fails_and_does_not_warn(self):
+        (_, passed, _, warning), = self._calls(
+            {"container_use_xserver_devices": False,
+             "container_use_devices": False})
+        self.assertFalse(passed)
+        self.assertFalse(warning)
 
 
 class ShippedBundleGrantsTest(unittest.TestCase):

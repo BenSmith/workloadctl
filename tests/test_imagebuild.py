@@ -44,7 +44,7 @@ class BuildBase(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.etc, ignore_errors=True))
         self.addCleanup(lambda: shutil.rmtree(self.usr, ignore_errors=True))
         for p in (
-            mock.patch.object(core, "WORKLOAD_BUNDLES_DIR", self.usr),
+            mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.usr),
             mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.etc),
             mock.patch.object(cmd_lifecycle, "require_root", lambda: None),
         ):
@@ -167,7 +167,7 @@ class TestMergedContext(BuildBase):
         import shutil
         local = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(local, ignore_errors=True))
-        self.enterContext(mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        self.enterContext(mock.patch.object(workload_lib, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
         self._ship("solo", "Containerfile", "FROM usr\n")
         self._ship("solo", "a.conf", "usr\n")
         self._ship("solo", "b.conf", "usr\n")

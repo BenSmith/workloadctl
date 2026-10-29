@@ -24,8 +24,9 @@ from cli_log import error, info, warn
 from config_parser import workload_root_dir
 from workload_lib import (
     NAME_PATTERN,
-    WORKLOAD_BUNDLES_DIR,
-    WORKLOAD_LOCAL_BUNDLES_DIR,
+    bundle_file,
+    bundle_names,
+    bundle_roots,
     selinux_module_name,
     selinux_type_name,
 )
@@ -43,8 +44,6 @@ class SelinuxPolicyError(Exception):
     """
 
 UDICA_TEMPLATE_DIR = Path("/usr/share/udica/templates")
-_BUNDLES_DIR = WORKLOAD_BUNDLES_DIR
-_LOCAL_BUNDLES_DIR = WORKLOAD_LOCAL_BUNDLES_DIR
 
 
 def _selinux_available() -> bool:
@@ -62,13 +61,11 @@ def _selinux_enforcing() -> bool:
 
 
 def _available_bundles() -> list[str]:
-    """Bundle names, shipped or local, that carry a CIL policy (the template
-    apply_selinux_policy loads). Returned sorted for stable output.
-    """
-    return sorted({
-        d.name for root in (_BUNDLES_DIR, _LOCAL_BUNDLES_DIR) if root.is_dir()
-        for d in root.iterdir() if d.is_dir() and (d / "policy.cil").exists()
-    })
+    """Bundles whose winning policy.cil exists (the template
+    apply_selinux_policy loads), sorted."""
+    shipped, local = bundle_roots()
+    return [b for b in bundle_names()
+            if bundle_file(local / b, shipped / b, "policy.cil")[0].exists()]
 
 
 def _print_available_bundles(bundle: str):

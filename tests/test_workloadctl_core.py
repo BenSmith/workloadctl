@@ -184,7 +184,7 @@ class WorkloadConfigTestBase(unittest.TestCase):
         self.usr = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(self.etc, ignore_errors=True))
         self.addCleanup(lambda: shutil.rmtree(self.usr, ignore_errors=True))
-        self._p1 = mock.patch.object(core, "WORKLOAD_BUNDLES_DIR", self.usr)
+        self._p1 = mock.patch.object(workload_lib, "WORKLOAD_BUNDLES_DIR", self.usr)
         self._p2 = mock.patch.object(workload_lib, "WORKLOAD_CONFIG_DIR", self.etc)
         self._p1.start()
         self._p2.start()

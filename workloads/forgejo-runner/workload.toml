@@ -47,7 +47,7 @@ user = "fedora"
 egress = "open"
 
 [vm.cloud_init]
-user_data_file = "/usr/share/workloadctl/workloads/forgejo-runner/cloud-init/user-data"
+user_data_file = "cloud-init/user-data"
 
 [vm.cloud_init.template_vars]
 # Pinned for reproducibility — bump after reading the release notes at

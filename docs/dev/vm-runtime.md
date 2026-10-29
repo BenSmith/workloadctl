@@ -564,7 +564,9 @@ here are worth knowing:
 The seed is `build_cloud_init_iso` (`lib/ensure_vm.py`). It renders the
 built-in user-data (`lib/vm_default_seed.py`) or substitutes into the
 operator's file (`substitute_template`, `lib/secrets_template.py`), applying
-the seed contract to the latter. It pins the guest host key in
+the seed contract to the latter. A relative `user_data_file` is found with
+`control_file_source` (`lib/workloadctl_core.py`), the chain every control
+file uses. It pins the guest host key in
 `state/.ssh/vm_known_hosts`, keyed by `HostKeyAlias=<name>` so the
 management address never matters to the pin. Then it fingerprints the
 rendered text into `state/.cloud-init-fingerprint`. If the ISO already

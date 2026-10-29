@@ -13,7 +13,7 @@ import json
 import subprocess
 import sys
 
-from diagnose_battery import collect_diagnose_checks
+from diagnose_battery import collect_diagnose_checks, warning_count_text
 from cmd_drift import collect_drift, collect_policy_drift
 from cmd_validate import report_config_load_failure
 from substrate import get_substrate
@@ -218,6 +218,9 @@ def cmd_doctor(args, manager):
     gen_errors = [line for line in gen_lines if "error" in line.lower()]
     unit_problems = [r for r in unit_rows if r["problem"]]
     failing_checks = [c for c in checks if not c["passed"]]
+    warned_checks = [c for c in checks if c.get("warning")]
+    warning_note = (f" ({warning_count_text(len(warned_checks))})"
+                    if warned_checks else "")
     problems = (
         len(gen_errors)
         + len(unit_problems)
@@ -246,7 +249,8 @@ def cmd_doctor(args, manager):
             "drift": {"error": drift_error, "drifted_units": drifted},
             "health": liveness,
             "egress": egress,
-            "overall": {"healthy": healthy, "problems": problems},
+            "overall": {"healthy": healthy, "problems": problems,
+                        "warnings": len(warned_checks)},
         }, indent=2))
         sys.exit(0 if healthy else 1)
 
@@ -288,12 +292,17 @@ def cmd_doctor(args, manager):
 
     print("Setup checks")
     if checks_ok:
-        print(f"  ✓ {len(checks)} checks passed")
+        print(f"  ✓ {len(checks)} checks passed{warning_note}")
     else:
         for c in failing_checks:
             print(f"  ✗ {c['message']}")
             if "fix" in c:
                 print(f"    Fix: {c['fix']}")
+    for c in warned_checks:
+        print(f"  ! {c['message']}")
+        if "fix" in c:
+            print(f"    Fix: {c['fix']}")
+    if not checks_ok:
         print(f"  ({len(checks) - len(failing_checks)}/{len(checks)} passed)")
 
     print("Drift")
@@ -336,7 +345,7 @@ def cmd_doctor(args, manager):
 
     print()
     if healthy:
-        print("Overall: HEALTHY")
+        print(f"Overall: HEALTHY{warning_note}")
         sys.exit(0)
     print(f"Overall: UNHEALTHY ({problems} "
           f"problem{'s' if problems != 1 else ''})")

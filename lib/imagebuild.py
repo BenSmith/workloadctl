@@ -10,10 +10,10 @@ Two modes, selected by the TOML:
 
 The **merged context** is the build analogue of `info --files`: the shipped
 `/usr` bundle tree, then the local bundle layer, then the operator's
-`/etc/workloads.d/<name>/` overrides, each laid on top file by file. Materializing it is what makes overriding a `Containerfile`
-(or a `COPY`-ed asset) actually take effect — the original self-locating
-`build.sh` pinned the context to wherever the script resolved, silently ignoring
-overrides. See docs/manual/04-containers.md "Changing a bundle's files".
+`/etc/workloads.d/<name>/` overrides, each laid on top file by file.
+Materializing it is what makes overriding a `Containerfile` (or a `COPY`-ed
+asset) actually take effect — the original self-locating `build.sh` pinned the
+context to wherever the script resolved, silently ignoring overrides. See docs/manual/04-containers.md "Changing a bundle's files".
 """
 import os
 import shutil

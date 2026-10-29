@@ -1502,31 +1502,42 @@ class TestSelinuxHelpers(unittest.TestCase):
         with patch.object(provisioning.subprocess, 'run', side_effect=FileNotFoundError):
             self.assertFalse(workload_selinux._selinux_enforcing())
 
+    def _bundle_roots(self, d):
+        shipped, local = Path(d) / "usr", Path(d) / "etc"
+        self.enterContext(patch.object(workload_lib, 'WORKLOAD_BUNDLES_DIR', shipped))
+        self.enterContext(patch.object(workload_lib, 'WORKLOAD_LOCAL_BUNDLES_DIR', local))
+        return shipped, local
+
+    @staticmethod
+    def _bundle(root, name, *files):
+        (root / name).mkdir(parents=True)
+        for f in ("workload.toml", *files):
+            (root / name / f).write_text("")
+
     def test_available_bundles_empty_when_dir_missing(self):
-        fake_dir = MagicMock()
-        fake_dir.is_dir.return_value = False
-        with patch.object(workload_selinux, '_BUNDLES_DIR', fake_dir):
+        with tempfile.TemporaryDirectory() as d:
+            self._bundle_roots(d)
             self.assertEqual(workload_selinux._available_bundles(), [])
 
     def test_available_bundles_lists_dirs_with_policy(self):
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d)
-            (p / "foo").mkdir()
-            (p / "foo" / "policy.cil").write_text("")
-            (p / "bar").mkdir()  # no policy.cil -> excluded
-            with patch.object(workload_selinux, '_BUNDLES_DIR', p):
-                self.assertEqual(workload_selinux._available_bundles(), ["foo"])
+            shipped, _ = self._bundle_roots(d)
+            self._bundle(shipped, "foo", "policy.cil")
+            self._bundle(shipped, "bar")  # no policy.cil -> excluded
+            self.assertEqual(workload_selinux._available_bundles(), ["foo"])
 
-    def test_available_bundles_includes_local_root(self):
+    def test_available_bundles_follows_the_local_layer(self):
         with tempfile.TemporaryDirectory() as d:
-            shipped, local = Path(d) / "usr", Path(d) / "etc"
-            (shipped / "foo").mkdir(parents=True)
-            (shipped / "foo" / "policy.cil").write_text("")
-            (local / "mine").mkdir(parents=True)
-            (local / "mine" / "policy.cil").write_text("")
-            with patch.object(workload_selinux, '_BUNDLES_DIR', shipped), \
-                 patch.object(workload_selinux, '_LOCAL_BUNDLES_DIR', local):
-                self.assertEqual(workload_selinux._available_bundles(), ["foo", "mine"])
+            shipped, local = self._bundle_roots(d)
+            self._bundle(shipped, "foo", "policy.cil")
+            self._bundle(shipped, "bar")
+            self._bundle(local, "mine", "policy.cil")
+            (local / "bar").mkdir()
+            (local / "bar" / "policy.cil").write_text("")  # overlay adds a policy
+            (local / "loose").mkdir()
+            (local / "loose" / "policy.cil").write_text("")  # not a bundle
+            self.assertEqual(workload_selinux._available_bundles(),
+                             ["bar", "foo", "mine"])
 
     def test_print_available_bundles_suggests_close_match(self):
         with patch.object(workload_selinux, '_available_bundles', return_value=["forgejo"]):

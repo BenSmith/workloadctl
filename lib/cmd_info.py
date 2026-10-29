@@ -118,8 +118,9 @@ def _print_control_files(config, json_mode=False):
 
     print(f"Control files for {config.name}  (bundle: {config.bundle})")
     print(f"  override dir: {config.override_dir}")
-    print(f"  local dir:    {config.local_bundle_dir}")
-    print(f"  bundle dir:   {config.bundle_dir}")
+    for label, d in (("local dir:  ", config.local_bundle_dir),
+                     ("bundle dir: ", config.bundle_dir)):
+        print(f"  {label} {d}" + ("" if d.is_dir() else "  (none)"))
     print()
     if not files:
         print("  No control files (bundle ships none, no overrides).")
