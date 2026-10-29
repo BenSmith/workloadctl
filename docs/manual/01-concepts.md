@@ -73,6 +73,23 @@ is upgraded. To change one control file for one instance, `workloadctl edit
 edit` does for a unit. One bundle can back several instances
 (`init <bundle> --as <name>`), each with its own TOML, user and data.
 
+`/etc/workloadctl/bundles/` is a second bundle layer, one directory per
+bundle, that the admin writes. A directory there named after a shipped bundle
+overrides it file by file, for every instance of that bundle: its copy of a
+file wins over the shipped one, and the files it doesn't carry still come
+from the package. A directory with a name nothing ships, holding a
+`workload.toml`, is a bundle of your own, and `catalog`, `init`, `edit` and
+`info --files` treat it like a shipped one. On an image-based host this is
+how to change or add a bundle without rebuilding the image, since `/etc`
+keeps local additions across updates.
+
+A file in the local layer stops following the package: when an update changes
+the shipped bundle, your copy stays as it is, so a changed `Containerfile`
+can end up paired with your older `setup.sh`. `catalog` shows such a bundle as
+`shipped+local`, and `info --files` names the file that wins. A
+`workload.toml` there changes what `init` copies; instances already made keep
+their own TOML.
+
 You don't need a bundle: `workloadctl create` writes a TOML from command-line
 flags, and any directory holding a `workload.toml` can be installed with
 `workloadctl install`.

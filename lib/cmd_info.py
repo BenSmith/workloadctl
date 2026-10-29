@@ -58,17 +58,18 @@ def _collect_control_files(config) -> list[dict]:
     policy.cil, setup.sh, …).
 
     Unions the files actually present in the override tree
-    (`/etc/workloads.d/<name>/`) with those in the shipped bundle tree
-    (`/usr/.../workloads/<bundle>/`), plus any relative `[host].setup` the TOML
-    names (surfaced even when missing, so a declared-but-absent dependency
-    shows). For each, resolves the winning source — "etc" (override), "usr"
-    (shipped default), or "abs" (a verbatim absolute path) — and whether the
+    (`/etc/workloads.d/<name>/`) with those in the bundle's two layers
+    (`/etc/workloadctl/bundles/<bundle>/` and `/usr/.../workloads/<bundle>/`),
+    plus any relative `[host].setup` the TOML names (surfaced even when missing,
+    so a declared-but-absent dependency shows). For each, resolves the winning
+    source — "etc" (override), "local" (local bundle layer), "usr" (shipped
+    default), or "abs" (a verbatim absolute path) — and whether the
     resolved file exists. `workload.toml` is
     excluded: the authoritative declaration is `/etc/workloads.d/<name>/workload.toml`,
     never an override target.
     """
     names: set[str] = set()
-    for d in (config.override_dir, config.bundle_dir):
+    for d in (config.override_dir, config.local_bundle_dir, config.bundle_dir):
         if d.is_dir():
             # Recurse: a build context can carry subdirectories, and `edit`
             # accepts nested relpaths, so a nested override must be visible here
@@ -109,6 +110,7 @@ def _print_control_files(config, json_mode=False):
             "workload": config.name,
             "bundle": config.bundle,
             "override_dir": str(config.override_dir),
+            "local_bundle_dir": str(config.local_bundle_dir),
             "bundle_dir": str(config.bundle_dir),
             "control_files": files,
         }, indent=2))
@@ -116,6 +118,7 @@ def _print_control_files(config, json_mode=False):
 
     print(f"Control files for {config.name}  (bundle: {config.bundle})")
     print(f"  override dir: {config.override_dir}")
+    print(f"  local dir:    {config.local_bundle_dir}")
     print(f"  bundle dir:   {config.bundle_dir}")
     print()
     if not files:
@@ -131,12 +134,15 @@ def _print_control_files(config, json_mode=False):
             src = "absolute"
         elif f["source"] == "invalid":
             src = "invalid"
+        elif not f["exists"]:
+            src = "missing"
         else:
-            src = "shipped" if f["exists"] else "missing"
+            src = "local" if f["source"] == "local" else "shipped"
         print(f"  {f['file']:<{fw}}  {src:<9}  {f['path']}")
     print()
-    print("  override = /etc copy wins · shipped = /usr default · "
-          "absolute = verbatim path · missing = declared but absent")
+    print("  override = instance copy wins · local = local bundle copy · "
+          "shipped = /usr default · absolute = verbatim path · "
+          "missing = declared but absent")
     print(f"  Edit a control file:  sudo workloadctl edit {config.name} <file>")
 
 # ---------------------------------------------------------------------------

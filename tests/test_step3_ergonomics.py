@@ -154,6 +154,24 @@ class TestControlFilesView(Step3Base):
         self.assertEqual(files["rootfs/extra.conf"]["source"], "usr")
         self.assertTrue(files["rootfs/extra.conf"]["exists"])
 
+    def test_local_layer_files_listed_and_labelled(self):
+        import shutil
+        local = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(local, ignore_errors=True))
+        self.enterContext(mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        self._ship("solo", "build.sh")
+        (local / "solo").mkdir()
+        (local / "solo" / "build.sh").write_text("local\n")
+        (local / "solo" / "extra.conf").write_text("local\n")
+        cfg = self._config("solo")
+        files = {f["file"]: f for f in cmd_info._collect_control_files(cfg)}
+        self.assertEqual(files["build.sh"]["source"], "local")
+        self.assertEqual(files["extra.conf"]["source"], "local")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cmd_info._print_control_files(cfg, json_mode=False)
+        self.assertRegex(buf.getvalue(), r"build\.sh\s+local\s")
+
     def test_print_no_control_files(self):
         cfg = self._config("solo")
         buf = io.StringIO()

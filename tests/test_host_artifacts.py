@@ -587,6 +587,8 @@ class ShippedSetupScriptsTest(unittest.TestCase):
             "PATH": "/usr/bin:/bin",
             "WORKLOAD_NAME": name,
             "WORKLOAD_BUNDLE": bundle,
+            # No local layer, so a sibling helper falls through to the shipped one.
+            "WORKLOAD_LOCAL_BUNDLE_DIR": f"/nonexistent/workloadctl-bundles/{bundle}",
             "WORKLOAD_BUNDLE_DIR": str(bundle_dir),
             "WORKLOAD_USER": f"_wl-{name}",
             # A real per-instance dir carrying the bundle's workload.toml, so

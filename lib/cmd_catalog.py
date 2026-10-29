@@ -1,12 +1,14 @@
 """
 cmd_catalog — bundle catalog + instantiation: catalog, init, duplicate.
 
-A *bundle* is a shipped directory `/usr/share/workloadctl/workloads/<bundle>/`
-co-locating a template declaration (`workload.toml`) with its control files.
+A *bundle* is a directory `/usr/share/workloadctl/workloads/<bundle>/` (shipped)
+co-locating a template declaration (`workload.toml`) with its control files;
+`/etc/workloadctl/bundles/<bundle>/` (local) layers over it file by file, or
+holds a bundle nothing ships.
 `init` stamps a catalog bundle into `/etc/workloads.d/<name>/workload.toml`; `duplicate`
 copies a live workload. Neither touches `/var` or the boot path — they only
 write the authoritative `/etc` declaration. Control files are *not* copied:
-the new TOML's resolved `bundle` falls through to the shared `/usr` tree until
+the new TOML's resolved `bundle` falls through to the shared bundle tree until
 the operator overrides something.
 """
 
@@ -19,7 +21,10 @@ import sys
 import tomllib
 
 from cli_log import emit_result
-from workload_lib import iter_workloads, workload_config_dir, workload_config_path, WORKLOAD_BUNDLES_DIR
+from workload_lib import (
+    bundle_file, iter_workloads, workload_config_dir, workload_config_path,
+    WORKLOAD_BUNDLES_DIR, WORKLOAD_LOCAL_BUNDLES_DIR,
+)
 from validation import validate_workload_name
 from secrets_template import auto_detect_credentials
 from workloadctl_core import (
@@ -32,6 +37,7 @@ from cmd_validate import validate_single
 from scratch_vm import SCRATCH_VM_USER_DATA, scratch_vm_toml
 
 BUNDLES_DIR = WORKLOAD_BUNDLES_DIR
+LOCAL_BUNDLES_DIR = WORKLOAD_LOCAL_BUNDLES_DIR
 
 # Edit a single field inside the [workload] section only (mirrors
 # cmd_lifecycle._set_enabled): scoping keeps the regex from touching a
@@ -100,16 +106,21 @@ def _set_workload_field(content: str, field: str, value: str) -> str:
 # ---------------------------------------------------------------------------
 
 def list_bundles() -> list[str]:
-    """Sorted names of shippable bundles (a dir with a workload.toml)."""
-    if not BUNDLES_DIR.is_dir():
-        return []
-    return [name for name, _ in iter_workloads(BUNDLES_DIR)]
+    """Sorted names of bundles: a workload.toml in either bundle layer."""
+    return sorted({name for root in (BUNDLES_DIR, LOCAL_BUNDLES_DIR)
+                   for name, _ in iter_workloads(root)})
+
+
+def _template(bundle: str) -> Path:
+    """The bundle's workload.toml, the local layer's if it has one."""
+    return bundle_file(LOCAL_BUNDLES_DIR / bundle, BUNDLES_DIR / bundle,
+                       "workload.toml")[0]
 
 
 def _bundle_kind(bundle: str) -> str:
     """'vm' or 'container' (best-effort; '?' if the template won't parse)."""
     try:
-        data = tomllib.loads((BUNDLES_DIR / bundle / "workload.toml").read_text())
+        data = tomllib.loads(_template(bundle).read_text())
     except (OSError, tomllib.TOMLDecodeError):
         return "?"
     return "vm" if "vm" in data else "container"
@@ -131,18 +142,27 @@ def _suggest_bundle(bundle: str) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_catalog(args, manager: WorkloadManager):
-    """List shippable bundles under the workloads share dir."""
+    """List bundles under the shipped and local bundle roots."""
     bundles = list_bundles()
     if getattr(args, "json", False):
         print(json.dumps(
-            [{"bundle": b, "kind": _bundle_kind(b)} for b in bundles], indent=2))
+            [{"bundle": b, "kind": _bundle_kind(b), "source": _source(b)}
+             for b in bundles], indent=2))
         return
     if not bundles:
-        print(f"No bundles found under {BUNDLES_DIR}")
+        print(f"No bundles found under {BUNDLES_DIR} or {LOCAL_BUNDLES_DIR}")
         return
     print("Available bundles (workloadctl init <bundle> [--as <name>]):")
     for b in bundles:
-        print(f"  {b:<32} {_bundle_kind(b)}")
+        print(f"  {b:<32} {_bundle_kind(b):<10} {_source(b)}")
+
+
+def _source(bundle: str) -> str:
+    """"shipped", "local", or "shipped+local" for a shipped bundle the local
+    layer overrides files of."""
+    return "+".join(label for root, label in ((BUNDLES_DIR, "shipped"),
+                                              (LOCAL_BUNDLES_DIR, "local"))
+                    if (root / bundle).is_dir())
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +265,10 @@ def cmd_init(args, manager: WorkloadManager):
         print(f"Error: invalid workload name {name!r}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    src = BUNDLES_DIR / bundle / "workload.toml"
-    if not src.exists():
-        print(f"Error: no bundle '{bundle}' under {BUNDLES_DIR}", file=sys.stderr)
+    src = _template(bundle)
+    if not src.is_file():
+        print(f"Error: no bundle '{bundle}' under {BUNDLES_DIR} or "
+              f"{LOCAL_BUNDLES_DIR}", file=sys.stderr)
         _suggest_bundle(bundle)
         sys.exit(1)
 
@@ -312,8 +333,8 @@ def cmd_duplicate(args, manager: WorkloadManager):
         sys.exit(1)
 
     # Resolve the source's bundle: a duplicate of a duplicate must point at the
-    # original /usr bundle (src.bundle or src.name), never at the source's own
-    # name (which has no /usr bundle dir).
+    # original bundle (src.bundle or src.name), never at the source's own
+    # name (which has no bundle dir).
     try:
         resolved_bundle = WorkloadConfig(src_name).bundle
     except Exception:

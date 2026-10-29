@@ -424,7 +424,8 @@ module. In a workload of several containers, every container runs as that
 type; the key belongs in the top-level `[security]`.
 
 `policy.cil` is found like any other control file: an override in
-`/etc/workloads.d/<name>/` wins, then the bundle's copy under
+`/etc/workloads.d/<name>/` wins, then a copy in the bundle's local layer
+`/etc/workloadctl/bundles/<bundle>/`, then the bundle's copy under
 `/usr/share/workloadctl/workloads/<bundle>/`. For a workload of your own,
 put it beside the TOML. It is a CIL block whose name is the placeholder
 `__WL_MODULE__`, which `enable` replaces with `wl_<name>`. It inherits the
@@ -443,6 +444,10 @@ complete container domain from the base templates container-selinux ships in
 `(blockinherit container)` is required. `net_container` gives network
 access, which most workloads need. Inside the block, `process` is the
 workload's own type.
+
+Files in the local layer need no relabelling. They carry `/etc`'s `etc_t`
+where shipped ones carry `usr_t`, and the build, the policy load, the setup
+script and a system service the script starts all read them as they are.
 
 #### Writing it with udica
 

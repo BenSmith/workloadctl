@@ -295,9 +295,9 @@ def validate_single(config: WorkloadConfig, manager: WorkloadManager, json_mode=
                f"got {raw_snapshot_keep!r}",
                fix="Set [workload] snapshot_keep to a positive integer (or omit for the default 3)")
 
-    # `bundle` goes straight into a /usr/share/workloadctl/workloads/<bundle>/
-    # path for control-file lookups, so reject anything that isn't a plain
-    # workload-style name before any path is built. Only the explicit field is
+    # `bundle` goes straight into a bundle-root path for control-file lookups,
+    # so reject anything that isn't a plain workload-style name before any path
+    # is built. Only the explicit field is
     # checked; the default (the workload name) is validated on its own.
     raw_bundle = config.config.get("workload", {}).get("bundle")
     if raw_bundle is not None:

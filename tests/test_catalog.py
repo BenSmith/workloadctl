@@ -751,5 +751,76 @@ class TestInstallErrorPaths(CatalogTestBase):
                 cmd_catalog.cmd_install(_ns(src=d), self.manager)
 
 
+
+class TestLocalBundleRoot(CatalogTestBase):
+    """Bundles under the local root (/etc/workloadctl/bundles/) list, init and
+    resolve like shipped ones, and a local dir named after a shipped bundle
+    overrides it file by file."""
+
+    def setUp(self):
+        super().setUp()
+        self.local = self.tmp / "local-bundles"
+        (self.local / "mine").mkdir(parents=True)
+        (self.local / "mine" / "workload.toml").write_text(
+            '[workload]\nname = "mine"\n\n[container]\nimage = "localhost/mine:1"\n')
+        (self.local / "mine" / "setup.sh").write_text("#!/bin/sh\n")
+        (self.local / "alloy").mkdir()
+        (self.local / "alloy" / "workload.toml").write_text(
+            '[workload]\nname = "alloy"\n\n[vm]\n')
+        (self.local / "forgejo").mkdir()
+        (self.local / "forgejo" / "setup.sh").write_text("#!/bin/sh\n")
+        import workloadctl_core
+        self.enterContext(mock.patch.object(cmd_catalog, "LOCAL_BUNDLES_DIR", self.local))
+        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_BUNDLES_DIR", REPO_BUNDLES))
+        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_LOCAL_BUNDLES_DIR", self.local))
+
+    def _catalog_json(self):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            cmd_catalog.cmd_catalog(_ns(json=True), self.manager)
+        return {r["bundle"]: r for r in json.loads(out.getvalue())}, err.getvalue()
+
+    def test_catalog_lists_local_bundle_with_source(self):
+        by_name, _ = self._catalog_json()
+        self.assertEqual(by_name["mine"]["source"], "local")
+        self.assertEqual(by_name["mine"]["kind"], "container")
+        self.assertEqual(by_name["caddy"]["source"], "shipped")
+        self.assertEqual(by_name["alloy"]["source"], "shipped+local")
+
+    def test_local_template_overrides_the_shipped_one(self):
+        by_name, err = self._catalog_json()
+        self.assertEqual(by_name["alloy"]["kind"], "vm")
+        self.assertEqual(err, "")
+
+    def test_local_layer_without_a_template_keeps_the_shipped_one(self):
+        by_name, _ = self._catalog_json()
+        self.assertEqual(by_name["forgejo"]["kind"], "container")
+        self.assertEqual(by_name["forgejo"]["source"], "shipped+local")
+
+    def test_local_dir_without_a_template_is_not_a_bundle(self):
+        (self.local / "loose").mkdir()
+        (self.local / "loose" / "setup.sh").write_text("#!/bin/sh\n")
+        by_name, _ = self._catalog_json()
+        self.assertNotIn("loose", by_name)
+
+    def test_init_as_from_local_bundle_resolves_its_control_files(self):
+        with redirect_stdout(io.StringIO()):
+            cmd_catalog.cmd_init(_ns(bundle="mine", as_name="mine-two"), self.manager)
+        self.assertEqual(self._read("mine-two")["workload"]["bundle"], "mine")
+        from workloadctl_core import WorkloadConfig
+        cfg = WorkloadConfig("mine-two")
+        self.assertEqual(cfg.local_bundle_dir, self.local / "mine")
+        self.assertEqual(cfg.resolve_control_file_with_source("setup.sh"),
+                         (self.local / "mine" / "setup.sh", "local"))
+
+    def test_init_from_a_shipped_bundle_takes_the_local_layer(self):
+        with redirect_stdout(io.StringIO()):
+            cmd_catalog.cmd_init(_ns(bundle="forgejo", as_name="forge-two"), self.manager)
+        from workloadctl_core import WorkloadConfig
+        cfg = WorkloadConfig("forge-two")
+        self.assertEqual(cfg.resolve_control_file_with_source("setup.sh"),
+                         (self.local / "forgejo" / "setup.sh", "local"))
+
+
 if __name__ == "__main__":
     unittest.main()

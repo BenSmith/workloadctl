@@ -40,6 +40,10 @@ from pathlib import Path
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 sys.dont_write_bytecode = True
 
+# A host with local bundles must not leak them into the suite; tests that want
+# a local root patch one in.
+os.environ.setdefault("WORKLOAD_LOCAL_BUNDLES_DIR", "/nonexistent/workloadctl-test-bundles")
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = REPO_ROOT / "tests"
 

@@ -1208,7 +1208,7 @@ class EditControlFileTest(unittest.TestCase):
             return mock.Mock(returncode=0)
         code, out, err = self._run("custom.conf", fake_editor)
         self.assertIsNone(code)
-        self.assertIn("No shipped default", out)
+        self.assertIn("No bundle default", out)
         self.assertIn("Override saved", out)
         self.assertEqual((self.tmp / "app" / "custom.conf").read_text(), "hello=1\n")
 
@@ -1233,9 +1233,27 @@ class EditControlFileTest(unittest.TestCase):
             return mock.Mock(returncode=0)  # leave content == seeded == default
         code, out, err = self._run("shipped.conf", fake_editor)
         self.assertIsNone(code)
-        self.assertIn("Seeded override from shipped default", out)
-        self.assertIn("No change from the shipped default", out)
+        self.assertIn("Seeded override from bundle default", out)
+        self.assertIn("No change from the bundle default", out)
         self.assertFalse((self.tmp / "app" / "shipped.conf").exists())
+
+    def test_seeds_from_the_local_bundle_layer(self):
+        (self.bundles / "app" / "app.conf").write_text("shipped\n")
+        local = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (local / "app").mkdir()
+        (local / "app" / "app.conf").write_text("local\n")
+        self.enterContext(mock.patch.object(workloadctl_core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        seen = {}
+
+        def fake_editor(argv, **kw):
+            seen["text"] = Path(argv[-1]).read_text()
+            return mock.Mock(returncode=0)
+        code, out, err = self._run("app.conf", fake_editor)
+        self.assertIsNone(code)
+        self.assertEqual(seen["text"], "local\n")
+        # Unchanged from the local copy, so no override is kept.
+        self.assertIn(f"still tracks {local / 'app' / 'app.conf'}", out)
+        self.assertFalse((self.tmp / "app" / "app.conf").exists())
 
 
 class ValidateSingleErrorsTest(unittest.TestCase):

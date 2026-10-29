@@ -21,7 +21,7 @@ own podman or its SSH key, and that takes root, so run them with `sudo` too.
 
 | Command | What it does | Root | Explained in |
 |---|---|---|---|
-| [`catalog`](../cli.md#catalog) | Lists the bundles the package ships, and whether each is a container or a VM. | no | [Concepts](01-concepts.md#bundles-and-instances) |
+| [`catalog`](../cli.md#catalog) | Lists the shipped and local bundles, and whether each is a container or a VM. | no | [Concepts](01-concepts.md#bundles-and-instances) |
 | [`init`](../cli.md#init) | Copies a bundle's TOML into `/etc/workloads.d/` as an instance; `--as` names it. `--scratch` and `--scratch-vm` write a stub with no bundle behind it. | yes | [First workloads](03-first-workloads.md#a-shipped-bundle), [VM workloads](05-vms.md#starting-from-a-template) |
 | [`duplicate`](../cli.md#duplicate-alias-clone), `clone` | Copies a workload's TOML under a new name. The copy keeps the original's bundle. | yes | [Concepts](01-concepts.md#bundles-and-instances) |
 | [`install`](../cli.md#install) | Copies a directory holding a `workload.toml` into `/etc/workloads.d/`, under the name its TOML gives. | yes | [Concepts](01-concepts.md#bundles-and-instances) |
@@ -188,13 +188,19 @@ Each workload is a directory, and its name must match the TOML's
 `[workload] name`. A TOML anywhere else, such as a flat
 `/etc/workloads.d/web.toml`, is not read.
 
+The local bundle layer is `/etc/workloadctl/bundles/<bundle>/`, laid out
+like a shipped bundle. A directory there overrides the shipped bundle of the
+same name file by file, or is a bundle of its own if nothing ships that name
+([Bundles and instances](01-concepts.md#bundles-and-instances)).
+
 `.enabled` is what makes the workload start at boot. `enable` creates it and
 `disable` deletes it ([The enabled marker](09-operating.md#the-enabled-marker)).
 
 The other files are **control files**. A relative path the TOML gives for a
 `Containerfile`, a build script, a `[host] setup` script or a `policy.cil` is
-looked up first in the instance's own directory and then in its bundle's
-directory under `/usr/share/workloadctl/workloads/`. An absolute path is
+looked up first in the instance's own directory, then in the bundle's local
+layer under `/etc/workloadctl/bundles/`, then in its directory under
+`/usr/share/workloadctl/workloads/`. An absolute path is
 used as written. `sudo workloadctl edit <name> <file>` makes the override in
 `/etc` for you, and `workloadctl info <name> --files` shows which copy of
 each file wins. A VM's relative `user_data_file` is the exception: it is
@@ -383,7 +389,8 @@ instance it acts for:
 |---|---|
 | `WORKLOAD_NAME` | The instance name. |
 | `WORKLOAD_BUNDLE` | The bundle the instance came from. |
-| `WORKLOAD_BUNDLE_DIR` | That bundle's directory, `/usr/share/workloadctl/workloads/<bundle>`. |
+| `WORKLOAD_LOCAL_BUNDLE_DIR` | That bundle's local layer, `/etc/workloadctl/bundles/<bundle>`, which may not exist. |
+| `WORKLOAD_BUNDLE_DIR` | That bundle's shipped directory, `/usr/share/workloadctl/workloads/<bundle>`. |
 | `WORKLOAD_USER` | `_wl-<name>`. |
 | `WORKLOAD_INSTANCE_DIR` | `/etc/workloads.d/<name>` |
 | `WORKLOAD_ROOT_DIR` | `/var/lib/workloads/<name>` |

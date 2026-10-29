@@ -1462,6 +1462,9 @@ class TestRunHostSetup(unittest.TestCase):
         # override that carries only setup.sh.
         self.assertTrue(
             env["WORKLOAD_BUNDLE_DIR"].endswith("/sunshine-streaming"))
+        self.assertTrue(
+            env["WORKLOAD_LOCAL_BUNDLE_DIR"].endswith("/sunshine-streaming"))
+        self.assertNotEqual(env["WORKLOAD_LOCAL_BUNDLE_DIR"], env["WORKLOAD_BUNDLE_DIR"])
         self.assertEqual(env["WORKLOAD_USER"], "_wl-games")
         self.assertEqual(env["WORKLOAD_ROOT_DIR"], "/var/lib/workloads/games")
         self.assertEqual(env["WORKLOAD_DATA_DIR"], "/var/lib/workloads/games/data")
@@ -1513,6 +1516,17 @@ class TestSelinuxHelpers(unittest.TestCase):
             (p / "bar").mkdir()  # no policy.cil -> excluded
             with patch.object(workload_selinux, '_BUNDLES_DIR', p):
                 self.assertEqual(workload_selinux._available_bundles(), ["foo"])
+
+    def test_available_bundles_includes_local_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            shipped, local = Path(d) / "usr", Path(d) / "etc"
+            (shipped / "foo").mkdir(parents=True)
+            (shipped / "foo" / "policy.cil").write_text("")
+            (local / "mine").mkdir(parents=True)
+            (local / "mine" / "policy.cil").write_text("")
+            with patch.object(workload_selinux, '_BUNDLES_DIR', shipped), \
+                 patch.object(workload_selinux, '_LOCAL_BUNDLES_DIR', local):
+                self.assertEqual(workload_selinux._available_bundles(), ["foo", "mine"])
 
     def test_print_available_bundles_suggests_close_match(self):
         with patch.object(workload_selinux, '_available_bundles', return_value=["forgejo"]):

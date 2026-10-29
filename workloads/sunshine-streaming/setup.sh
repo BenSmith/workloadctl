@@ -17,13 +17,13 @@ set -euo pipefail
 WORKLOAD_NAME="${WORKLOAD_NAME:?not set — run via workloadctl enable/disable}"
 WORKLOAD_USER="${WORKLOAD_USER:?not set — run via workloadctl enable/disable}"
 
-# The udev-relay helper, resolved through the same /etc→/usr override chain
+# The udev-relay helper, resolved through the same per-file override chain
 # workloadctl applies to setup.sh itself (resolve_control_file). We can't reach
-# it via $0's dir: the override chain is per-file, so this script may be running
-# from an operator override in ${WORKLOAD_INSTANCE_DIR} that carries only
-# setup.sh, with no udev-relay beside it. Prefer an override copy, else the
-# shipped bundle's — the shell mirror of ${WORKLOAD_INSTANCE_DIR}→${WORKLOAD_BUNDLE_DIR}.
+# it via $0's dir: this script may be running from an override that carries
+# only setup.sh, with no udev-relay beside it. Prefer the instance's copy, then
+# the local bundle layer's, else the shipped bundle's.
 UDEV_RELAY="${WORKLOAD_INSTANCE_DIR:?not set — run via workloadctl enable/disable}/udev-relay"
+[ -f "$UDEV_RELAY" ] || UDEV_RELAY="${WORKLOAD_LOCAL_BUNDLE_DIR:?not set — run via workloadctl enable/disable}/udev-relay"
 [ -f "$UDEV_RELAY" ] || UDEV_RELAY="${WORKLOAD_BUNDLE_DIR:?not set — run via workloadctl enable/disable}/udev-relay"
 
 # Keyed to the instance, not the bundle: the relay unit is host-global, so two

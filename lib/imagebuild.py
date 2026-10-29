@@ -9,8 +9,8 @@ Two modes, selected by the TOML:
     for each `pull = never` image, tagging it exactly as `[container].image`.
 
 The **merged context** is the build analogue of `info --files`: the shipped
-`/usr` bundle tree with the operator's `/etc/workloads.d/<name>/` overrides laid
-on top, file by file. Materializing it is what makes overriding a `Containerfile`
+`/usr` bundle tree, then the local bundle layer, then the operator's
+`/etc/workloads.d/<name>/` overrides, each laid on top file by file. Materializing it is what makes overriding a `Containerfile`
 (or a `COPY`-ed asset) actually take effect — the original self-locating
 `build.sh` pinned the context to wherever the script resolved, silently ignoring
 overrides. See docs/manual/04-containers.md "Changing a bundle's files".
@@ -69,15 +69,15 @@ def assemble_build_args(config, job=None) -> list:
 
 
 def materialize_build_context(config) -> Path:
-    """Assemble the merged (/usr + /etc overlay) build context into a fresh temp
-    dir and return it. Caller owns cleanup (rmtree). Control files are stripped
-    so they can't leak into the image via `COPY .`."""
+    """Assemble the merged build context (shipped bundle, then the local bundle
+    layer, then the instance overrides) into a fresh temp dir and return it.
+    Caller owns cleanup (rmtree). Control files are stripped so they can't leak
+    into the image via `COPY .`."""
     tmp = Path(tempfile.mkdtemp(prefix=f"wl-build-{config.name}-"))
-    if config.bundle_dir.is_dir():
-        shutil.copytree(config.bundle_dir, tmp, dirs_exist_ok=True)
-    if config.override_dir.is_dir():
-        # Overlay: operator overrides win file-by-file over the shipped tree.
-        shutil.copytree(config.override_dir, tmp, dirs_exist_ok=True)
+    # Overlay: each later tree wins file-by-file over the ones before it.
+    for layer in (config.bundle_dir, config.local_bundle_dir, config.override_dir):
+        if layer.is_dir():
+            shutil.copytree(layer, tmp, dirs_exist_ok=True)
 
     exclude = set(_CONTEXT_EXCLUDE)
     setup = config.config.get("host", {}).get("setup", "")
@@ -114,14 +114,14 @@ def build_image(config) -> int:
 
     context = materialize_build_context(config)
     try:
-        overlaid = " + /etc overrides" if config.override_dir.is_dir() else ""
+        layers = " + ".join(str(d) for d in (config.bundle_dir, config.local_bundle_dir,
+                                             config.override_dir) if d.is_dir())
         for job in jobs:
             if not (context / job.containerfile).exists():
                 print(f"Error: Containerfile '{job.containerfile}' not found in "
                       f"the build context for '{config.name}'")
                 return 1
-            print(f"Building {job.image}  (context: {config.bundle_dir}"
-                  f"{overlaid}, -f {job.containerfile})")
+            print(f"Building {job.image}  (context: {layers}, -f {job.containerfile})")
             rc = _podman_build(context, job.containerfile, job.image,
                                assemble_build_args(config, job), job.target)
             if rc != 0:

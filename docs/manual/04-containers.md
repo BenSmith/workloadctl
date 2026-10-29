@@ -822,7 +822,8 @@ setup = "setup.sh"
 ```
 
 A relative name is looked up beside the workload's TOML in
-`/etc/workloads.d/<name>/`, then in its bundle's directory under
+`/etc/workloads.d/<name>/`, then in the bundle's local layer under
+`/etc/workloadctl/bundles/`, then in its directory under
 `/usr/share/workloadctl/workloads/`; an absolute path is used as written.
 The script must be executable. It runs as root, with `enable` on `workloadctl
 enable` and `disable` on `workloadctl disable`, and must be safe to run more
@@ -838,6 +839,7 @@ which instance it is acting for, in its environment:
 |---|---|
 | `WORKLOAD_NAME` | the instance name |
 | `WORKLOAD_BUNDLE` | the bundle it came from |
+| `WORKLOAD_LOCAL_BUNDLE_DIR` | the bundle's local layer under `/etc/workloadctl/bundles/`, which may not exist |
 | `WORKLOAD_BUNDLE_DIR` | the bundle's directory under `/usr/share/workloadctl/workloads/` |
 | `WORKLOAD_USER` | `_wl-<name>` |
 | `WORKLOAD_INSTANCE_DIR` | `/etc/workloads.d/<name>` |
@@ -992,12 +994,16 @@ sudo workloadctl build tools
 sudo workloadctl recreate tools
 ```
 
-`edit` copies the shipped file into `/etc/workloads.d/tools/` on first use
-and opens it; an override you leave identical to the shipped file is
-discarded. `info --files` shows, for each control file, whether the override
-or the shipped file wins. Files you have not touched keep following the
-package. Instances of one bundle share its image name, so give an instance
-with an edited `Containerfile` an `image` of its own.
+`edit` copies the bundle's file into `/etc/workloads.d/tools/` on first use
+and opens it; an override you leave identical to the bundle's file is
+discarded. `info --files` shows, for each control file, whether the
+override, a local copy or the shipped file wins. Files you have not touched
+keep following the package. Instances of one bundle share its image name, so
+give an instance with an edited `Containerfile` an `image` of its own.
+
+To change a file for every instance of a bundle, put your copy in
+`/etc/workloadctl/bundles/<bundle>/` instead, at the same relative path. An
+instance's own override still wins over it.
 
 ## Remote development from an IDE
 

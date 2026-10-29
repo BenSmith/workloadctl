@@ -49,12 +49,13 @@ def host_setup_env(config: WorkloadConfig) -> dict:
     return {
         "WORKLOAD_NAME": name,
         "WORKLOAD_BUNDLE": config.bundle,
-        # The shipped /usr control-file tree, so a script can reach a sibling
-        # helper (e.g. sunshine-streaming's udev-relay) even when it is itself
-        # running
-        # from an /etc override that carries only setup.sh — the override chain
-        # is per-file, so ${WORKLOAD_INSTANCE_DIR}→${WORKLOAD_BUNDLE_DIR} is the
+        # The bundle's local and shipped control-file trees, so a script can
+        # reach a sibling helper (e.g. sunshine-streaming's udev-relay) even
+        # when it is itself running from an override that carries only
+        # setup.sh — the override chain is per-file, so ${WORKLOAD_INSTANCE_DIR}
+        # → ${WORKLOAD_LOCAL_BUNDLE_DIR} → ${WORKLOAD_BUNDLE_DIR} is the
         # shell-side mirror of resolve_control_file().
+        "WORKLOAD_LOCAL_BUNDLE_DIR": str(config.local_bundle_dir),
         "WORKLOAD_BUNDLE_DIR": str(config.bundle_dir),
         "WORKLOAD_USER": workload_username(name),
         "WORKLOAD_INSTANCE_DIR": str(workload_config_dir() / name),

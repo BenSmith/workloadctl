@@ -15,7 +15,7 @@ user.
 |---|---|
 | [`backup`](#backup) | Archive a workload's `data/`, TOML and referenced secrets to a `.tar.zst` |
 | [`build`](#build) | Build a container workload's image from its bundle build context |
-| [`catalog`](#catalog) | List the bundles the package ships |
+| [`catalog`](#catalog) | List the shipped and local bundles |
 | [`cleanup`](#cleanup) | Find, and with `--apply` remove, users, directories and SELinux modules no TOML declares |
 | [`cp`](#cp) | Copy files into or out of a running container |
 | [`create`](#create) | Write a container workload's TOML from flags |
@@ -189,15 +189,16 @@ describes the fields and what the log is and is not.
 
 ### `catalog`
 
-List the bundles under `/usr/share/workloadctl/workloads/`, each with its
-substrate.
+List the bundles under `/usr/share/workloadctl/workloads/` (shipped) and
+`/etc/workloadctl/bundles/` (local), each with its substrate and source.
 
 ```
 workloadctl catalog [--json]
 ```
 
-`--json` prints a list of `{"bundle", "kind"}`, where `kind` is `container`
-or `vm`.
+`--json` prints a list of `{"bundle", "kind", "source"}`, where `kind` is
+`container` or `vm` and `source` is `shipped`, `local`, or `shipped+local`
+for a shipped bundle with a local layer over it.
 
 [↑ top](#workloadctl-command-reference)
 

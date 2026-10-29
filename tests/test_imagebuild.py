@@ -163,6 +163,27 @@ class TestMergedContext(BuildBase):
         finally:
             __import__("shutil").rmtree(ctx, ignore_errors=True)
 
+    def test_local_layer_sits_between_shipped_and_override(self):
+        import shutil
+        local = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(local, ignore_errors=True))
+        self.enterContext(mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local))
+        self._ship("solo", "Containerfile", "FROM usr\n")
+        self._ship("solo", "a.conf", "usr\n")
+        self._ship("solo", "b.conf", "usr\n")
+        (local / "solo").mkdir()
+        (local / "solo" / "a.conf").write_text("local\n")
+        (local / "solo" / "b.conf").write_text("local\n")
+        self._override("solo", "b.conf", "etc\n")
+        cfg = self._config("solo")
+        ctx = imagebuild.materialize_build_context(cfg)
+        try:
+            self.assertEqual((ctx / "Containerfile").read_text(), "FROM usr\n")
+            self.assertEqual((ctx / "a.conf").read_text(), "local\n")
+            self.assertEqual((ctx / "b.conf").read_text(), "etc\n")
+        finally:
+            shutil.rmtree(ctx, ignore_errors=True)
+
     def test_control_files_stripped(self):
         self._ship("solo", "Containerfile", "FROM usr\n")
         self._ship("solo", "workload.toml", "x")

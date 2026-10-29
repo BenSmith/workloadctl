@@ -22,8 +22,9 @@ import tomllib
 from validation import validate_workload_name
 from config_parser import infer_workload_mode
 from workload_lib import (
-    expand_volume_path, infer_workload_kind, iter_workloads,
-    normalize_containers, WORKLOAD_BUNDLES_DIR, workload_config_dir,
+    bundle_file, expand_volume_path, infer_workload_kind, iter_workloads,
+    normalize_containers, WORKLOAD_BUNDLES_DIR, WORKLOAD_LOCAL_BUNDLES_DIR,
+    workload_config_dir,
     workload_config_path, workload_is_enabled, workload_container_name,
     workload_data_dir, workload_home_dir, workload_podman_container_name,
     workload_service_name, workload_state_dir, workload_username,
@@ -297,7 +298,8 @@ class WorkloadConfig:
         """The bundle (kind) this workload draws shared control files from.
 
         Control-file lookups all resolve under
-        `/usr/share/workloadctl/workloads/<bundle>/`: the build context
+        `/usr/share/workloadctl/workloads/<bundle>/`, with
+        `/etc/workloadctl/bundles/<bundle>/` layered over it: the build context
         (Containerfile/`build.sh`), the host `setup.sh` (`[host].setup`), and
         the SELinux CIL (`policy.cil`). Defaults to the workload name, so a
         single shipped instance needs no `bundle` field; `duplicate`/`init`
@@ -349,9 +351,19 @@ class WorkloadConfig:
 
     @property
     def bundle_dir(self) -> Path:
-        """The shipped /usr control-file tree for this workload's bundle.
+        """The shipped /usr control-file tree for this workload's bundle."""
+        return WORKLOAD_BUNDLES_DIR / self._valid_bundle()
 
-        This property is the single point where the `bundle` field becomes a
+    @property
+    def local_bundle_dir(self) -> Path:
+        """The admin's /etc/workloadctl/bundles/<bundle>/ layer, which wins file
+        by file over `bundle_dir`. Usually absent for a shipped bundle."""
+        return WORKLOAD_LOCAL_BUNDLES_DIR / self._valid_bundle()
+
+    def _valid_bundle(self) -> str:
+        """The bundle name, checked before it becomes a path.
+
+        The bundle dirs are the single point where the `bundle` field becomes a
         filesystem path — and that path is read *and executed as root* (build
         context, `[host].setup`, `policy.cil`). So validate here: anything that
         isn't a plain workload-style name (a stray `..`, a typo, an underscored
@@ -370,7 +382,7 @@ class WorkloadConfig:
                         f"bundle is a directory name and uses hyphens, not the "
                         f"underscores of the SELinux type name")
             raise ValueError(f"Invalid [workload] bundle {bundle!r}: {e}{hint}")
-        return WORKLOAD_BUNDLES_DIR / bundle
+        return bundle
 
     @property
     def override_dir(self) -> Path:
@@ -386,9 +398,10 @@ class WorkloadConfig:
 
     def resolve_control_file(self, relpath: str) -> Path:
         """Resolve a bundle control file (build.sh, policy.cil, [host].setup, …)
-        through the lazy-override chain: the operator's
-        /etc/workloads.d/<name>/<relpath> wins if it exists, else the shipped
-        /usr bundle default. An absolute path bypasses resolution.
+        through the lazy-override chain, file by file: the operator's
+        /etc/workloads.d/<name>/<relpath> wins if it exists, then the local
+        bundle layer's, else the shipped /usr bundle default. An absolute path
+        bypasses resolution.
 
         This is the single chokepoint every control-file lookup goes through so
         overrides apply uniformly — the /usr→/etc vendor→admin drop-in idiom
@@ -399,14 +412,15 @@ class WorkloadConfig:
 
     def resolve_control_file_with_source(self, relpath: str) -> tuple[Path, str]:
         """Like resolve_control_file but also returns the winning source:
-        "etc" (operator override), "usr" (shipped default), or "abs" (a verbatim
-        absolute path) — the merged-view truth `info --files` reports.
+        "etc" (operator override), "local" (the local bundle layer), "usr"
+        (shipped default), or "abs" (a verbatim absolute path) — the merged-view
+        truth `info --files` reports.
 
         This is the single chokepoint every control-file lookup goes through,
         and a resolved relative path is read *and executed as root* (build
         Containerfile/`[build].script`, `[host].setup`, `policy.cil`). So any
         `..` traversal is rejected here — not just for `bundle` (validated in
-        `bundle_dir`), but for the relpath too, so a `[build] containerfile =
+        `_valid_bundle`), but for the relpath too, so a `[build] containerfile =
         "../../etc/x"` or `script`/`setup` can't redirect resolution outside the
         bundle/override trees. An absolute path is taken verbatim (the documented
         escape hatch for a fully-qualified setup/script path) and reported as
@@ -423,7 +437,7 @@ class WorkloadConfig:
         override = self.override_dir / relpath
         if override.exists():
             return override, "etc"
-        return self.bundle_dir / relpath, "usr"
+        return bundle_file(self.local_bundle_dir, self.bundle_dir, relpath)
 
     # --- [build]: image build context (see lib/imagebuild.py) --------------
 

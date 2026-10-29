@@ -1240,3 +1240,55 @@ phase.
 Whether the deployed units on disk match what the generator *would* now write —
 that is `workloadctl drift`, and it is a different question. This rig compares
 two generators against one config, not one generator against one host.
+
+## local_bundle_rig.py — do control files in the local bundle layer work under enforcing?
+
+`/etc/workloadctl/bundles/<bundle>/` lays an admin's files over a shipped
+bundle, or holds a bundle nothing ships. The unit suite proves every path
+resolves to the right layer. It cannot prove that each reader is allowed to
+read what it resolved: files there are `etc_t` where shipped ones are `usr_t`,
+and the readers are root's podman (the build context), `semodule` (the policy),
+root (the setup script) and whatever system service a setup script starts.
+
+```
+sudo python3 tests/manual/local_bundle_rig.py [--keep]
+```
+
+It needs the workloadctl RPM installed from the branch under test, enforcing,
+and podman. It plants two throwaway bundles: `lbr-local` lives only in the local
+layer, and `lbr-over` is planted in the shipped tree with a local layer carrying
+`asset.txt`, `setup.sh` and `helper.py` over it. Every local file says `local`
+and every shipped one says `usr`, so each row reads which copy a reader got.
+
+### What it answers
+
+- **Premises.** The host is enforcing, the local files are `etc_t` and the
+  planted shipped ones `usr_t`, and the installed `catalog` reports `local` and
+  `shipped+local`. A host without the layered catalog stops the run.
+- **`info --files` names the winning layer**, file by file.
+- **The build context carries the local asset.** The image's `/asset.txt`
+  says `local <name>`, so the copy came from the layer, through a context root's
+  podman read.
+- **`policy.cil` from either layer loads**, and the container runs as
+  `wl_<name>.process`. `disable --purge` removes the module.
+- **`setup.sh` runs from the layer**, and a `systemd-run` service runs a helper
+  it found through `WORKLOAD_LOCAL_BUNDLE_DIR`.
+- **No AVC anywhere during the run**, unfiltered, since an AVC from one of
+  these readers need not name a workload.
+
+First run on the dev host, 2026-10-29: 29/29, no denials.
+
+### How it lied before it told the truth
+
+Both bundles first shipped the same `asset.txt` text, so `lbr-over`'s build was
+served from `lbr-local`'s cached layers and both workloads ran one image ID.
+The asset row passed for `lbr-over` without its context being read at all. The
+assets now carry the bundle name, so a cache hit across bundles can't satisfy
+the row.
+
+### What it deliberately does not measure
+
+A unit whose `ExecStart=` is a file in the layer itself (the setup script's
+service runs `python3` on the helper, not the helper directly), a VM bundle's
+`cloud-init/` or `user_data_file` from the layer, and an image-based host,
+where `/etc` is the merged ostree `/etc` rather than a plain directory.

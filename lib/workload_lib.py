@@ -114,6 +114,23 @@ WORKLOAD_BUNDLES_DIR = Path(
     os.environ.get("WORKLOAD_BUNDLES_DIR", "/usr/share/workloadctl/workloads")
 )
 
+# The admin's bundle layer: it wins file by file over the shipped tree, and holds
+# bundles nothing ships. /etc rather than /var because bootc's /etc merge keeps
+# local additions across image updates.
+WORKLOAD_LOCAL_BUNDLES_DIR = Path(
+    os.environ.get("WORKLOAD_LOCAL_BUNDLES_DIR", "/etc/workloadctl/bundles")
+)
+
+
+def bundle_file(local: Path, shipped: Path, relpath: str) -> tuple[Path, str]:
+    """(path, source) of `relpath` in a bundle's two layers: "local" if the
+    local bundle dir has it, else "usr". A file neither has resolves to the
+    shipped dir, or to the local one when only that exists, so callers report it
+    missing where it would go."""
+    if (local / relpath).exists() or (local.is_dir() and not shipped.is_dir()):
+        return local / relpath, "local"
+    return shipped / relpath, "usr"
+
 # Username prefix for workload system users
 USERNAME_PREFIX = "_wl-"
 
@@ -189,8 +206,8 @@ def workload_is_enabled(name: str) -> bool:
 def iter_workloads(base: Path | None = None) -> list[tuple[str, Path]]:
     """(name, config_path) for every workload under `base`, sorted by name.
 
-    `base` defaults to the config dir (the common case); pass BUNDLES_DIR to
-    discover shipped bundles instead. Either way the name is derived from the
+    `base` defaults to the config dir (the common case); pass a bundle root to
+    discover bundles instead. Either way the name is derived from the
     directory so no caller knows the on-disk shape — this is the single place
     discovery encodes the layout.
     """

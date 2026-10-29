@@ -2,10 +2,12 @@
 """Regression guard for WorkloadConfig control-file override resolution (Step 3, A).
 
 Control files (build.sh, setup.sh, policy.cil, …) resolve through a lazy-override
-chain: an operator override at /etc/workloads.d/<name>/<file> wins over the
-shipped /usr bundle default, mirroring systemd's /usr→/etc drop-in idiom. The
-override is keyed on the workload *name*, the shipped default on its *bundle*, so
-a duplicate overrides independently of its source. Absolute paths bypass both.
+chain, file by file: an operator override at /etc/workloads.d/<name>/<file> wins
+over the local bundle layer at /etc/workloadctl/bundles/<bundle>/<file>, which
+wins over the shipped /usr bundle default, mirroring systemd's /usr→/etc drop-in
+idiom. The override is keyed on the workload *name*, both bundle layers on its
+*bundle*, so a duplicate overrides independently of its source. Absolute paths
+bypass all three.
 
 This is the single chokepoint every control-file lookup (enable/recreate/validate
 build.sh, [host].setup, SELinux policy.cil) now goes through.
@@ -148,6 +150,74 @@ class TestControlFileResolution(unittest.TestCase):
         self.assertEqual(path, self.usr / "solo" / "build.sh")
         self.assertEqual(source, "usr")
         self.assertFalse(path.exists())
+
+    # --- the local bundle root ----------------------------------------------
+
+    def _local(self, bundle: str, fname: str, content: str = "local"):
+        local = self.usr.parent / (self.usr.name + "-local")
+        if not hasattr(self, "_local_root"):
+            local.mkdir()
+            self.addCleanup(lambda: __import__("shutil").rmtree(local, ignore_errors=True))
+            p = mock.patch.object(core, "WORKLOAD_LOCAL_BUNDLES_DIR", local)
+            p.start()
+            self.addCleanup(p.stop)
+            self._local_root = local
+        (local / bundle).mkdir(exist_ok=True)
+        (local / bundle / fname).write_text(content)
+        return local
+
+    def test_local_bundle_resolves_when_not_shipped(self):
+        local = self._local("mine", "build.sh")
+        cfg = self._config("mine")
+        self.assertEqual(cfg.local_bundle_dir, local / "mine")
+        self.assertEqual(cfg.resolve_control_file_with_source("build.sh"),
+                         (local / "mine" / "build.sh", "local"))
+
+    def test_missing_file_in_local_only_bundle_resolves_into_it(self):
+        # Nothing ships "mine", so a file it lacks is reported missing where
+        # the admin would put it, not under a /usr dir that doesn't exist.
+        local = self._local("mine", "build.sh")
+        cfg = self._config("mine")
+        self.assertEqual(cfg.resolve_control_file_with_source("policy.cil"),
+                         (local / "mine" / "policy.cil", "local"))
+
+    def test_override_wins_over_local_bundle(self):
+        self._local("mine", "build.sh")
+        self._override("mine", "build.sh")
+        cfg = self._config("mine")
+        self.assertEqual(cfg.resolve_control_file_with_source("build.sh"),
+                         (self.etc / "mine" / "build.sh", "etc"))
+
+    def test_local_layer_wins_over_shipped_per_file(self):
+        self._ship("solo", "build.sh")
+        self._ship("solo", "policy.cil")
+        local = self._local("solo", "build.sh")
+        cfg = self._config("solo")
+        self.assertEqual(cfg.resolve_control_file_with_source("build.sh"),
+                         (local / "solo" / "build.sh", "local"))
+        # A file the local layer doesn't carry still comes from the shipped one.
+        self.assertEqual(cfg.resolve_control_file_with_source("policy.cil"),
+                         (self.usr / "solo" / "policy.cil", "usr"))
+
+    def test_local_layer_applies_to_every_instance_of_the_bundle(self):
+        self._ship("src-bundle", "build.sh")
+        local = self._local("src-bundle", "build.sh")
+        for name in ("one", "two"):
+            cfg = self._config(name, bundle="src-bundle")
+            self.assertEqual(cfg.resolve_control_file_with_source("build.sh"),
+                             (local / "src-bundle" / "build.sh", "local"))
+
+    def test_missing_everywhere_with_both_layers_resolves_to_usr(self):
+        self._ship("solo", "build.sh")
+        self._local("solo", "build.sh")
+        cfg = self._config("solo")
+        self.assertEqual(cfg.resolve_control_file_with_source("setup.sh"),
+                         (self.usr / "solo" / "setup.sh", "usr"))
+
+    def test_local_bundle_dir_validates_the_bundle(self):
+        cfg = self._config("evil", bundle="../x")
+        with self.assertRaises(ValueError):
+            _ = cfg.local_bundle_dir
 
     def test_resolve_control_file_returns_path_only(self):
         self._ship("solo", "build.sh")

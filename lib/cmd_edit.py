@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 from cli_log import emit_result
-from workload_lib import replace_file_atomically, workload_config_path
+from workload_lib import bundle_file, replace_file_atomically, workload_config_path
 from run_files import workload_service_units
 from workloadctl_core import WorkloadConfig, WorkloadManager, require_root
 from provisioning import regenerate_units
@@ -111,7 +111,7 @@ def _print_control_file_next_steps(config: WorkloadConfig, rel: str) -> None:
         print(f"    Re-runs on next enable: sudo workloadctl enable {config.name}")
     else:
         print(f"    Apply changes:          sudo workloadctl recreate {config.name}")
-    print(f"    Revert to shipped:      sudo rm {config.override_dir / rel}")
+    print(f"    Revert to the bundle:   sudo rm {config.override_dir / rel}")
 
 
 def _editor_argv() -> list:
@@ -133,9 +133,9 @@ def _edit_control_file(args, manager: WorkloadManager):
     """Edit a bundle control file, seeding an /etc override copy-on-write.
 
     The lazy-override ergonomic (systemd `systemctl edit`): on first edit, seed
-    `/etc/workloads.d/<name>/<file>` from the resolved `/usr` default (or an
-    empty file if the bundle ships none), then open `$EDITOR`. If the result is
-    byte-identical to the shipped default — or an untouched empty new file — the
+    `/etc/workloads.d/<name>/<file>` from the bundle's copy, local layer or
+    shipped (or an empty file if the bundle has none), then open `$EDITOR`. If
+    the result is byte-identical to that default — or an untouched empty new file — the
     override is dropped so it never freezes upgrade-tracking.
     """
     name = args.workload
@@ -154,7 +154,7 @@ def _edit_control_file(args, manager: WorkloadManager):
 
     config = WorkloadConfig(name)
     override = config.override_dir / rel
-    default = config.bundle_dir / rel
+    default, _ = bundle_file(config.local_bundle_dir, config.bundle_dir, rel)
 
     # Containment: even with `..` blocked, a pre-planted symlink component could
     # redirect the write outside the override tree. Check before creating dirs.
@@ -169,12 +169,12 @@ def _edit_control_file(args, manager: WorkloadManager):
         override.parent.mkdir(parents=True, exist_ok=True)
         if default.exists():
             shutil.copy2(default, override)
-            print(f"  Seeded override from shipped default: {default}")
+            print(f"  Seeded override from bundle default: {default}")
         else:
             override.touch()
             if rel.endswith(".sh"):
                 override.chmod(0o755)
-            print(f"  No shipped default — created a new control file: {override}")
+            print(f"  No bundle default — created a new control file: {override}")
         seeded = True
 
     editor_argv = _editor_argv()
@@ -187,13 +187,13 @@ def _edit_control_file(args, manager: WorkloadManager):
             _cleanup_override_dir(config, override)
         sys.exit(1)
 
-    # Lazy-override cleanup. An override byte-identical to the shipped default is
+    # Lazy-override cleanup. An override byte-identical to the bundle default is
     # redundant and would freeze upgrade-tracking, so drop it; likewise an
     # untouched empty new file. Mirrors `systemctl edit` discarding a no-op.
     if default.exists() and override.read_bytes() == default.read_bytes():
         override.unlink()
         _cleanup_override_dir(config, override)
-        print(f"  No change from the shipped default — no override kept "
+        print(f"  No change from the bundle default — no override kept "
               f"(still tracks {default}).")
         return
     if not default.exists() and override.stat().st_size == 0:
@@ -204,7 +204,7 @@ def _edit_control_file(args, manager: WorkloadManager):
 
     # A freshly authored control file with a shebang should be executable even
     # when it isn't named *.sh (a hook with no extension). copy2 already
-    # preserves a shipped default's mode, so only touch newly seeded files.
+    # preserves a bundle default's mode, so only touch newly seeded files.
     if seeded and not default.exists():
         try:
             with open(override, "rb") as fh:
