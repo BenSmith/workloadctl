@@ -72,7 +72,7 @@ test-all-runtime-remote host target="local":
   rsync -a --delete \
     --exclude='.git/' --exclude='__pycache__/' --exclude='*.pyc' \
     --exclude='rpmbuild/' --exclude='.pytest_cache/' \
-    --exclude='tests/runtime/.cache' \
+    --exclude='tests/runtime/.cache' --exclude='tests/cli_surface/.cache' \
     ./ {{host}}:{{wlrt_remote_path}}/
   ssh {{host}} 'cd {{wlrt_remote_path}} && just test-all-runtime {{target}}'
 

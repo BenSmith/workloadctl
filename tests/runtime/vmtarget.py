@@ -116,6 +116,17 @@ class VMTarget(Target):
             )
             self._started = True
 
+    def _ssh_base(self) -> list[str]:
+        return [
+            "ssh",
+            "-o", f"ControlPath={self._ctl_path}",
+            "-o", "ControlMaster=no",
+            *self._ssh_opts,
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=15",
+            self.dest,
+        ]
+
     def run(self, cmd, *, sudo=False, check=True, input=None, timeout=300,
             env=None) -> RunResult:
         """Run a command in the guest over the multiplexed ssh connection.
@@ -127,18 +138,9 @@ class VMTarget(Target):
             cmd_list = ["sudo", "-n"] + cmd_list
 
         self._ensure_master()
-        ssh_base = [
-            "ssh",
-            "-o", f"ControlPath={self._ctl_path}",
-            "-o", "ControlMaster=no",
-            *self._ssh_opts,
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=15",
-            self.dest,
-        ]
         remote_cmd = " ".join(shlex.quote(str(a)) for a in cmd_list)
         result = subprocess.run(
-            ssh_base + [remote_cmd],
+            self._ssh_base() + [remote_cmd],
             capture_output=True, text=True, input=input, timeout=timeout,
         )
         r = RunResult(rc=result.returncode, stdout=result.stdout,

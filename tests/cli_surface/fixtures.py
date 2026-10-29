@@ -29,9 +29,14 @@ Fixture names match the workload names (clitest-single, clitest-pod, etc.)
 and the TOML files in workloads/.
 """
 
+import hashlib
 import json
 import os
+import shutil
+import subprocess
 import time
+import tomllib
+import urllib.request
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -210,6 +215,101 @@ def _install_toml(target: Target, toml_name: str) -> str:
     return name
 
 
+# The runner's copy of each cloud image a fixture names, checksum-verified once
+# per session.
+IMAGE_CACHE_DIR = Path(__file__).parent / ".cache"
+_verified_images: dict[str, Path] = {}
+
+
+def _host_cloud_image(url: str, checksum: str) -> Path | None:
+    """The runner's verified copy of `url`, downloaded if absent. None on failure."""
+    if checksum in _verified_images:
+        return _verified_images[checksum]
+    expected = checksum.partition(":")[2].lower()
+    dest = IMAGE_CACHE_DIR / expected
+    if not (dest.exists() and _sha256(dest) == expected):
+        IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        part = dest.with_name(f"{dest.name}.part-{os.getpid()}")
+        errors = []
+        # Each request through a mirror redirector can land on a different
+        # mirror, so a retry is not a repeat of the failure.
+        for attempt in range(1, 4):
+            try:
+                with urllib.request.urlopen(url, timeout=60) as resp, \
+                        open(part, "wb") as f:
+                    shutil.copyfileobj(resp, f, 1 << 20)
+                if _sha256(part) == expected:
+                    part.rename(dest)
+                    break
+                errors.append(f"attempt {attempt}: checksum mismatch")
+            except OSError as e:
+                errors.append(f"attempt {attempt}: {e}")
+            part.unlink(missing_ok=True)
+        else:
+            warnings.warn(f"could not fetch {url} on the runner "
+                          f"({'; '.join(errors)}); the guest will download it",
+                          stacklevel=3)
+            return None
+    _verified_images[checksum] = dest
+    return dest
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# Creates only the directories that are missing, each labelled by policy, so a
+# fresh /var/lib/workloads does not inherit /var/lib's type. Setup relabels the
+# workload root after this.
+_SEED_SCRIPT = r'''
+set -e
+for d in /var/lib/workloads "$1" "$1/.image-cache"; do
+    if [ ! -e "$d" ]; then
+        mkdir "$d"
+        if command -v restorecon >/dev/null; then restorecon -F "$d"; fi
+    fi
+done
+f="$1/.image-cache/$2"
+cat > "$f.part"
+chmod 600 "$f.part"
+mv -f "$f.part" "$f"
+'''
+
+
+def _seed_image_cache(target: Target, name: str):
+    """Put a VM fixture's cloud image in its cache before enable.
+
+    The disk build then finds it cached and verifies its checksum instead of
+    fetching through public mirrors from inside the guest, which on a flaky
+    mirror fails the row on infrastructure. The download path itself is
+    covered by tests/test_vm_build_disk.py. Best-effort: on any failure the
+    guest downloads the image as before.
+    """
+    try:
+        toml_text = target.read(f"/etc/workloads.d/{name}/workload.toml")
+        vm = tomllib.loads(toml_text).get("vm", {})
+    except (AssertionError, tomllib.TOMLDecodeError):
+        return
+    url, checksum = vm.get("cloud_image_url"), vm.get("cloud_image_checksum")
+    if not (url and checksum):
+        return
+    local = _host_cloud_image(url, checksum)
+    if local is None:
+        return
+    # The cache name the disk build looks for (vm_image_fetch).
+    filename = url.split("/")[-1].split("?")[0] or "cloud-image.qcow2"
+    try:
+        target.pipe_file(local, ["sh", "-c", _SEED_SCRIPT, "sh",
+                                 f"/var/lib/workloads/{name}", filename],
+                         sudo=True)
+    except (AssertionError, OSError, subprocess.TimeoutExpired) as e:
+        warnings.warn(f"could not seed {name}'s image cache: {e}", stacklevel=3)
+
+
 def _enable_workload(target: Target, name: str, timeout: int = 120,
                      expect_container: bool = True, retries: int = 1):
     """Enable a workload and wait until it is genuinely ready.
@@ -229,6 +329,7 @@ def _enable_workload(target: Target, name: str, timeout: int = 120,
     """
     attempt = 0
     while True:
+        _seed_image_cache(target, name)
         target.wl(f"enable {name}", check=True, timeout=timeout)
         try:
             _wait_active(target, name, timeout=timeout)
@@ -283,15 +384,33 @@ def _wait_active(target: Target, name: str, timeout: int = 120):
         # motion and keep waiting.
         if state == "failed":
             break
+        # So is `inactive` with no start job queued. A start whose dependency
+        # fails (a VM's -build, say) ends with result 'dependency' and leaves
+        # the unit inactive, not failed. enable enqueues the start before it
+        # returns, so until then the job is there to see.
+        if state == "inactive" and not _has_queued_job(target, service):
+            state = "inactive, no job"
+            break
         time.sleep(2)
     # Last check with output for diagnosis
     r = target.run(["systemctl", "status", "--no-pager", service], sudo=False, check=False)
-    how = ("entered 'failed' state" if state == "failed"
-           else f"did not become active within {timeout}s (last state: {state or '?'})")
+    if state == "failed":
+        how = "entered 'failed' state"
+    elif state == "inactive, no job":
+        how = "went inactive with no start job queued (did a dependency fail?)"
+    else:
+        how = f"did not become active within {timeout}s (last state: {state or '?'})"
     raise TimeoutError(
         f"Workload '{name}' {how}:\n{r.stdout}\n{r.stderr}"
         f"{failed_dependency_report(target, service)}"
     )
+
+
+def _has_queued_job(target: Target, service: str) -> bool:
+    """True if systemd holds a job for `service`, or if that can't be read."""
+    r = target.run(["systemctl", "list-jobs", "--no-legend", service],
+                   sudo=False, check=False)
+    return r.rc != 0 or bool(r.stdout.strip())
 
 
 # Dependency states that mean "this unit is not the reason we are here".

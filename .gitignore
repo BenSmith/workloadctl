@@ -11,6 +11,7 @@ htmlcov/
 .claude/
 .idea/
 tests/runtime/.cache
+tests/cli_surface/.cache
 
 # In-progress design proposals, kept local until promoted to tracked docs
 docs/wip/

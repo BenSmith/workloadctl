@@ -120,6 +120,16 @@ class Target:
     # Core run
     # ------------------------------------------------------------------
 
+    def _ssh_base(self) -> list[str]:
+        return [
+            "ssh",
+            "-o", f"ControlPath={self._ctl_path}",
+            "-o", "ControlMaster=no",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=15",
+            self.dest,
+        ]
+
     def run(
         self,
         cmd: str | list,
@@ -163,17 +173,9 @@ class Target:
                 return r
         else:
             self._ensure_master()
-            ssh_base = [
-                "ssh",
-                "-o", f"ControlPath={self._ctl_path}",
-                "-o", "ControlMaster=no",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=15",
-                self.dest,
-            ]
             # Join the remote command with proper quoting
             remote_cmd = " ".join(shlex.quote(str(a)) for a in cmd_list)
-            full_cmd = ssh_base + [remote_cmd]
+            full_cmd = self._ssh_base() + [remote_cmd]
             result = subprocess.run(
                 full_cmd,
                 capture_output=True,
@@ -231,6 +233,32 @@ class Target:
             input=content.decode(errors="replace"),
             check=True,
         )
+
+    def pipe_file(self, local_path: str | Path, cmd: list[str], *,
+                  sudo: bool = False, timeout: int = 600) -> RunResult:
+        """Run `cmd` on the target with `local_path` as its stdin, byte for byte.
+
+        run()'s `input` is text, which would corrupt a binary file. Raises on a
+        non-zero exit.
+        """
+        cmd_list = ["sudo", "-n", *cmd] if sudo else list(cmd)
+        if self.dest != "local":
+            self._ensure_master()
+            cmd_list = self._ssh_base() + [
+                " ".join(shlex.quote(str(a)) for a in cmd_list)]
+        with open(local_path, "rb") as f:
+            result = subprocess.run(cmd_list, stdin=f, capture_output=True,
+                                    timeout=timeout)
+        r = RunResult(rc=result.returncode,
+                      stdout=result.stdout.decode(errors="replace"),
+                      stderr=result.stderr.decode(errors="replace"))
+        if r.rc != 0:
+            raise AssertionError(
+                f"Command failed (rc={r.rc}) with {local_path} on stdin:\n"
+                f"  cmd: {' '.join(str(x) for x in cmd)}\n"
+                f"  stderr: {r.stderr[:2000]}"
+            )
+        return r
 
     def put_content(self, content: str, remote_path: str):
         """Write string content to a remote path as root."""
