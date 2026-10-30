@@ -1103,22 +1103,78 @@ bundle's origin, `oci <ref>@<digest>` or `dir <path>`.
 
 ### Publishing a bundle
 
-A bundle is one tar of its directory, pushed as an OCI artifact with the
-bundle's artifact and layer types, and signed:
+A published bundle is one tar of the bundle directory, pushed as an OCI
+artifact with the bundle's artifact and layer types and signed with a
+sigstore key. Publishing needs podman and skopeo, and a registry you can
+push to.
+
+Check the directory first, because `add` refuses what it can't install: it
+needs a top-level `workload.toml`, and it may hold only regular files and
+directories, with no links. Name the repository after the bundle, since
+`add` names the bundle after the reference's last component.
+
+Make a signing key once. `skopeo` asks for a passphrase and writes
+`bundles.private` and `bundles.pub`. Hosts get the public key; the private
+key stays with whoever publishes:
 
 ```
-tar -C tools -cf tools.tar .
+skopeo generate-sigstore-key --output-prefix bundles
+```
+
+The signature is pushed beside the artifact as a sigstore attachment, which
+the publishing machine has to allow for that registry, the same as hosts do.
+Without it the push fails with "writing sigstore attachments is disabled by
+configuration":
+
+```yaml
+# /etc/containers/registries.d/bundles.yaml
+docker:
+  registry.example:
+    use-sigstore-attachments: true
+```
+
+Then tar, add and push:
+
+```
+tar -C tools --sort=name --owner=0 --group=0 --numeric-owner -cf tools.tar .
 podman artifact add --type application/vnd.workloadctl.bundle.v1 \
     --file-type application/vnd.workloadctl.bundle.v1.tar \
     registry.example/bundles/tools:1 tools.tar
 podman artifact push --sign-by-sigstore-private-key bundles.private \
     registry.example/bundles/tools:1
+podman artifact rm registry.example/bundles/tools:1
 ```
 
 `--file-type` matters: without it the layer is typed
-`application/octet-stream`, and `add` refuses it. The tar may hold only
-regular files and directories. `artifact add` prints the digest that `add`
-will record.
+`application/octet-stream`, and `add` refuses it. `artifact add` prints the
+digest that `add` will record. It also stamps the artifact with the time it
+was made, so publishing an unchanged directory again gives a new digest, and
+hosts' `update` installs it again.
+
+If the publishing machine's `/etc/containers/policy.json` rejects by default,
+the push fails to read the artifact from podman's own store. Give the push a
+policy that accepts the local store, with `--signature-policy`:
+
+```json
+{"default": [{"type": "reject"}],
+ "transports": {"oci": {"": [{"type": "insecureAcceptAnything"}]}}}
+```
+
+A push can succeed without the signature a host needs, for example under a
+different key. Check it the way a host will, under the bundle policy you
+give hosts:
+
+```
+skopeo --policy bundle-policy.json copy --remove-signatures \
+    docker://registry.example/bundles/tools:1 oci:/tmp/tools-check:b
+```
+
+Hosts follow the tag on `update`. Re-push the same tag to roll a change out
+to every host that runs `update`. Push a new tag when hosts should move only
+when someone names it, with `bundle update tools registry.example/bundles/tools:2`.
+
+This repository's `.forgejo/workflows/publish-bundle.yml` runs these steps in
+CI, with the key and the registry login held as service credentials.
 
 ## Remote development from an IDE
 
