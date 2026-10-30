@@ -1098,7 +1098,9 @@ use the bundle, and what each kind of change needs:
   scripts must be safe to repeat;
 - a VM's cloud-init seed applies only on the guest's first boot.
 
-`rm` refuses while any instance uses the bundle. `catalog` shows each added
+`rm` refuses while any instance uses the bundle, which lasts until the
+instance's directory in `/etc/workloads.d/` is gone: `disable --purge` keeps
+it. `catalog` shows each added
 bundle's origin, `oci <ref>@<digest>` or `dir <path>`.
 
 ### Publishing a bundle

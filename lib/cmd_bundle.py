@@ -19,7 +19,8 @@ import bundle_store
 from bundle_fetch import BundleFetchError, fetch, parse_ref, ref_name
 from bundle_store import BundleError
 from validation import validate_workload_name
-from workload_lib import bundle_roots, instances_by_bundle, workload_config_path
+from workload_lib import (bundle_roots, instances_by_bundle, workload_config_dir,
+                          workload_config_path)
 from workloadctl_core import WorkloadManager, require_root
 
 _FETCH_TMP = "/var/tmp"
@@ -174,7 +175,10 @@ def _rm(args) -> None:
     _require_recorded(name)
     using = instances_by_bundle().get(name, [])
     if using:
-        raise BundleError(f"instances use '{name}': {', '.join(using)}")
+        raise BundleError(
+            f"instances use '{name}': {', '.join(using)}; `workloadctl disable --purge` "
+            f"each, then remove its directory in {workload_config_dir()}, which "
+            "disable never touches")
     bundle_store.remove_bundle(name)
     print(f"✓ Removed bundle '{name}'")
 

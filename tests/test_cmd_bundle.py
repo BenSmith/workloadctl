@@ -308,7 +308,8 @@ class Rm(_Base):
 
     def test_refused_while_in_use(self):
         self.instance("app1")
-        self.refused("rm", "app", match="instances use 'app': app1")
+        err = self.refused("rm", "app", match="instances use 'app': app1;")
+        self.assertIn(str(self.conf), err)
         self.assertTrue((self.local / "app").is_dir())
 
     def test_removes_dir_and_record(self):
