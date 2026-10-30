@@ -49,6 +49,10 @@ Requires:       zstd
 Requires:       procps-ng
 # find: a share's directories get the setgid bit (lib/shares_setup.py).
 Requires:       findutils
+# skopeo: bundles pulled as signed OCI artifacts copy into an oci: layout
+# with --remove-signatures (policy.json still verifies them); `podman
+# artifact pull` can't write a signature into its store.
+Requires:       skopeo
 # logrotate: the egress inspector's per-request records rotate through
 # logrotate/workloadctl-inspect, which nothing else reads; without it they
 # grow without bound.
