@@ -1,0 +1,16 @@
+# Published by .forgejo/workflows/publish-bundle.yml to check the signed
+# bundle path end to end. Its setup script exercises the --allow-host-setup
+# gate and leaves a mark in /run.
+[workload]
+name = "bundle-smoke"
+
+[container]
+image = "docker.io/library/alpine:latest"
+pull = "missing"
+command = ["sleep", "infinity"]
+
+[network]
+mode = "pasta"
+
+[host]
+setup = "setup.sh"

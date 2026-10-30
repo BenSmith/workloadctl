@@ -82,3 +82,6 @@ equal). A tag `vX.Y.Z` and a GitHub release make Packit build into Copr
 - `.forgejo/workflows/build-workload-images.yml` builds, scans, pushes and
   signs the self-built bundle images. Its helpers' tests run there, not in
   `just test`. `scan-images.yml` is a daily report-only scan.
+- `.forgejo/workflows/publish-bundle.yml` (manual) publishes a bundle dir as
+  a signed OCI artifact to registry.local/bundles; `tests/bundles/bundle-smoke`
+  is its default.

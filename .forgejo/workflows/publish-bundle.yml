@@ -1,0 +1,117 @@
+name: Publish Bundle
+
+# Publishes one bundle directory to registry.local/bundles/<dir name>:<tag> as
+# a signed OCI artifact, the form `workloadctl bundle add` pulls (see
+# docs/manual/04-containers.md "Publishing a bundle"). Signed with the
+# runner's sealed key, the one build-workload-images.yml uses, then pulled
+# back under a bundle policy like the hypervisor image's before it counts.
+#
+# `podman artifact add` stamps the manifest with the time, so republishing an
+# unchanged bundle still gives a new digest, and hosts' `bundle update`
+# installs it again.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: 'Bundle directory in this repository'
+        required: true
+        default: 'tests/bundles/bundle-smoke'
+        type: string
+      tag:
+        description: 'Tag to publish'
+        required: true
+        default: '1'
+        type: string
+
+# The local artifact name is the registry ref, and the runner's store is
+# shared between jobs.
+concurrency:
+  group: publish-bundle
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: native
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Publish and verify
+        env:
+          BUNDLE: ${{ inputs.bundle }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          WORK=$(mktemp -d)
+          NAME=$(basename "$BUNDLE")
+          REPO="registry.local/bundles/${NAME}"
+          REF="${REPO}:${TAG}"
+          trap 'sudo podman artifact rm "$REF" >/dev/null 2>&1; sudo rm -rf "$WORK"' EXIT
+
+          if ! printf '%s' "$NAME" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
+            echo "::error::bundle directory name '${NAME}' isn't a workload name"
+            exit 1
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+            echo "::error::'${TAG}' isn't a valid tag"
+            exit 1
+          fi
+          if [ ! -f "$BUNDLE/workload.toml" ]; then
+            echo "::error::${BUNDLE} has no top-level workload.toml"
+            exit 1
+          fi
+          # `workloadctl bundle add` refuses links and special files; refuse
+          # them here rather than publish a bundle nobody can add.
+          ODD=$(find "$BUNDLE" ! -type f ! -type d)
+          if [ -n "$ODD" ]; then
+            echo "::error::${BUNDLE} holds links or special files: ${ODD}"
+            exit 1
+          fi
+
+          CREDS=/run/credentials/forgejo-runner.service
+          if ! sudo test -s "${CREDS}/cosign-key"; then
+            echo "::error::no signing credential at ${CREDS}/cosign-key — refusing to push unsigned. Run the hypervisor repository's seal-signing-key workflow, then re-run."
+            exit 1
+          fi
+          if ! sudo test -s "${CREDS}/registry-auth"; then
+            echo "::error::no registry login at ${CREDS}/registry-auth — run the hypervisor repository's seal-registry-auth workflow, then re-run."
+            exit 1
+          fi
+
+          tar -C "$BUNDLE" --sort=name --mtime=@0 --owner=0 --group=0 \
+            --numeric-owner -cf "$WORK/bundle.tar" .
+          sudo podman artifact rm "$REF" >/dev/null 2>&1 || true
+          DIGEST="sha256:$(sudo podman artifact add \
+            --type application/vnd.workloadctl.bundle.v1 \
+            --file-type application/vnd.workloadctl.bundle.v1.tar \
+            "$REF" "$WORK/bundle.tar")"
+
+          # The push reads the artifact from the local store through the
+          # oci transport, which the runner's policy.json needn't accept.
+          printf '{"default":[{"type":"reject"}],"transports":{"oci":{"":[{"type":"insecureAcceptAnything"}]}}}' \
+            > "$WORK/push-policy.json"
+          sudo podman artifact push --signature-policy "$WORK/push-policy.json" \
+            --authfile "${CREDS}/registry-auth" \
+            --sign-by-sigstore-private-key "${CREDS}/cosign-key" \
+            --sign-passphrase-file "${CREDS}/cosign-pass" \
+            "$REF"
+
+          # Pull it back the way `workloadctl bundle add` does, under the
+          # hypervisor image's bundle policy with this repository's copy of
+          # the key: a push can succeed without attaching a signature.
+          printf '{"default":[{"type":"reject"}],"transports":{"docker":{"registry.local":[{"type":"sigstoreSigned","keyPath":"%s","signedIdentity":{"type":"matchRepository"}}]}}}' \
+            "$(pwd)/.forgejo/cosign.pub" > "$WORK/verify-policy.json"
+          sudo skopeo --policy "$WORK/verify-policy.json" copy \
+            --src-authfile "${CREDS}/registry-auth" --remove-signatures \
+            "docker://${REF}" "oci:${WORK}/verify:b"
+          GOT=$(sudo python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["manifests"][0]["digest"])' \
+            "$WORK/verify/index.json")
+          if [ "$GOT" != "$DIGEST" ]; then
+            echo "::error::${REF} resolved to ${GOT}, not the pushed ${DIGEST}"
+            exit 1
+          fi
+          echo "signature verified: ${REF} (${DIGEST})"
+          {
+            echo "- \`${REF}\` \`${DIGEST}\`"
+            echo "- \`workloadctl bundle add ${REF}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
