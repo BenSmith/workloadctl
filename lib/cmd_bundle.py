@@ -186,6 +186,9 @@ def cmd_bundle(args, manager: WorkloadManager):
     try:
         with bundle_store.bundle_lock():
             bundle_store.sweep_staging()
-            verb(args)
+            try:
+                verb(args)
+            finally:
+                bundle_store.drop_empty_staging()
     except (BundleError, BundleFetchError, ValueError) as e:
         _die(str(e))

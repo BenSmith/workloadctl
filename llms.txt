@@ -29,4 +29,5 @@ workloadctl is stdlib Python 3.14 plus a systemd generator, with no daemon of it
 ## Optional
 
 - [Shipped bundles](workloads/): one directory per bundle; `workloadctl catalog` lists them
+- [Bundles from a registry or a directory](docs/manual/04-containers.md#bundles-from-a-registry-or-a-directory): `workloadctl bundle add|update|rm`, the bundle trust policy, and publishing a bundle as a signed OCI artifact
 - [Manual rigs](tests/manual/README.md): real-host checks, and the ways a rig row goes green while measuring nothing

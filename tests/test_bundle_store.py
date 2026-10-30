@@ -69,6 +69,10 @@ class ExtractTar(_Roots):
                 bundle_store.extract_tar(self.tar(bundle_tar({name: "x"})), self.dest)
         self.assertFalse((self.tmp / "escape").exists())
 
+    def test_corrupt_tar_refused(self):
+        with self.assertRaisesRegex(BundleError, "can't unpack the bundle"):
+            bundle_store.extract_tar(self.tar(b"not a tar" * 100), self.dest)
+
 
 class CopyDir(_Roots):
 
@@ -131,6 +135,11 @@ class RootRun(_Roots):
         (self.tmp / "outside").write_text("x")
         self.assertEqual(bundle_store.root_run_files(b), {})
 
+    def test_unreadable_toml_refused(self):
+        b = self.bundle("[host\n")
+        with self.assertRaisesRegex(BundleError, "workload.toml unreadable"):
+            bundle_store.root_run_files(b)
+
     def test_changed_rule(self):
         old = {"setup.sh": "a", "policy.cil": "p"}
         self.assertEqual(bundle_store.changed_root_run(old, old), [])
@@ -156,6 +165,19 @@ class RecordAndDrift(_Roots):
         self.assertEqual(bundle_store.read_record("app"), rec)
         self.assertEqual(sorted(p.name for p in self.local.iterdir()), ["app", "app.origin.json"])
         self.assertEqual(workload_lib.loose_local_bundles(), [])
+
+    def test_unreadable_record(self):
+        bundle_store.record_path("app").write_text("{not json")
+        with self.assertRaisesRegex(BundleError, "unreadable record"):
+            bundle_store.read_record("app")
+        self.assertIsNone(bundle_store.origin("app"))
+
+    def test_record_without_usable_source(self):
+        for source in ("", "http:x", "oci:"):
+            with self.subTest(source), self.assertRaisesRegex(BundleError, "no usable source"):
+                bundle_store.recorded_source({"source": source})
+        bundle_store.write_record("app", {"source": "http:x"})
+        self.assertIsNone(bundle_store.origin("app"))
 
     def test_drift(self):
         rec = {"files": bundle_store.tree_hashes(self.b)}

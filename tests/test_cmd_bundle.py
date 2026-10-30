@@ -7,10 +7,12 @@ update only when new or changed), shipped names are refused, drift refuses
 before anything is fetched, and rm refuses while an instance uses the bundle.
 """
 
+import fcntl
 import io
 import json
 import os
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -111,12 +113,14 @@ class Add(_Base):
         self.assertEqual((rec["source"], rec["digest"]), (f"oci:{REF}", digest))
         self.assertIn("--policy", self.argv.read_text().split("\n"))
         self.assertEqual(workload_lib.bundle_names(), ["app"])
+        self.assertFalse(bundle_store.staging_root().exists())
 
     def test_policy_refusal_leaves_nothing(self):
         self.publish({"workload.toml": TOML})
         os.environ["STUB_FAIL"] = "A signature was required, but no signature exists"
         self.refused("add", REF, match="no signature exists")
         self.assert_nothing_left()
+        self.assertFalse(bundle_store.staging_root().exists())
 
     def test_missing_policy_refuses(self):
         self.publish({"workload.toml": TOML})
@@ -174,6 +178,12 @@ class Add(_Base):
         rec = self.record("mybundle")
         self.assertEqual(rec["source"], f"dir:{src}")
         self.assertEqual(rec["digest"], bundle_store.dir_digest(rec["files"]))
+
+    def test_file_source_refused(self):
+        f = self.tmp / "bundle.tar"
+        f.write_text("x")
+        self.refused("add", str(f), match="is not a directory")
+        self.assertFalse(self.argv.exists())
 
     def test_name_flag(self):
         self.publish({"workload.toml": TOML})
@@ -234,6 +244,17 @@ class Update(_Base):
     def test_hand_made_dir_refused(self):
         (self.local / "mine").mkdir()
         self.refused("update", "mine", match="wasn't added with")
+
+    def test_never_added_refused(self):
+        self.refused("update", "nothere", match="no bundle 'nothere' was added")
+
+    def test_unparseable_instance_toml_skipped(self):
+        # one broken instance TOML can't block updating the bundle
+        (self.conf / "broken").mkdir()
+        (self.conf / "broken/workload.toml").write_text("[workload\n")
+        self.instance("app1")
+        self.publish({"workload.toml": SETUP_TOML, "setup.sh": "v1", "f": "x"})
+        self.assertIn("Updated", self.ok("update", "app"))
 
     def test_shipped_name_now_refused(self):
         (self.shipped / "app").mkdir()
@@ -297,6 +318,19 @@ class Rm(_Base):
     def test_hand_made_refused(self):
         (self.local / "mine").mkdir()
         self.refused("rm", "mine", match="wasn't added with")
+
+    def test_waits_for_the_lock(self):
+        result = {}
+        with open(bundle_store.LOCK_PATH, "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            t = threading.Thread(target=lambda: result.update(r=self.run_cli("rm", "app")))
+            t.start()
+            t.join(0.5)
+            self.assertTrue(t.is_alive(), "rm ran while another verb held the lock")
+            self.assertTrue((self.local / "app").is_dir())
+        t.join(10)
+        self.assertEqual(result["r"][0], 0, result["r"][2])
+        self.assertFalse((self.local / "app").exists())
 
 
 if __name__ == "__main__":

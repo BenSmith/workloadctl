@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """bundle_fetch: ref parsing, the skopeo call, and reading the layout back."""
 
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +78,37 @@ class ReadLayout(unittest.TestCase):
         with self.assertRaisesRegex(BundleFetchError, "doesn't match"):
             read_layout(self.dir)
 
+    def _index(self, edit):
+        index = json.loads((self.dir / "index.json").read_text())
+        edit(index)
+        (self.dir / "index.json").write_text(json.dumps(index))
+
+    def test_two_manifests_refused(self):
+        make_layout(self.dir, self.tar)
+        self._index(lambda i: i["manifests"].append(i["manifests"][0]))
+        with self.assertRaisesRegex(BundleFetchError, "expected one manifest, found 2"):
+            read_layout(self.dir)
+
+    def test_tampered_manifest_refused(self):
+        digest = make_layout(self.dir, self.tar)
+        mpath = self.dir / "blobs/sha256" / digest.split(":")[1]
+        mpath.write_text(mpath.read_text().replace(bundle_fetch.LAYER_TYPE, "x"))
+        with self.assertRaisesRegex(BundleFetchError, f"manifest {digest} doesn't match"):
+            read_layout(self.dir)
+
+    def test_malformed_digest_refused(self):
+        make_layout(self.dir, self.tar)
+        self._index(lambda i: i["manifests"][0].update(digest="sha256:../../index.json"))
+        with self.assertRaisesRegex(BundleFetchError, "bad digest in layout"):
+            read_layout(self.dir)
+
+    def test_missing_layer_blob_refused(self):
+        make_layout(self.dir, self.tar)
+        next(p for p in (self.dir / "blobs/sha256").iterdir()
+             if p.read_bytes() == self.tar).unlink()
+        with self.assertRaisesRegex(BundleFetchError, "bundle layer missing"):
+            read_layout(self.dir)
+
     def test_partial_layout_refused(self):
         # what a refused skopeo copy leaves: an empty blobs/, no index.json
         (self.dir / "blobs").mkdir()
@@ -111,6 +144,14 @@ class Fetch(unittest.TestCase):
     def test_refusal_carries_stderr(self):
         with self.assertRaisesRegex(BundleFetchError, "no signature exists"):
             self._fetch(fail="A signature was required, but no signature exists")
+
+    def test_skopeo_missing_or_hung(self):
+        for exc, match in ((FileNotFoundError(), "skopeo is not installed"),
+                           (subprocess.TimeoutExpired("skopeo", 1), "timed out after")):
+            with self.subTest(match), \
+                    mock.patch.object(bundle_fetch.subprocess, "run", side_effect=exc), \
+                    self.assertRaisesRegex(BundleFetchError, match):
+                self._fetch()
 
     def test_missing_policy_refuses_before_skopeo(self):
         self.policy.unlink()

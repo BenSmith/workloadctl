@@ -78,6 +78,15 @@ def sweep_staging() -> list[Path]:
     return removed
 
 
+def drop_empty_staging() -> None:
+    """Remove the staging dir once nothing is left in it, so a finished
+    verb leaves nothing behind in /etc."""
+    try:
+        staging_root().rmdir()
+    except OSError:
+        pass
+
+
 def new_staging(name: str) -> Path:
     root = staging_root()
     root.mkdir(mode=0o755, parents=True, exist_ok=True)
