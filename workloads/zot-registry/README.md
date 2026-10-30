@@ -22,7 +22,7 @@ host reaches `127.0.0.1:5050` directly.
 
 Anonymous clients may read everything. The `ci` user may create and update
 only the repositories `config.json` lists for it: `workloads/**`,
-`hypervisor-bootc`, `hypervisor-amd`, `hypervisor-nvidia` and
+`bundles/**` (signed workloadctl bundle artifacts), `hypervisor-bootc`, `hypervisor-amd`, `hypervisor-nvidia` and
 `fedora-bootc-minimal`. Nobody can push to a mirrored name (`library/*`,
 `fedora`, ...): hosts accept those unsigned, so the cache must be the only
 thing that writes them. Zot's sync writes them without the API, so a pull

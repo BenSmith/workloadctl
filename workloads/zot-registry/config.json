@@ -21,6 +21,10 @@
           "anonymousPolicy": ["read"],
           "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
         },
+        "bundles/**": {
+          "anonymousPolicy": ["read"],
+          "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
+        },
         "hypervisor-bootc": {
           "anonymousPolicy": ["read"],
           "policies": [{ "users": ["ci"], "actions": ["read", "create", "update"] }]
