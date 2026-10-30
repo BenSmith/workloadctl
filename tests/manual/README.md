@@ -1301,3 +1301,54 @@ A unit whose `ExecStart=` is a file in the layer itself (the setup script's
 service runs `python3` on the helper, not the helper directly), and an
 image-based host, where `/etc` is the merged ostree `/etc` rather than a plain
 directory.
+
+## bundle_pull_rig.py — does `workloadctl bundle` hold its threat model on a host?
+
+The unit suite drives `bundle add|update|rm` through a stub skopeo. Only a
+host says whether the real skopeo checks `/etc/workloadctl/bundle-policy.json`
+rather than the host's `policy.json`, whether a signed artifact podman pushed
+unpacks to root-owned `etc_t` files, and whether an added bundle then inits
+and enables under enforcing.
+
+```
+sudo python3 tests/manual/bundle_pull_rig.py [--keep]
+```
+
+It needs the workloadctl RPM installed from the branch under test, enforcing,
+podman and skopeo. It starts a throwaway `registry:2` on 127.0.0.1:5000, makes
+a sigstore keypair and a wrong one, and writes a registries.conf.d drop-in, a
+registries.d entry and the bundle policy, restoring whatever was there.
+
+### What it answers
+
+- **Premise and control.** The host's own `policy.json` accepts the unsigned
+  artifact, so a refusal later is the bundle policy's.
+- **No bundle policy refuses every OCI add.**
+- **Unsigned, wrong-key and moved-signature artifacts are refused**, each
+  leaving nothing in the bundles root or staging. A mistyped bare name and a
+  shipped bundle's name are refused.
+- **Root-run files.** A setup script and a `[build] script` are each refused
+  without `--allow-host-setup` and added with it.
+- **Signed add.** The record pins the pushed digest, every file is `etc_t`
+  and root-owned, modes are kept, `catalog` shows the origin, and the bundle
+  inits and enables, running its setup script.
+- **Update.** A new digest with an unchanged setup script needs no flag; a
+  changed one does. Drift is refused and `--force` replaces it; with the same
+  digest, `--force` restores. A shipped bundle appearing under the name makes
+  `update` refuse and `diagnose` warn.
+- **Directory bundles** follow their directory, record a second one, and are
+  refused once it's gone.
+- **`rm`** is refused while an instance uses the bundle.
+- **No AVC denial** during the run.
+
+### Last run
+
+2026-10-30 on the dev host (podman 5.8.7, skopeo 1.22.3, enforcing): 42
+passed, no AVC denials. Each refusal was broken on purpose in the installed
+`cmd_bundle.py` or `bundle_fetch.py` (the policy gate, the root-run gate,
+drift, the shipped name, rm in use, a missing policy, a dropped `--policy`),
+and every one turned its rows red. That run found two rows adding without
+`--name`, which put the bundle under the ref's name where "leaves nothing"
+never looked. A wrongly admitted bundle is now removed after its row, so a
+later refusal fails on its own check rather than on "already exists".
+

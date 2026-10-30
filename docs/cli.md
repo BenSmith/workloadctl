@@ -15,6 +15,7 @@ user.
 |---|---|
 | [`backup`](#backup) | Archive a workload's `data/`, TOML and referenced secrets to a `.tar.zst` |
 | [`build`](#build) | Build a container workload's image from its bundle build context |
+| [`bundle`](#bundle) | Add, update or remove a bundle in `/etc/workloadctl/bundles/` from a signed OCI artifact or a directory |
 | [`catalog`](#catalog) | List the shipped and local bundles |
 | [`cleanup`](#cleanup) | Find, and with `--apply` remove, users, directories and SELinux modules no TOML declares |
 | [`cp`](#cp) | Copy files into or out of a running container |
@@ -197,14 +198,45 @@ the instances made from it.
 workloadctl catalog [--json]
 ```
 
-`--json` prints a list of `{"bundle", "kind", "source", "instances"}`, where
-`kind` is `container` or `vm`, `source` is `shipped`, `local`, or
-`shipped+local` for a shipped bundle with a local layer over it, and
-`instances` names the workloads whose `bundle` is this one.
+`--json` prints a list of `{"bundle", "kind", "source", "origin",
+"instances"}`, where `kind` is `container` or `vm`, `source` is `shipped`,
+`local`, or `shipped+local` for a shipped bundle with a local layer over it,
+`origin` is `oci <ref>@<digest>` or `dir <path>` for a bundle added with
+[`bundle add`](#bundle) and null otherwise, and `instances` names the
+workloads whose `bundle` is this one. The text listing shows the origin after
+the source.
 
 A directory under `/etc/workloadctl/bundles/` with no `workload.toml`, and no
 shipped bundle of its name to lay over, is read by nothing. `catalog` names
 each one on stderr.
+
+[↑ top](#workloadctl-command-reference)
+
+### `bundle`
+
+Add a bundle to `/etc/workloadctl/bundles/` from a signed OCI artifact or a
+directory, replace it, or remove it. Each requires root.
+
+```
+workloadctl bundle add <registry>/<repo>:<tag> | <dir> [--name N] [--allow-host-setup]
+workloadctl bundle update <bundle> [<ref> | <dir>] [--force] [--allow-host-setup]
+workloadctl bundle rm <bundle>
+```
+
+A source that exists as a path is a directory; anything else must be a
+fully qualified reference with a tag or digest. An OCI bundle must pass
+`/etc/workloadctl/bundle-policy.json`, and until that file exists every OCI
+add and update is refused. The bundle's files that run as host root (its
+`[host] setup`, `[build] script` and `policy.cil`) are listed, and from an
+OCI source `add` needs `--allow-host-setup` when there are any, and
+`update` when one is new or changed.
+
+`add` refuses a name a shipped bundle has, or one already in the local root.
+`update` works only on a bundle `add` installed: it refuses when the local
+copy was edited, unless `--force`, then copies from the given source, or
+else the recorded one, which a given source replaces. `rm` refuses while an
+instance uses the bundle. See [Bundles from a registry or a
+directory](manual/04-containers.md#bundles-from-a-registry-or-a-directory).
 
 [↑ top](#workloadctl-command-reference)
 

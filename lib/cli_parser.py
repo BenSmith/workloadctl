@@ -17,6 +17,7 @@ from cmd_edit import cmd_edit
 from cmd_egress import add_arguments as egress_arguments, cmd_egress
 from cmd_rules import add_arguments as rules_arguments, cmd_rules
 from cmd_validate import cmd_validate
+from cmd_bundle import cmd_bundle
 from cmd_catalog import cmd_catalog, cmd_duplicate, cmd_init, cmd_install
 from cmd_backup import cmd_backup, cmd_restore
 from cmd_doctor import cmd_doctor
@@ -371,6 +372,32 @@ def build_parser() -> argparse.ArgumentParser:
     rollback_parser.set_defaults(func=cmd_rollback)
     rollback_parser.add_argument("workload", help="Workload name")
     rollback_parser.add_argument("--list", action="store_true", help="List available rollback targets instead of rolling back")
+
+    bundle_parser = subparsers.add_parser(
+        "bundle", help="Add, update or remove a bundle in /etc/workloadctl/bundles "
+                       "from a signed OCI artifact or a directory")
+    bundle_parser.set_defaults(func=cmd_bundle)
+    bundle_subparsers = bundle_parser.add_subparsers(dest="subcommand", required=True,
+                                                     help="Bundle operation")
+    bundle_add = bundle_subparsers.add_parser(
+        "add", help="Add a bundle from <registry>/<repo>:<tag> or a directory")
+    bundle_add.add_argument("source", help="A fully qualified OCI ref, or a directory")
+    bundle_add.add_argument("--name", help="Bundle name (default: the ref's last "
+                                           "component or the directory's name)")
+    bundle_add.add_argument("--allow-host-setup", action="store_true",
+                            help="Accept files that run as host root (setup script, "
+                                 "[build] script, policy.cil) from an OCI bundle")
+    bundle_update = bundle_subparsers.add_parser(
+        "update", help="Replace a bundle from its recorded source, or a new one")
+    bundle_update.add_argument("bundle", help="Bundle name")
+    bundle_update.add_argument("source", nargs="?",
+                               help="A new OCI ref or directory, recorded from now on")
+    bundle_update.add_argument("--force", action="store_true",
+                               help="Overwrite local edits to the bundle")
+    bundle_update.add_argument("--allow-host-setup", action="store_true",
+                               help="Accept new or changed files that run as host root")
+    bundle_rm = bundle_subparsers.add_parser("rm", help="Remove a bundle no instance uses")
+    bundle_rm.add_argument("bundle", help="Bundle name")
 
     secret_parser = subparsers.add_parser("secret", help="Manage secrets (systemd credentials)")
     secret_parser.set_defaults(func=cmd_secret)

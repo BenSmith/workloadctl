@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import bundle_store
 from diagnose_ca_trust import _ca_trust_facts, ca_trust_anchor_check
 from config_parser import SOCKET_DIR, workload_root_dir
 from diagnose_egress import (
@@ -690,6 +691,24 @@ def _bundle_shadowing_check(config, _check):
                warning=True)
 
 
+def _bundle_origin_check(config, _check):
+    """A bundle added with `workloadctl bundle` whose name a shipped bundle
+    now has: the added copy overlays the shipped one file by file, and the
+    files it lacks come from outside what its source vouched for."""
+    try:
+        local, shipped = config.local_bundle_dir, config.bundle_dir
+    except ValueError:
+        return
+    origin = bundle_store.origin(local.name)
+    if origin and shipped.is_dir():
+        _check("bundle_origin", True,
+               f"Bundle '{local.name}' came from {origin}, and a shipped bundle "
+               f"now has its name, so the shipped files it lacks fill in under it",
+               fix=f"sudo workloadctl bundle rm {local.name}  (after moving its "
+                   f"instances), then add it again with --name",
+               warning=True)
+
+
 def _egress_plane_checks(config, _check):
     """The network plane, in the order the guest meets it: network, egress,
     confinement, inspector, resolver, allow-list drift, capture.
@@ -1007,6 +1026,7 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
     # workload_run_files(), so nothing above this line can see them.
     collect_host_artifact_checks(config, _check)
     _bundle_shadowing_check(config, _check)
+    _bundle_origin_check(config, _check)
 
     _egress_plane_checks(config, _check)
 

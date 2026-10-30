@@ -240,6 +240,18 @@ def iter_workloads(base: Path | None = None) -> list[tuple[str, Path]]:
     )
 
 
+def instances_by_bundle() -> dict[str, list[str]]:
+    """Instance names per bundle, from each TOML's `bundle` (default: its name)."""
+    by_bundle: dict[str, list[str]] = {}
+    for name, path in iter_workloads():
+        try:
+            wl = tomllib.loads(path.read_text()).get("workload", {})
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        by_bundle.setdefault(wl.get("bundle") or name, []).append(name)
+    return by_bundle
+
+
 # --- Kind routing ---
 
 def infer_workload_kind(config: dict) -> str:

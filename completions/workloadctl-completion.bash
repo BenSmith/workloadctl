@@ -5,7 +5,7 @@ _workload_ctl_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="backup build catalog cleanup clone cp create diagnose disable doctor drift duplicate edit egress enable exec health images incant info init install list logs pcap reboot recreate restart restore rollback rules secret shell start stats status stop update validate"
+    local commands="backup build bundle catalog cleanup clone cp create diagnose disable doctor drift duplicate edit egress enable exec health images incant info init install list logs pcap reboot recreate restart restore rollback rules secret shell start stats status stop update validate"
     local workload_dir="/etc/workloads.d"
     local credstore_dir="/etc/credstore.encrypted"
     local bundles_dir="/usr/share/workloadctl/workloads"
@@ -376,6 +376,17 @@ _workload_ctl_completion() {
                 COMPREPLY=( $(compgen -W "always true false" -- "$cur") )
             elif [[ "$prev" == "--network" ]]; then
                 COMPREPLY=( $(compgen -W "host pasta none" -- "$cur") )
+            fi
+            return 0
+            ;;
+        bundle)
+            # Subcommands, then a directory to add or a local bundle name
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "add update rm" -- "$cur") )
+            elif [[ $cword -eq 3 && "${words[2]}" == "add" ]]; then
+                _filedir -d
+            elif [[ $cword -eq 3 ]]; then
+                COMPREPLY=( $(compgen -W "$(cd /etc/workloadctl/bundles 2>/dev/null && for f in *.origin.json; do [[ -f "$f" ]] && echo "${f%.origin.json}"; done)" -- "$cur") )
             fi
             return 0
             ;;

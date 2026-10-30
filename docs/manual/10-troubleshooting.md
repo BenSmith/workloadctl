@@ -120,6 +120,7 @@ The checks, in the order they print:
 | `service_file`, `config_current`, `units_current` | the units are missing, older than the TOML, or from another version | [Starting](#starting) |
 | `host_artifact[...]` | something the workload's setup script installed is missing or failing | [Starting](#starting) |
 | `bundle_shadowing` | warns, and passes, when a file in `/etc/workloadctl/bundles/<bundle>/` has the same path as a shipped one and so no longer follows package updates; its fix compares the two trees, and deleting the local file makes it follow the package again | [Containers](04-containers.md#changing-a-bundles-files) |
+| `bundle_origin` | warns, and passes, when a bundle added with `workloadctl bundle add` now has a shipped bundle's name, so the shipped files it lacks fill in under it; remove it and add it again under another name | [Containers](04-containers.md#updating-and-removing) |
 | `vm_network`, `vm_egress`, `vm_confinement`, `vm_inspect`, `vm_resolve`, `container_resolve`, `container_resolver`, `allow_drift`, `capture` | the network plane is not as the TOML says | [Networking](06-networking.md#is-it-in-force-diagnose), [VMs](#vms) |
 | `ca_trust_anchors` | a trust anchor on the host is not in its TLS bundle | [Images](#images) |
 | `service_enabled`, `service_active`, `container_running` | the workload is not running | [Starting](#starting) |

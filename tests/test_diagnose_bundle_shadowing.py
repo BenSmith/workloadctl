@@ -106,6 +106,25 @@ class Wiring(unittest.TestCase):
         for c in others:
             self.assertNotIn("warning", c, c["check"])
 
+    def _origin_entry(self):
+        return next((c for c in self._checks() if c["check"] == "bundle_origin"), None)
+
+    def test_an_added_bundle_a_shipped_one_now_names_warns(self):
+        self._write(self.local, "workload.toml")
+        (self.local / "app.origin.json").write_text(json.dumps(
+            {"source": "oci:localhost:5000/app:1", "digest": "sha256:ab"}))
+        self.assertIsNone(self._origin_entry())
+        self._write(self.usr, "workload.toml")
+        entry = self._origin_entry()
+        self.assertIs(entry["warning"], True)
+        self.assertIn("oci localhost:5000/app:1@sha256:ab", entry["message"])
+        self.assertIn("workloadctl bundle rm app", entry["fix"])
+
+    def test_a_hand_made_overlay_has_no_origin_warning(self):
+        self._write(self.usr, "workload.toml")
+        self._write(self.local, "workload.toml")
+        self.assertIsNone(self._origin_entry())
+
     def _diagnose(self, json_mode):
         out = io.StringIO()
         with mock.patch.object(cmd_diagnose, "require_root", lambda: None), \

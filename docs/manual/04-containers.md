@@ -1014,6 +1014,112 @@ shipped one stops following package updates. `diagnose` and `doctor` warn
 about each such file as `bundle_shadowing`; deleting the local file makes it
 follow the package again.
 
+## Bundles from a registry or a directory
+
+`workloadctl bundle` installs a bundle into `/etc/workloadctl/bundles/` from
+a signed OCI artifact or a directory, and records where it came from, so it
+can be updated from there later. It suits an image-based host, where adding
+a bundle shouldn't mean rebuilding the image or layering a package.
+
+```
+sudo workloadctl bundle add registry.example/bundles/tools:1
+sudo workloadctl bundle add ./tools
+sudo workloadctl bundle update tools [<ref> | <dir>]
+sudo workloadctl bundle rm tools
+```
+
+### What you're trusting
+
+A bundle isn't data. Its `[host] setup` script runs as host root at
+`enable` and `disable`, its `[build] script` runs as host root at `build`,
+and its `policy.cil` loads into the host's SELinux policy at `enable`. A
+`Containerfile`'s `RUN` steps run as root in a rootful build container,
+when you run `build`. Adding a bundle from a registry trusts its publisher
+as much as installing their package.
+
+So a bundle from a registry must be signed, and is checked against
+`/etc/workloadctl/bundle-policy.json`, not `/etc/containers/policy.json`,
+which usually accepts unsigned images from public registries. Nothing
+installs a bundle policy: until you write one, every add or update from a
+registry is refused. Directory adds don't need one. A policy that accepts
+bundles signed with one key from one registry:
+
+```json
+{
+  "default": [{"type": "reject"}],
+  "transports": {
+    "docker": {
+      "registry.example/bundles": [{
+        "type": "sigstoreSigned",
+        "keyPath": "/etc/pki/containers/bundles.pub",
+        "signedIdentity": {"type": "matchRepository"}
+      }]
+    }
+  }
+}
+```
+
+The registry also needs sigstore attachments turned on for it in
+`/etc/containers/registries.d/` (`use-sigstore-attachments: true`), since
+that's where the signatures are.
+
+`add` and `update` list the files that run as host root, and any
+`Containerfile`. From a registry, `add` refuses a bundle that has any
+root-run file unless you pass `--allow-host-setup`, and `update` refuses
+when one is new or has changed since the last install. Read them first. A
+directory add lists them without refusing: those are your own files.
+
+A source that exists as a path is a directory; anything else must be a full
+reference, `<registry>/<repo>:<tag>` or `@sha256:...`, so a mistyped short
+name never resolves through the search registries. `add` names the bundle
+after the reference's last component or the directory, or `--name`. It
+refuses a name a shipped bundle has, because the added bundle would only lay
+over the shipped one, and the shipped files it lacks would fill in outside
+what its publisher signed.
+
+### Updating and removing
+
+`update` copies from the recorded source: a tag, so it follows new pushes,
+or the directory it was added from. Naming a source uses that one and
+records it. An unchanged digest is reported as current. `update` refuses
+when files in the installed copy were edited since, naming them; `--force`
+overwrites them, and restores them when the digest is unchanged. It
+refuses, too, if a package has since shipped a bundle of that name;
+`diagnose` warns about it as `bundle_origin`. Only bundles that `add`
+installed can be updated or removed this way; a directory you made yourself
+in `/etc/workloadctl/bundles/` stays yours.
+
+An update changes files, not running instances. It lists the instances that
+use the bundle, and what each kind of change needs:
+
+- units pick up the new files at the instance's next restart;
+- a self-built image needs `workloadctl build`, then `workloadctl update`;
+- a changed setup script or `policy.cil` needs `enable` again, so setup
+  scripts must be safe to repeat;
+- a VM's cloud-init seed applies only on the guest's first boot.
+
+`rm` refuses while any instance uses the bundle. `catalog` shows each added
+bundle's origin, `oci <ref>@<digest>` or `dir <path>`.
+
+### Publishing a bundle
+
+A bundle is one tar of its directory, pushed as an OCI artifact with the
+bundle's artifact and layer types, and signed:
+
+```
+tar -C tools -cf tools.tar .
+podman artifact add --type application/vnd.workloadctl.bundle.v1 \
+    --file-type application/vnd.workloadctl.bundle.v1.tar \
+    registry.example/bundles/tools:1 tools.tar
+podman artifact push --sign-by-sigstore-private-key bundles.private \
+    registry.example/bundles/tools:1
+```
+
+`--file-type` matters: without it the layer is typed
+`application/octet-stream`, and `add` refuses it. The tar may hold only
+regular files and directories. `artifact add` prints the digest that `add`
+will record.
+
 ## Remote development from an IDE
 
 An IDE with a remote mode, such as JetBrains Remote Development or VS Code's

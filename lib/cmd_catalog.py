@@ -20,9 +20,11 @@ import shutil
 import sys
 import tomllib
 
+import bundle_store
 from cli_log import emit_result
 from workload_lib import (
-    bundle_file, bundle_names, bundle_roots, iter_workloads, loose_local_bundles,
+    bundle_file, bundle_names, bundle_roots, instances_by_bundle,
+    loose_local_bundles,
     workload_config_dir, workload_config_path,
 )
 from validation import validate_workload_name
@@ -118,18 +120,6 @@ def _bundle_kind(bundle: str) -> str:
     return "vm" if "vm" in data else "container"
 
 
-def _instances() -> dict[str, list[str]]:
-    """Instance names per bundle, from each TOML's `bundle` (default: its name)."""
-    by_bundle: dict[str, list[str]] = {}
-    for name, path in iter_workloads():
-        try:
-            wl = tomllib.loads(path.read_text()).get("workload", {})
-        except (OSError, tomllib.TOMLDecodeError):
-            continue
-        by_bundle.setdefault(wl.get("bundle") or name, []).append(name)
-    return by_bundle
-
-
 def _suggest_bundle(bundle: str) -> None:
     """Print a did-you-mean hint + the available bundle list to stderr."""
     avail = bundle_names()
@@ -151,11 +141,11 @@ def cmd_catalog(args, manager: WorkloadManager):
     for d in loose_local_bundles():
         print(f"Ignored {d}: no workload.toml, and nothing ships '{d.name}'",
               file=sys.stderr)
-    instances = _instances()
+    instances = instances_by_bundle()
     if getattr(args, "json", False):
         print(json.dumps(
             [{"bundle": b, "kind": _bundle_kind(b), "source": _source(b),
-              "instances": instances.get(b, [])}
+              "origin": bundle_store.origin(b), "instances": instances.get(b, [])}
              for b in bundles], indent=2))
         return
     if not bundles:
@@ -163,7 +153,9 @@ def cmd_catalog(args, manager: WorkloadManager):
         return
     print("Available bundles (workloadctl init <bundle> [--as <name>]):")
     for b in bundles:
-        print(f"  {b:<32} {_bundle_kind(b):<10} {_source(b):<14} "
+        origin = bundle_store.origin(b)
+        source = f"{_source(b)} ({origin})" if origin else _source(b)
+        print(f"  {b:<32} {_bundle_kind(b):<10} {source:<14} "
               f"{', '.join(instances.get(b, []))}".rstrip())
 
 

@@ -81,7 +81,9 @@ from the package. A directory with a name nothing ships, holding a
 `workload.toml`, is a bundle of your own, and `catalog`, `init`, `edit` and
 `info --files` treat it like a shipped one. On an image-based host this is
 how to change or add a bundle without rebuilding the image, since `/etc`
-keeps local additions across updates.
+keeps local additions across updates. `workloadctl bundle add` puts a bundle
+there from a signed OCI artifact or a directory, and can update it later
+([Bundles from a registry or a directory](04-containers.md#bundles-from-a-registry-or-a-directory)).
 
 A file in the local layer stops following the package: when an update changes
 the shipped bundle, your copy stays as it is, so a changed `Containerfile`
