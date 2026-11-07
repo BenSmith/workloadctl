@@ -225,6 +225,13 @@ the system unit's own cgroup.
   would orphan the payload. Generated units carry
   `ExecStopPost=-podman rm -f -t0` for that reason. This is pod mode's existing
   behaviour becoming universal.
+- **The user manager is a peer at shutdown.** The payload lives in
+  `user@<uid>.service`, so stopping that unit SIGTERMs and then kills the
+  payload itself, and takes `/run/user/<uid>` from under the unit's
+  `ExecStop`. Unordered, the two stop together and the payload never gets its
+  `podman stop` grace. Generated container units carry
+  `After=user@<uid>.service` (`generate_system_service`), so shutdown stops
+  the workload, grace and all, before its user manager.
 - **`systemctl status workload-<name>` shows only the podman client** — the
   payload is a grandchild via the user manager. `workloadctl status` inherits the
   limitation; `workloadctl stats` uses `podman stats` and reports correctly, and
