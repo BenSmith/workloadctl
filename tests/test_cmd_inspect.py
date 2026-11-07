@@ -883,6 +883,41 @@ class TestCmdHealthAdditional(unittest.TestCase):
             self.assertEqual(cm.exception.code, 1)
 
 
+    def test_health_disabled_workload_podman_fails(self):
+        """On the GPU host (2026-11-07) `health` on a disabled workload
+        died with a traceback: its user had no /run/user/<uid>, so
+        `podman ps` failed. It is an unhealthy container, not a crash."""
+        from podman import PodmanError
+
+        def fake_run(cmd, **kw):
+            if cmd[:2] == ['systemctl', 'is-active']:
+                return _ok(stdout='inactive\n', returncode=3)
+            return _ok()
+
+        with _WorkloadDir(MINIMAL_TOML):
+            manager = MagicMock()
+            manager.user_exists.return_value = True
+            manager.podman.return_value.container_status.side_effect = \
+                PodmanError(1, 'lstat /run/user/10022: no such file or '
+                               'directory\n', ['ps'])
+            buf = io.StringIO()
+            with patch.object(WorkloadConfig, 'uid', new_callable=PropertyMock,
+                               return_value=10022):
+                with patch.object(cmd_health, 'manager_active', return_value=False):
+                    with patch('subprocess.run', side_effect=fake_run):
+                        with patch('sys.stdout', buf):
+                            with self.assertRaises(SystemExit) as cm:
+                                cmd_health.cmd_health(
+                                    _args(json=True, workload='test-wl'), manager)
+            data = json.loads(buf.getvalue())
+            checks = {c['check']: c for c in data['checks']}
+            self.assertFalse(checks['container_running']['healthy'])
+            self.assertIn('/run/user/10022',
+                          checks['container_running']['details']['podman'])
+            self.assertEqual(data['overall'], 'UNHEALTHY')
+            self.assertEqual(cm.exception.code, 1)
+
+
 class TestCmdListMore(unittest.TestCase):
     """Extra cmd_list coverage: json image_id exception, human-table elision
     (long ports/image/name), VM and multi-container image columns."""

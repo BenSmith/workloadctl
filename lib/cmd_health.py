@@ -10,6 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
+from podman import PodmanError
 from run_files import workload_env_dir
 from service_runtime import manager_active
 from substrate import get_substrate, service_active
@@ -213,7 +214,13 @@ def health_report(config, manager, only_container=None):
     container_running = False
     container_status = "unknown"
     if user_exists:
-        ps_status = manager.podman(config).container_status(config.container_name)
+        # A disabled workload's user has no runtime dir, so podman fails.
+        try:
+            ps_status = manager.podman(config).container_status(
+                config.container_name)
+            ps_error = None
+        except PodmanError as e:
+            ps_status, ps_error = None, e.stderr.strip()
         if ps_status:
             container_running = True
             container_status = ps_status
@@ -227,7 +234,8 @@ def health_report(config, manager, only_container=None):
             health_data["checks"].append({
                 "check": "container_running",
                 "healthy": False,
-                "message": "Container not running"
+                "message": "Container not running",
+                **({"details": {"podman": ps_error}} if ps_error else {}),
             })
             all_healthy = False
 
