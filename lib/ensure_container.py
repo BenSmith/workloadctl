@@ -123,8 +123,12 @@ def configure_subuid_subgid(pw, config):
                     ensure_common.log(f"  Configured {path.name} entry: {entry}")
                 changed = True
 
-    # Migrate podman storage to use new subuid/subgid mappings
-    if changed:
+    # Migrate podman storage to use new subuid/subgid mappings. Without
+    # /run/user/<uid> podman fails before migrating; that is a first enable,
+    # whose user has no storage yet, and the unit migrates at every start.
+    if changed and not _runtime_dir_exists(uid):
+        ensure_common.log(f"  No podman storage to migrate yet for {username}")
+    elif changed:
         try:
             result = subprocess.run(
                 ["runuser", "-u", username, "--",
@@ -135,11 +139,16 @@ def configure_subuid_subgid(pw, config):
             if result.returncode == 0:
                 ensure_common.log(f"  Migrated podman storage for {username}")
             else:
-                ensure_common.log(f"  Note: podman system migrate returned {result.returncode} for {username}")
+                ensure_common.log(f"  Note: podman system migrate returned {result.returncode} for {username}: "
+                                  f"{result.stderr.strip()}")
         except subprocess.TimeoutExpired:
             ensure_common.log(f"  WARNING: podman system migrate timed out for {username}")
         except Exception as e:
             ensure_common.log(f"  WARNING: Failed to migrate podman storage for {username}: {e}")
+
+
+def _runtime_dir_exists(uid):
+    return os.path.isdir(f"/run/user/{uid}")
 
 
 def _chown_file_secure(root_dir, host_path, uid, gid):

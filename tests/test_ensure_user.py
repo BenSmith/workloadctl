@@ -3023,6 +3023,7 @@ class TestConfigureSubuidSubgidMore(unittest.TestCase):
         with mock.patch("builtins.open", side_effect=fake_open), \
              mock.patch.object(self.mod, "subid_lock", contextlib.nullcontext), \
              mock.patch.object(self.mod.Path, "mkdir"), \
+             mock.patch.object(self.mod, "_runtime_dir_exists", return_value=True), \
              mock.patch.object(self.mod.subprocess, "run",
                                side_effect=self.mod.subprocess.TimeoutExpired("podman", 30)), \
              mock.patch.object(ensure_common, "log", side_effect=msgs.append):
@@ -3044,12 +3045,51 @@ class TestConfigureSubuidSubgidMore(unittest.TestCase):
         with mock.patch("builtins.open", side_effect=fake_open), \
              mock.patch.object(self.mod, "subid_lock", contextlib.nullcontext), \
              mock.patch.object(self.mod.Path, "mkdir"), \
+             mock.patch.object(self.mod, "_runtime_dir_exists", return_value=True), \
              mock.patch.object(self.mod.subprocess, "run",
                                return_value=types.SimpleNamespace(returncode=0, stdout="", stderr="")), \
              mock.patch.object(ensure_common, "log", side_effect=msgs.append):
             self.mod.configure_subuid_subgid(pw, {})
         self.assertTrue(any("Migrated podman storage" in m for m in msgs))
 
+
+    def _migrate(self, runtime_dir, result=None):
+        pw = _fake_pw(Path("/home/_wl-test"), uid=10000)
+        pw.pw_name = "_wl-test"
+        msgs = []
+
+        def fake_open(path, mode="r"):
+            m = mock.MagicMock()
+            m.__enter__ = lambda s: m
+            m.__exit__ = mock.MagicMock(return_value=False)
+            m.fileno = lambda: 0
+            return m
+
+        with mock.patch("builtins.open", side_effect=fake_open), \
+             mock.patch.object(self.mod, "subid_lock", contextlib.nullcontext), \
+             mock.patch.object(self.mod.Path, "mkdir"), \
+             mock.patch.object(self.mod, "_runtime_dir_exists",
+                               return_value=runtime_dir), \
+             mock.patch.object(self.mod.subprocess, "run",
+                               return_value=result) as run, \
+             mock.patch.object(ensure_common, "log", side_effect=msgs.append):
+            self.mod.configure_subuid_subgid(pw, {})
+        return run, msgs
+
+    def test_a_first_enable_skips_the_migrate(self):
+        # On the proving host (2026-11-07) every first enable logged
+        # "podman system migrate returned 1": the migrate runs before
+        # linger, so /run/user/<uid> isn't there and podman stops at lstat.
+        run, msgs = self._migrate(runtime_dir=False)
+        self.assertFalse(any("migrate" in str(c) for c in run.call_args_list))
+        self.assertTrue(any("No podman storage to migrate" in m for m in msgs))
+        self.assertFalse(any("Note:" in m for m in msgs))
+
+    def test_a_failed_migrate_says_why(self):
+        _, msgs = self._migrate(runtime_dir=True, result=types.SimpleNamespace(
+            returncode=1, stdout="", stderr="lstat /run/user/10000: denied\n"))
+        self.assertIn("  Note: podman system migrate returned 1 for _wl-test: "
+                      "lstat /run/user/10000: denied", msgs)
 
 class TestSetupVolumeDirectoriesSkipBranches(unittest.TestCase):
     def setUp(self):
