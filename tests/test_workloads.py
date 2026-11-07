@@ -123,7 +123,6 @@ class TestWorkloadConfigParsing(unittest.TestCase):
 
     def test_name_is_valid(self):
         """Workload names follow the naming rules."""
-        import re
         pattern = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$")
         for filename, config in ALL_WORKLOADS:
             with self.subTest(config=filename):
@@ -165,7 +164,6 @@ class TestWorkloadConfigParsing(unittest.TestCase):
 
     def test_capabilities_are_uppercase(self):
         """Capabilities should be uppercase Linux capability names."""
-        import re
         cap_pattern = re.compile(r"^[A-Z][A-Z0-9_]+$")
         for filename, config in ALL_WORKLOADS:
             caps = config.get("security", {}).get("capabilities", [])
@@ -176,7 +174,6 @@ class TestWorkloadConfigParsing(unittest.TestCase):
 
     def test_port_format_valid(self):
         """Port specs match the expected format."""
-        import re
         # host:container or host:container/proto or ip:host:container
         port_pattern = re.compile(
             r"^(\d{1,3}(\.\d{1,3}){3}:)?\d+:\d+(/[a-z]+)?$"

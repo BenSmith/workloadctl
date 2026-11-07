@@ -26,7 +26,6 @@ from unittest import mock
 
 
 import workload_lib               # noqa: E402
-import workloadctl_core as core   # noqa: E402
 import imagebuild                 # noqa: E402
 import cmd_lifecycle              # noqa: E402
 from workloadctl_core import WorkloadConfig, WorkloadManager  # noqa: E402

@@ -25,7 +25,6 @@ from unittest import mock
 
 
 import workload_lib               # noqa: E402
-import workloadctl_core as core   # noqa: E402
 import cmd_edit                  # noqa: E402
 import cmd_info                   # noqa: E402
 import cmd_lifecycle              # noqa: E402
@@ -178,7 +177,8 @@ class TestControlFilesView(Step3Base):
         buf = io.StringIO()
         with redirect_stdout(buf):
             cmd_info._print_control_files(self._config("solo"), json_mode=False)
-        lines = {l.split(":")[0].strip(): l for l in buf.getvalue().splitlines() if ":" in l}
+        lines = {line.split(":")[0].strip(): line
+                 for line in buf.getvalue().splitlines() if ":" in line}
         self.assertTrue(lines["local dir"].endswith("(none)"), lines["local dir"])
         self.assertFalse(lines["bundle dir"].endswith("(none)"), lines["bundle dir"])
 

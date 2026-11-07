@@ -33,7 +33,6 @@ import cmd_diagnose         # noqa: E402
 import diagnose_battery     # noqa: E402
 import cmd_edit             # noqa: E402
 import cmd_validate         # noqa: E402
-import workloadctl_core      # noqa: E402
 from workloadctl_core import WorkloadConfig, WorkloadManager  # noqa: E402
 
 
