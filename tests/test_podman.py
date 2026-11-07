@@ -61,6 +61,20 @@ class PodmanWrapperTests(unittest.TestCase):
         self.assertEqual(self.p.list_containers(), [])
 
     @patch("subprocess.run")
+    def test_container_status_only_while_running(self, mock_run):
+        # On the proving host `enable --wait` passed while podman run had
+        # only created the container, and health said "Container running"
+        # for one that exited at once.
+        for state, status, want in [
+                ("running", "Up 3 seconds", "Up 3 seconds"),
+                ("created", "Created", None),
+                ("exited", "Exited (1) 2 seconds ago", None),
+                ("paused", "Paused", None)]:
+            mock_run.return_value = _ok(stdout=json.dumps(
+                [{"Names": ["c1"], "State": state, "Status": status}]))
+            self.assertEqual(self.p.container_status("c1"), want, state)
+
+    @patch("subprocess.run")
     def test_list_containers_populated(self, mock_run):
         mock_run.return_value = _ok(stdout=json.dumps(
             [{"Names": ["c1"], "Status": "Up 2 hours"}]
@@ -267,8 +281,8 @@ class PodmanUncoveredMethodTests(unittest.TestCase):
     @patch("subprocess.run")
     def test_container_status_matches_by_name(self, mock_run):
         mock_run.return_value = _ok(stdout=json.dumps(
-            [{"Names": ["c1"], "Status": "Up 2 hours"},
-             {"Names": ["c2"], "Status": "Exited"}]
+            [{"Names": ["c1"], "State": "running", "Status": "Up 2 hours"},
+             {"Names": ["c2"], "State": "exited", "Status": "Exited"}]
         ))
         self.assertEqual(self.p.container_status("c1"), "Up 2 hours")
 

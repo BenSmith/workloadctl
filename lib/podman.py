@@ -343,11 +343,14 @@ class Podman:
         return result
 
     def container_status(self, name: str) -> str | None:
-        """Container status string, or None if not running / not found."""
+        """Container status string, or None if not running / not found.
+        The listing holds every state, so a Created or Exited container is
+        "not running" here: podman run creates before it starts, and a
+        payload that exits at once stays listed until --rm removes it."""
         rows = self.list_containers(filters={"name": name})
         for c in rows:
             names = c.get("Names") or []
-            if name in names:
+            if name in names and c.get("State") == "running":
                 return c.get("Status")
         return None
 
