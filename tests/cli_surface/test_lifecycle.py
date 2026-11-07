@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-from fixtures import unit_state
+from fixtures import _wait_container_running, unit_state
 from target import Target
 
 
@@ -307,6 +307,7 @@ class TestStartStop:
         assert _wait_active(target, fresh_single), (
             f"Workload {fresh_single!r} did not start"
         )
+        _wait_container_running(target, fresh_single)
 
     @pytest.mark.mutating
     @pytest.mark.vm
@@ -349,6 +350,7 @@ class TestRecreate:
         assert _wait_active(target, fresh_single, timeout=90), (
             f"{fresh_single!r} not active after recreate"
         )
+        _wait_container_running(target, fresh_single)
 
     @pytest.mark.mutating
     @pytest.mark.vm

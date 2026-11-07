@@ -71,6 +71,7 @@ class TestUpdateRollbackContainer:
         assert _wait_active(target, fresh_single, timeout=120), (
             f"{fresh_single!r} not active after update"
         )
+        _wait_container_running(target, fresh_single)
 
     @pytest.mark.mutating
     @pytest.mark.slow
@@ -108,6 +109,7 @@ class TestUpdateRollbackContainer:
             r = target.wl(f"update --force {name}", check=True, timeout=300)
             assert r.rc == 0
             assert _wait_active(target, name, timeout=120)
+            _wait_container_running(target, name)
 
             # Rollback
             r = target.wl(f"rollback {name}", check=True, timeout=120)

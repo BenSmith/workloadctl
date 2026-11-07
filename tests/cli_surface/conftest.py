@@ -212,7 +212,8 @@ def _deploy_workloadctl(t: Target):
 
     print(f"\nDeploying workloadctl to {dest}:{target_dir} ...")
     rsync_cmd = [
-        "rsync", "-av", "--delete",
+        # --mkpath: a host that has never had a deploy has no ~/clitest-src.
+        "rsync", "-av", "--delete", "--mkpath",
         "--exclude=rpmbuild/",
         "--exclude=__pycache__/",
         "--exclude=*.pyc",
