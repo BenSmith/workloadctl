@@ -18,7 +18,7 @@ import os
 import subprocess
 from typing import NamedTuple
 
-from cli_log import error, info, warn
+from cli_log import child_stdout, error, info, warn
 from config_parser import workload_root_dir
 from substrate import LifecycleError
 from workload_lib import (
@@ -205,7 +205,7 @@ def run_host_setup(config: WorkloadConfig, action: str):
     info(f"  Running host setup script ({action})...")
     result = subprocess.run(
         [str(script_path), action],
-        capture_output=False,
+        stdout=child_stdout(),
         env={**os.environ, **host_setup_env(config)},
     )
     if result.returncode != 0:

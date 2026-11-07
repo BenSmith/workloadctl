@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 
-from cli_log import error, info
+from cli_log import child_stdout, error, info
 from config_parser import workload_root_dir
 from workload_lib import (
     RUN_SYSTEMD_SYSTEM,
@@ -284,7 +284,8 @@ def provision_user(config: WorkloadConfig):
     sysusers_file = RUN_SYSTEMD_SYSTEM / f"workload-{config.name}.conf"
 
     info("  Running systemd-sysusers...")
-    subprocess.run(["systemd-sysusers", str(sysusers_file)], check=True)
+    subprocess.run(["systemd-sysusers", str(sysusers_file)], check=True,
+                   stdout=child_stdout())
 
     info("  Configuring workload user...")
     # Not check=True: a seed-contract rejection is an operator error the helper
@@ -294,7 +295,7 @@ def provision_user(config: WorkloadConfig):
     # expected to hit and can fix themselves. Every other non-zero still raises.
     result = subprocess.run(
         ["/usr/libexec/workloadctl/workload-ensure-user", config.name],
-        check=False,
+        check=False, stdout=child_stdout(),
     )
     if result.returncode == SEED_CONTRACT_EXIT:
         raise UsageError("")  # message already printed by the helper

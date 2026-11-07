@@ -123,6 +123,15 @@ def json_enabled() -> bool:
     return _state["json"]
 
 
+def child_stdout():
+    """The stdout for a child process: stderr under --json.
+
+    A helper or setup script writes its progress to the inherited fd 1,
+    which under --json belongs to the result object alone.
+    """
+    return sys.stderr if _state["json"] else None
+
+
 def info(message: str = "") -> None:
     """Progress / status prose → stdout. Suppressed by --quiet and --json."""
     _logger.info(message)
