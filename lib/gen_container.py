@@ -280,7 +280,9 @@ def _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, pull_p
         # to the safe default rather than guessing a seconds value.
         podman_stop_timeout = 10
 
-    svc.add("ExecStop", f"/usr/bin/podman stop -t {podman_stop_timeout} {container_name_quoted}")
+    # --ignore: a stop while `podman run` is still pulling finds no container.
+    svc.add("ExecStop", f"/usr/bin/podman stop --ignore -t {podman_stop_timeout} "
+                        f"{container_name_quoted}")
     # `podman stop` sends SIGTERM, and a container that dies of it hands the
     # main process 128+15 as an exit CODE. systemd only counts SIGTERM as clean
     # when it arrives as a signal, so without this every stop reads `failed`.
@@ -408,6 +410,11 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
     u = unit.section("Unit")
     _unit_deps(u, workload, mode, unit_description, setup_service, pod_service,
                net_service, umbrella_service, gpu_vendor, external_volume_paths)
+    # The container runs under the user's manager and /run/user/<uid>. At
+    # shutdown, without this, both are torn down beside ExecStop, which then
+    # can't reach the container, and it dies with the manager instead of on
+    # podman's stop and its grace.
+    u.add("After", f"user@{uid}.service")
     # Requires=, not Wants=: mirrors generate_vm_workload's prereqs.append for
     # the VM's inspect socket. Without this the socket is generated but never
     # started, so port-80/443 traffic that should be redirected into the

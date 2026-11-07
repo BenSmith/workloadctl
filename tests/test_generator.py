@@ -1267,8 +1267,27 @@ class TestGeneratorResources(unittest.TestCase):
         """)
         run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         service = (Path(self.services_dir) / "workload-plain.service").read_text()
-        self.assertIn("ExecStop=/usr/bin/podman stop -t 10 ", service)
+        self.assertIn("ExecStop=/usr/bin/podman stop --ignore -t 10 ", service)
         self.assertIn("TimeoutStopSec=30", service)
+
+    def test_the_unit_stops_before_its_user_manager(self):
+        # A reboot on the services host: with no ordering against
+        # user@<uid>, ExecStop ran while /run/user/<uid> was being torn
+        # down ("mkdir /run/user/10001: permission denied", "pause.pid: no
+        # such file"), so no container was stopped with its grace.
+        write_config(self.config_dir, "plain", """\
+            [workload]
+            name = "plain"
+
+            [container]
+            image = "myapp"
+        """)
+        run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
+        service = (Path(self.services_dir) / "workload-plain.service").read_text()
+        uid = re.search(r"/run/user/(\d+)/", service).group(1)
+        after = " ".join(ln.split("=", 1)[1] for ln in service.splitlines()
+                         if ln.startswith("After="))
+        self.assertIn(f"user@{uid}.service", after.split())
 
     def test_a_container_that_dies_of_the_stop_signal_stopped_cleanly(self):
         # `podman stop` SIGTERMs the container and the unit's main process
@@ -1328,7 +1347,7 @@ class TestGeneratorResources(unittest.TestCase):
         """)
         run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         service = (Path(self.services_dir) / "workload-slowdb.service").read_text()
-        self.assertIn("ExecStop=/usr/bin/podman stop -t 55 ", service)
+        self.assertIn("ExecStop=/usr/bin/podman stop --ignore -t 55 ", service)
         self.assertIn("TimeoutStopSec=60", service)
         # The old hardcoded 10s grace must not linger.
         self.assertNotIn("podman stop -t 10 ", service)
@@ -1349,7 +1368,7 @@ class TestGeneratorResources(unittest.TestCase):
         """)
         run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         service = (Path(self.services_dir) / "workload-spanstop.service").read_text()
-        self.assertIn("ExecStop=/usr/bin/podman stop -t 10 ", service)
+        self.assertIn("ExecStop=/usr/bin/podman stop --ignore -t 10 ", service)
         self.assertIn("TimeoutStopSec=2min", service)
 
 
