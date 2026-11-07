@@ -10,6 +10,7 @@ didn't come up is left honestly disabled.
 
 import subprocess
 import sys
+import time
 
 from cli_log import emit_result, error, info
 from config_parser import workload_root_dir
@@ -24,6 +25,7 @@ from provisioning import (
     start_service,
     transfer_image,
 )
+from cmd_health import failing_checks, health_report
 from host_setup import run_host_setup
 from shares_setup import apply_shares
 from workload_selinux import (
@@ -117,6 +119,9 @@ def cmd_enable(args, manager: WorkloadManager):
         ["systemctl", "is-active", "--quiet", config.service_name], check=False
     ).returncode == 0
 
+    if getattr(args, "wait", None) is not None:
+        _wait_healthy(config, manager, args.wait)
+
     if already_running:
         info(f"✓ Workload '{args.workload}' setup complete (already running)")
         info(f"  To apply config changes to the live container: sudo workloadctl recreate {args.workload}")
@@ -131,3 +136,33 @@ def cmd_enable(args, manager: WorkloadManager):
         "service": config.service_name,
     }])
 
+
+
+# How often --wait asks again.
+WAIT_POLL = 2.0
+
+
+def _wait_healthy(config, manager, timeout, clock=time.monotonic,
+                  sleep=time.sleep):
+    """Poll the health report until it passes or `timeout` seconds pass.
+    The unit is Type=exec, so it is active from podman's exec on, while an
+    image may still be pulling; health checks the container itself."""
+    info(f"  Waiting up to {timeout}s for '{config.name}' to be healthy...")
+    deadline = clock() + timeout
+    while True:
+        data, ok = health_report(config, manager)
+        if ok:
+            info(f"  ✓ '{config.name}' is healthy")
+            return
+        if clock() >= deadline:
+            break
+        sleep(WAIT_POLL)
+    failing = failing_checks(data)
+    reason = (f"not healthy after {timeout}s: " + "; ".join(failing)
+              if failing else f"not healthy after {timeout}s")
+    error(f"Error: '{config.name}' {reason}")
+    info(f"  It stays enabled. Check: workloadctl health {config.name}; "
+         f"sudo journalctl -u {config.service_name}")
+    emit_result([{"workload": config.name, "result": "failed",
+                  "reason": reason}], ok=False)
+    sys.exit(1)

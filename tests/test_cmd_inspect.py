@@ -333,6 +333,7 @@ class TestCmdStatus(unittest.TestCase):
 
         with _WorkloadDir(MINIMAL_TOML):
             manager = MagicMock()
+            manager.user_exists.return_value = False
             buf = io.StringIO()
             with patch('subprocess.run', side_effect=fake_run), patch('sys.stdout', buf):
                 cmd_inspect.cmd_status(_args(json=True), manager)
@@ -953,6 +954,7 @@ class TestCmdStatusMore(unittest.TestCase):
 
         with _WorkloadDir(MINIMAL_TOML):
             manager = MagicMock()
+            manager.user_exists.return_value = False
             buf = io.StringIO()
             with patch('subprocess.run', side_effect=fake_run), patch('sys.stdout', buf):
                 cmd_inspect.cmd_status(_args(json=True, workload='test-wl'), manager)

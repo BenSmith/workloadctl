@@ -25,6 +25,7 @@ from workloadctl_core import (
     WorkloadUserNotFound,
 )
 from cmd_lifecycle import effective_state
+from podman import PodmanError
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +164,34 @@ def cmd_list(args, manager: WorkloadManager):
 # cmd_status
 # ---------------------------------------------------------------------------
 
+def container_state(config, manager):
+    """{"running", "status", "health"} for a single-container workload, or
+    None where there is no one container to ask about or podman can't be
+    asked. The unit is Type=exec, so its own state can't say this: it is
+    active while podman is still pulling the image."""
+    if manager is None or config.is_vm or config.is_multi \
+            or not manager.user_exists(config):
+        return None
+    try:
+        client = manager.podman(config)
+        status = client.container_status(config.container_name)
+        health = (client.container_health(config.container_name)
+                  if status else None)
+    except (PodmanError, OSError):
+        return None
+    return {"running": status is not None, "status": status,
+            "health": health}
+
+
+def container_line(state, unit_active) -> str:
+    if state["running"]:
+        health = f", health: {state['health']}" if state["health"] else ""
+        return f"Container: running ({state['status']}){health}"
+    if unit_active:
+        return ("Container: none yet: the unit is active, but podman may "
+                "still be pulling the image or creating the container")
+    return "Container: not running"
+
 def cmd_status(args, manager: WorkloadManager):
     """Show workload service status"""
     if not args.workload:
@@ -215,6 +244,9 @@ def cmd_status(args, manager: WorkloadManager):
             "state_deployment": (deployment.read_marker(workload_root_dir(config.name))
                                  or {}).get("deployment"),
         }
+        state = container_state(config, manager)
+        if state is not None:
+            out["container"] = state
         if config.is_multi:
             out["mode"] = config.mode
             sub = []
@@ -254,6 +286,13 @@ def cmd_status(args, manager: WorkloadManager):
         units = workload_service_units(config)
         subprocess.run(["systemctl", "status", "--no-pager"] + units)
         return
+
+    state = container_state(config, manager)
+    if state is not None:
+        active = subprocess.run(
+            ["systemctl", "is-active", "--quiet", config.service_name],
+            check=False).returncode == 0
+        print(container_line(state, active) + "\n", flush=True)
 
     gating = get_substrate(config, None).gating_units()
     if gating:

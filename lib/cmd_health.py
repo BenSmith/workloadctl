@@ -110,11 +110,9 @@ def _multi_container_health(config, manager, only_container):
 # cmd_health
 # ---------------------------------------------------------------------------
 
-def cmd_health(args, manager: WorkloadManager):
-    """Check workload health"""
-    workload, container = parse_workload_ref(args.workload)
-    config = WorkloadConfig(workload)
-
+def health_report(config, manager, only_container=None):
+    """The checks `health` reports, as (data, all_healthy): what `enable
+    --wait` polls. `only_container` narrows a multi-container workload."""
     # VMs have no container layer — health = service active + user exists.
     if config.is_vm:
         substrate = get_substrate(config, manager)
@@ -141,30 +139,10 @@ def cmd_health(args, manager: WorkloadManager):
                 },
             ],
         }
-        if args.json:
-            print(json.dumps(health_data, indent=2))
-        else:
-            print(f"Workload: {health_data['workload']}")
-            print(f"Overall: {health_data['overall']}")
-            print()
-            for check in health_data["checks"]:
-                symbol = "✓" if check["healthy"] else "✗"
-                print(f"{symbol} {check['message']}")
-        sys.exit(0 if all_healthy else 1)
+        return health_data, all_healthy
 
     if config.is_multi:
-        data, all_healthy = _multi_container_health(config, manager, container)
-        if args.json:
-            print(json.dumps(data, indent=2))
-        else:
-            print(f"Workload: {data['workload']}")
-            print(f"Overall: {data['overall']}")
-            print()
-            for c in data["containers"]:
-                symbol = "✓" if c["healthy"] else "✗"
-                run = "running" if c["running"] else "not running"
-                print(f"{symbol} {c['container']}: service {c['service_state']}, {run}")
-        sys.exit(0 if all_healthy else 1)
+        return _multi_container_health(config, manager, only_container)
 
     health_data = {
         "workload": config.name,
@@ -323,21 +301,38 @@ def cmd_health(args, manager: WorkloadManager):
                 "details": {"active_since": active_since}
             })
 
-    # Determine overall health
     health_data["overall"] = "HEALTHY" if all_healthy else "UNHEALTHY"
+    return health_data, all_healthy
 
-    # Output
+
+def failing_checks(data) -> list[str]:
+    """The messages of a report's failed checks, or its unhealthy
+    containers for a multi-container workload."""
+    if "containers" in data:
+        return [f"{c['container']}: service {c['service_state']}, "
+                f"{'running' if c['running'] else 'not running'}"
+                for c in data["containers"] if not c["healthy"]]
+    return [c["message"] for c in data["checks"] if not c["healthy"]]
+
+
+def cmd_health(args, manager: WorkloadManager):
+    """Check workload health"""
+    workload, container = parse_workload_ref(args.workload)
+    config = WorkloadConfig(workload)
+    data, all_healthy = health_report(config, manager, container)
     if args.json:
-        print(json.dumps(health_data, indent=2))
+        print(json.dumps(data, indent=2))
         sys.exit(0 if all_healthy else 1)
-
-    # Human-readable output
-    print(f"Workload: {config.name}")
-    print(f"Overall: {health_data['overall']}")
+    print(f"Workload: {data['workload']}")
+    print(f"Overall: {data['overall']}")
     print()
-
-    for check in health_data["checks"]:
-        symbol = "✓" if check["healthy"] else "✗"
-        print(f"{symbol} {check['message']}")
-
+    if "containers" in data:
+        for c in data["containers"]:
+            symbol = "✓" if c["healthy"] else "✗"
+            run = "running" if c["running"] else "not running"
+            print(f"{symbol} {c['container']}: service {c['service_state']}, {run}")
+    else:
+        for check in data["checks"]:
+            symbol = "✓" if check["healthy"] else "✗"
+            print(f"{symbol} {check['message']}")
     sys.exit(0 if all_healthy else 1)

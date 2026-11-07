@@ -409,7 +409,7 @@ files](manual/04-containers.md#changing-a-bundles-files).
 Provision a workload and start it, now and at every boot.
 
 ```
-sudo workloadctl enable [-q] [--json] <workload>
+sudo workloadctl enable [-q] [--json] [--wait [SECONDS]] <workload>
 ```
 
 `enable` creates the workload's `.enabled` marker, runs the pre-flight
@@ -418,6 +418,11 @@ has them, generates its units, creates its user and directories, copies an image
 built on the host into the workload's store, and starts it. If a step fails
 before the start, it removes the marker again, so the workload is left
 disabled.
+
+The unit is active as soon as podman starts, before an image pull finishes.
+`--wait` holds `enable` until `health` passes, for 300 seconds or SECONDS;
+past that it fails (result `failed`, its `reason` naming the failing
+checks) and leaves the workload enabled.
 
 `enable` is safe to run again. On a workload that is already running it
 brings the units up to date without restarting it (result
@@ -684,12 +689,17 @@ With a workload, `status` runs `systemctl status` on its main unit, on a
 VM's setup and build units as well, and on every unit of a multi-container
 workload. It first warns when the TOML is newer than the units, when the units came from
 another workloadctl build, and when the workload runs in the host's user
-namespace. Without a workload it is `list`.
+namespace. For a single-container workload it then names the container's
+own state, running with its health or not there yet, which the unit's
+state can't say: the unit is active while podman is still pulling the
+image. Without a workload it is `list`.
 
 `--json` prints `workload`, `service`, `state`, `enabled`, `active_since`,
 `main_pid`, `memory_current`, `tasks_current`, `result`, `config_stale`,
-`units_generated_by`, `host_userns` and `state_deployment`, and for a
-multi-container workload `mode` and `containers`.
+`units_generated_by`, `host_userns` and `state_deployment`; for a
+single-container workload whose user exists `container`, with `running`,
+`status` and `health`; and for a multi-container workload `mode` and
+`containers`.
 
 [↑ top](#workloadctl-command-reference)
 

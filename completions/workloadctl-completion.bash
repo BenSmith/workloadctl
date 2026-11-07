@@ -262,7 +262,16 @@ _workload_ctl_completion() {
             fi
             return 0
             ;;
-        enable|start|stop|restart)
+        enable)
+            # Complete with --wait, the mutating-verb flags, or workload names
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--wait -q --quiet --json" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "$workloads" -- "$cur") )
+            fi
+            return 0
+            ;;
+        start|stop|restart)
             # Complete with the mutating-verb flags, or workload names
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "-q --quiet --json" -- "$cur") )

@@ -211,6 +211,10 @@ def build_parser() -> argparse.ArgumentParser:
                                           parents=[mutating])
     enable_parser.set_defaults(func=cmd_enable)
     enable_parser.add_argument("workload", help="Workload name")
+    enable_parser.add_argument(
+        "--wait", nargs="?", type=int, const=300, default=None,
+        metavar="SECONDS",
+        help="return once `health` passes, or fail after SECONDS (300)")
 
     exec_parser = subparsers.add_parser("exec", help="Execute command in workload container or VM (via SSH)")
     exec_parser.set_defaults(func=cmd_exec)
