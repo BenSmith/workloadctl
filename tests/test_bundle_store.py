@@ -222,7 +222,7 @@ class SwapAndSweep(_Roots):
         (self.local / "app").mkdir(parents=True)
         bundle_store.write_record("app", {"files": {}})
         bundle_store.remove_bundle("app")
-        self.assertEqual(list(self.local.iterdir()), [])
+        self.assertFalse(self.local.exists())
 
 
 if __name__ == "__main__":

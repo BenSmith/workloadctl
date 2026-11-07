@@ -314,7 +314,12 @@ class Rm(_Base):
 
     def test_removes_dir_and_record(self):
         self.ok("rm", "app")
-        self.assertEqual(list(self.local.iterdir()), [])
+        self.assertFalse(self.local.exists())
+
+    def test_keeps_a_root_that_holds_more(self):
+        (self.local / "mine").mkdir()
+        self.ok("rm", "app")
+        self.assertEqual([p.name for p in self.local.iterdir()], ["mine"])
 
     def test_hand_made_refused(self):
         (self.local / "mine").mkdir()

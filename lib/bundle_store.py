@@ -270,11 +270,17 @@ def swap_in(staged: Path, name: str) -> None:
 
 def remove_bundle(name: str) -> None:
     """Move the bundle dir into staging, then delete it, so the root never
-    holds a half-deleted bundle."""
-    target = bundle_roots()[1] / name
+    holds a half-deleted bundle. The root goes too once empty: swap_in made
+    it, and on an image-based host it would stay in the config diff."""
+    root = bundle_roots()[1]
+    target = root / name
     if target.exists():
         staging_root().mkdir(mode=0o755, parents=True, exist_ok=True)
         gone = staging_root() / f"{name}.{os.getpid()}.rm"
         os.rename(target, gone)
         shutil.rmtree(gone, ignore_errors=True)
     remove_record(name)
+    try:
+        root.rmdir()
+    except OSError:
+        pass
