@@ -111,8 +111,9 @@ BROKER_HANDED = BROKER_REQUIRED | {
 # always empty: moatery relays no HTTP/2 and refuses a list naming a host,
 # and the key stays so every workload's policy digest is unchanged.
 DOCUMENT_ONLY = frozenset({"http2"})
-# Reader fields no document carries: the digest is the status file's.
-READER_ONLY = frozenset({"digest"})
+# Reader fields no policy document carries: the digest is the status
+# file's, and the request filters come from their own document.
+READER_ONLY = frozenset({"digest", "request_filters"})
 
 SHIPPED = ("lib", "bin", "libexec", "generators")
 
