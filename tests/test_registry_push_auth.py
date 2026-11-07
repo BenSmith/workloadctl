@@ -22,7 +22,7 @@ from tests import REPO_ROOT as ROOT
 
 ZOT = ROOT / "workloads" / "zot-registry"
 
-CI_REPOS = {"workloads/**", "hypervisor-bootc", "hypervisor-amd",
+CI_REPOS = {"workloads/**", "bundles/**", "hypervisor-bootc", "hypervisor-amd",
             "hypervisor-nvidia", "fedora-bootc-minimal"}
 WRITES = {"create", "update", "delete"}
 
