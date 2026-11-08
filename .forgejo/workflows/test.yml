@@ -80,9 +80,10 @@ jobs:
       # has a group per Fedora, for moatery's build per Python, and an image
       # takes all three packages from its Fedora's group. workloadctl's RPM
       # does not depend on the Fedora, so the one build goes to every group
-      # .packit.yaml's Copr targets name.
+      # .packit.yaml's Copr targets name. A dispatch on main publishes too,
+      # so a run can fill the groups again; one on another branch does not.
       - name: Publish RPMs
-        if: github.event_name == 'push'
+        if: github.ref == 'refs/heads/main'
         env:
           PKG_PUBLISH_TOKEN: ${{ secrets.PKG_PUBLISH_TOKEN }}
           PACKAGES: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm

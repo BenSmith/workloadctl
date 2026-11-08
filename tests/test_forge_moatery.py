@@ -75,6 +75,15 @@ class ForgeMoatery(unittest.TestCase):
         self.assertEqual(sorted(versions), targets)
         self.assertIn('"$PACKAGES/fedora-$v/upload"', text)
 
+    def test_a_push_or_a_dispatch_on_main_publishes(self):
+        """A dispatch that passed once published nothing, and left the
+        groups without workloadctl, when the step ran only on a push."""
+        text = (REPO_ROOT / ".forgejo" / "workflows" / "test.yml").read_text()
+        step = text[text.index("- name: Publish RPMs"):]
+        self.assertTrue(step.split("\n")[1].endswith(
+            "if: github.ref == 'refs/heads/main'"), step.split("\n")[1])
+        self.assertRegex(text, r"\non:\n(?:  .*\n)*  workflow_dispatch:")
+
     def test_metadata_the_registry_key_did_not_sign_is_refused(self):
         """The packages are unsigned: gpgcheck would refuse every one, and
         without repo_gpgcheck nothing is checked at all."""
