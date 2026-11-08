@@ -1352,3 +1352,45 @@ and every one turned its rows red. That run found two rows adding without
 never looked. A wrongly admitted bundle is now removed after its row, so a
 later refusal fails on its own check rather than on "already exists".
 
+
+## device_rig.py — does sunshine-streaming's configuration reach a real GPU, and leave the sound card out?
+
+The runtime rung's `test_runtime_devices` runs sunshine-streaming's devices,
+groups, seccomp, rlimits and `policy.cil` in a VM: uinput, the refusal of a
+real keyboard's node, Steam's bwrap syscalls, 32-bit code and the scheduling
+limits. A VM has no render node and no sound card, so this rig runs the same
+configuration on a host with both.
+
+```
+sudo python3 tests/manual/device_rig.py
+```
+
+It needs an AMD GPU (`/dev/dri/renderD*`, `/dev/kfd`), a sound card, the
+workloadctl RPM installed and enforcing. It builds each arm's TOML from the
+checkout's sunshine-streaming bundle and loads that bundle's `policy.cil`.
+
+### What it answers
+
+- **Premises.** Enforcing, and the host has a render node, `/dev/kfd` and a
+  sound card, so an absence in the container is the configuration's.
+- **The GPU works, not just mounts.** The DRM version ioctl on the render node
+  names the driver (`amdgpu`) and the KFD version ioctl answers.
+- **The host's sound card stays out.** The stream's audio is the container's
+  own PipeWire sink, so `/dev/snd` is empty in the container.
+- **No denial with the payload as its source.**
+- **Control:** the same configuration without `gpu` has no render node and no
+  `/dev/kfd`, and no denial.
+
+First run on the dev host, 2026-11-08, found sunshine's policy granting
+`sound_device_t` `getattr read write` without `open`: every open of a sound
+card under `/dev/snd` was denied, while the stream's audio, from PipeWire's own
+sink, worked. The bundle now takes no sound device. The same day, 12/12, no
+denials.
+
+### How it lied before it told the truth
+
+The control arm first dropped the `audio` group and counted an `EACCES` on
+every card as the group's work. The sunshine arm got the same `EACCES` from
+the policy's missing `open`, so the control row passed on an AVC rather than on
+DAC. A row for the control's own denials was added before the sound device
+was dropped.

@@ -237,6 +237,7 @@ Runtime-rung fixtures (`rt-*.toml`, used only by `test_runtime_*.py` in a VM):
 |-----------------|----------------------------------------------|
 | `rt-basic.toml` | baseline single container (most runtime checks) |
 | `rt-caps.toml`  | capability/hardening assertions              |
+| `rt-devices.toml` | sunshine-streaming's devices, seccomp, rlimits and policy; its payload is `rt-devices-probe.py` |
 | `rt-notify.toml`| `Type=notify` misattribution regression      |
 | `rt-pod.toml`   | pod-mode re-enable                           |
 | `rt-vm.toml`    | nested `[vm]` workload smoke; SSH host-key pin (S1) |

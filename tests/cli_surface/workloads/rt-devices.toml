@@ -1,0 +1,50 @@
+# rt-devices — sunshine-streaming's devices, groups, seccomp, rlimits and
+# SELinux policy on a plain image (test_runtime_devices). The [devices],
+# [security] and device volumes are sunshine's, and tests/test_rt_devices.py
+# holds them equal; the test installs sunshine's policy.cil beside this file.
+# The command is filled in by the test with rt-devices-probe.py.
+# Do NOT enable this manually; it is managed by the runtime harness.
+
+[workload]
+name = "rt-devices"
+enabled = false
+
+[container]
+image = "docker.io/library/python:3-alpine"
+command = ["python3", "-c", "PROBE"]
+
+[container.health]
+cmd = "true"
+interval = "5s"
+timeout = "5s"
+retries = 1
+
+[devices]
+devices = ["/dev/uinput"]
+
+[security]
+userns = "keep-id:uid=0,gid=0"
+capabilities = [
+    "CHOWN", "DAC_OVERRIDE", "FOWNER",
+    "SETUID", "SETGID", "FSETID",
+    "KILL", "NET_BIND_SERVICE",
+    "SETFCAP", "SETPCAP",
+    "SYS_CHROOT", "SYS_NICE",
+]
+extra_groups = ["video", "render", "uinput"]
+selinux_policy = true
+seccomp_allow = ["clone", "mount", "pivot_root", "umount2", "unshare"]
+seccomp_32bit = true
+
+[storage]
+volumes = [
+    "/run/udev:/run/udev:ro",
+    "/dev/input:/dev/input",
+]
+
+[network]
+mode = "pasta"
+
+[resources]
+memory_max = "128M"
+custom_directives = { LimitNICE = "40", LimitRTPRIO = "20" }
