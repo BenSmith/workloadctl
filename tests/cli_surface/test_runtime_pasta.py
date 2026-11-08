@@ -19,10 +19,12 @@ The check has two layers, primary first:
     restart-loop — active every time, NRestarts never climbing toward
     StartLimitBurst. Never weakened to "active once".
 
-  * A **best-effort faithful arm** (asserted only if it establishes): plant a
-    stale pause per the notes — a pasta pause escaped to a scope whose
-    PrivateTmp `/tmp` is then destroyed — and prove the workload still starts
-    clean over it. Folded inline (no extra VM boot); if the arm can't be
+  * A **best-effort faithful arm** (asserted only if it establishes): leave a
+    stale pause — one planted, a pasta pause escaped to a scope whose
+    PrivateTmp `/tmp` is then destroyed, or the stopped workload's own, which
+    the arm's `podman run` proves stale by failing pasta's sandbox mount — and
+    prove the workload still starts clean over it. In a Fedora 45 gate run
+    on 2026-11-08 the stop left one. Folded inline (no extra VM boot); if the arm can't be
     established in this environment it is logged and skipped, and the primary
     surface above carries the guarantee. It is expected to arm under gate mode
     (the real bootc image) where the shipped rootless stack is present.
@@ -104,40 +106,55 @@ def _assert_active(target, uid: str, ctx: str):
     assert state == "active", f"{SERVICE} is {state!r} {ctx}, expected active"
 
 
-def _arm_stale_pause(target, uid: str) -> bool:
-    """Best-effort: plant a stale pasta pause under the workload user.
+# What pasta prints when the pause it joins has lost its /tmp: the failure
+# this test guards, met by the arm's own `podman run`.
+STALE_SANDBOX = "Failed to mount empty tmpfs for sandboxing"
 
-    Stop the workload so its own live pause is out of the way (linger keeps
-    user@<uid>.service up so a planted pause can still escape to a
-    podman-pause-*.scope under it and outlive its creator), then run a pasta
-    `podman run` inside a transient PrivateTmp unit. The pause (catatonit -P)
-    escapes to a scope under user@<uid>.service; when the transient unit exits,
-    its PrivateTmp /tmp is destroyed, leaving pause.pid pointing at a pause
-    whose mount-ns /tmp is now dead.
 
-    Returns True iff a pause was established (pause.pid present). Logs and
-    returns False otherwise — rootless podman inside a bare `systemd-run --uid`
-    transient unit does not always come up in every environment.
+def _arm_stale_pause(target, uid: str) -> str | None:
+    """Best-effort: leave the workload user a stale pasta pause.
+
+    Stop the workload (linger keeps user@<uid>.service up, so a pause outlives
+    the unit that made it), then run a pasta `podman run` inside a transient
+    PrivateTmp unit. Either of two outcomes leaves a stale pause:
+
+    - "planted": no pause was left, so this run made one; it escapes to a
+      podman-pause-*.scope, and when the transient unit exits its PrivateTmp
+      /tmp is destroyed under it;
+    - "left by the stop": the workload's own pause outlived the stop, the run
+      joined it, and pasta failed its sandbox mount (STALE_SANDBOX): the stale
+      pause is already there.
+
+    Returns which, or None when neither: rootless podman inside a bare
+    `systemd-run --uid` transient unit does not always come up in every
+    environment. --pipe, since podman's own output goes to its scope's
+    journal, not the unit's; --collect, so a failed run leaves no failed
+    unit behind.
     """
     target.run(["systemctl", "stop", SERVICE], sudo=True, check=False)
     arm_unit = "wlrt-armpause"
     arm = target.run(
         ["sh", "-c",
          f"cd / && systemd-run --uid={uid} --unit={arm_unit} "
-         f"-p PrivateTmp=yes --wait --quiet "
+         f"-p PrivateTmp=yes --collect --pipe --wait --quiet "
          f"--setenv=XDG_RUNTIME_DIR=/run/user/{uid} "
          f"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus "
          f"podman run --rm --network=pasta --entrypoint=/bin/sh {IMAGE} -c 'exit 0'"],
         sudo=True, check=False,
     )
-    armed = target.run(["test", "-f", f"/run/user/{uid}/libpod/tmp/pause.pid"],
-                       sudo=True, check=False).ok
-    if not armed:
-        aj = target.run(["journalctl", "--no-pager", "-n", "20",
-                         "-u", f"{arm_unit}.service"], sudo=True, check=False)
-        print(f"\n----- stale-pause arm did not establish (arm rc={arm.rc}) -----\n"
-              f"{aj.stdout}\n----------------------------------------------------")
-    return armed
+    paused = target.run(["test", "-f", f"/run/user/{uid}/libpod/tmp/pause.pid"],
+                        sudo=True, check=False).ok
+    aj = target.run(["journalctl", "--no-pager", "-n", "20",
+                     "-u", f"{arm_unit}.service"], sudo=True, check=False)
+    how = None
+    if paused and arm.rc == 0:
+        how = "planted"
+    elif paused and STALE_SANDBOX in arm.stdout + arm.stderr:
+        how = "left by the stop"
+    print(f"\n----- stale-pause arm: {how or 'not established'} (arm rc={arm.rc}) -----\n"
+          f"{arm.stderr[-1500:]}\n{aj.stdout}\n"
+          f"----------------------------------------------------")
+    return how
 
 
 def test_pasta_restart_resilience(target):
@@ -178,9 +195,10 @@ def test_pasta_restart_resilience(target):
         )
 
         # --- Best-effort: faithful stale-pause arm, then prove clean recovery ---
-        if _arm_stale_pause(target, uid):
-            r = target.run(["systemctl", "start", SERVICE], sudo=True, check=False)
-            _assert_active(target, uid, "after starting over an armed stale pause")
+        how = _arm_stale_pause(target, uid)
+        if how:
+            target.run(["systemctl", "start", SERVICE], sudo=True, check=False)
+            _assert_active(target, uid, f"after starting over a stale pause ({how})")
         else:
             print("stale-pause arm not established in this environment; "
                   "observable-surface assertions above carry the invariant "
