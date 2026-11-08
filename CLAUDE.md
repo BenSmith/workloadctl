@@ -76,7 +76,8 @@ equal). A tag `vX.Y.Z` and a GitHub release make Packit build into Copr
 - `.github/workflows/test.yml`: lint and `just test`, with moatery from
   Copr.
 - `.forgejo/workflows/test.yml`: the same plus an RPM build, with main's
-  moatery from the forge's RPM registry; a push to main publishes there.
+  moatery from the forge's RPM registry; a push to main publishes there,
+  to the group `fedora-<version>` of each Fedora `.packit.yaml` targets.
 - `.forgejo/workflows/runtime-dev.yml`: `just test-runtime` weekly. Gate
   mode runs in the hypervisor repository.
 - `.forgejo/workflows/build-workload-images.yml` builds, scans, pushes and

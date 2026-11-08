@@ -76,12 +76,17 @@ jobs:
 
 
       # main's RPMs, to this forge's RPM registry: the dnf repository the
-      # homelab's hypervisor images install workloadctl from.
+      # homelab's hypervisor images install workloadctl from. The registry
+      # has a group per Fedora, for moatery's build per Python, and an image
+      # takes all three packages from its Fedora's group. workloadctl's RPM
+      # does not depend on the Fedora, so the one build goes to every group
+      # .packit.yaml's Copr targets name.
       - name: Publish RPMs
         if: github.event_name == 'push'
         env:
           PKG_PUBLISH_TOKEN: ${{ secrets.PKG_PUBLISH_TOKEN }}
-          UPLOAD: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm/upload
+          PACKAGES: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm
+          FEDORA_VERSIONS: 43 44 45
         run: |
           set -- rpmbuild/RPMS/noarch/workloadctl-*.rpm
           if [ "$#" -ne 2 ]; then
@@ -90,14 +95,16 @@ jobs:
           fi
           log=$(mktemp)
           trap 'rm -f "$log"' EXIT
-          for rpm; do
-            code=$(curl -sS -o "$log" -w '%{http_code}' \
-              -H "Authorization: token ${PKG_PUBLISH_TOKEN}" \
-              --upload-file "$rpm" "$UPLOAD")
-            if [ "$code" != 201 ]; then
-              echo "::error::uploading $rpm: HTTP $code"
-              cat "$log"
-              exit 1
-            fi
-            echo "published $(basename "$rpm")"
+          for v in $FEDORA_VERSIONS; do
+            for rpm; do
+              code=$(curl -sS -o "$log" -w '%{http_code}' \
+                -H "Authorization: token ${PKG_PUBLISH_TOKEN}" \
+                --upload-file "$rpm" "$PACKAGES/fedora-$v/upload")
+              if [ "$code" != 201 ]; then
+                echo "::error::uploading $rpm to fedora-$v: HTTP $code"
+                cat "$log"
+                exit 1
+              fi
+              echo "published $(basename "$rpm") to fedora-$v"
+            done
           done

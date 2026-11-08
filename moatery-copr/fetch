@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # moatery's RPM at VERSION, from its Copr repository, to DEST, refused
 # unless it is signed by the project's key beside this script (pubkey.gpg).
-# The RPM is noarch, so the one chroot serves every Fedora the images build
-# on. dnf download checks no signature: rpmkeys does, in a keyring of its
+# The chroot is this host's Fedora's: the RPM installs into that Fedora's
+# Python. dnf download checks no signature: rpmkeys does, in a keyring of its
 # own, and _pkgverify_level makes it refuse an unsigned package, which plain
 # -K passes on its digests. --refresh, because a version released since
 # dnf last cached this repository's metadata is otherwise not found.
@@ -10,7 +10,8 @@ set -euo pipefail
 [ "$#" -eq 2 ] || { echo "usage: $0 VERSION DEST" >&2; exit 2; }
 version=$1
 dest=$2
-repo=https://download.copr.fedorainfracloud.org/results/benjamin-coder-smith/moatery/fedora-44-x86_64/
+. /etc/os-release
+repo=https://download.copr.fedorainfracloud.org/results/benjamin-coder-smith/moatery/fedora-$VERSION_ID-x86_64/
 key=$(dirname "$(realpath "$0")")/pubkey.gpg
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

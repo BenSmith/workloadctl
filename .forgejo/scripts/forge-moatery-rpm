@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# moatery's newest RPM in REPO, the Forgejo RPM registry its main publishes
-# to, to DEST. The homelab's images ship this moatery beside main's
-# workloadctl, so the Forgejo workflows test against it.
+# moatery's newest RPM for this host's Fedora in REPO, the Forgejo RPM
+# registry its main publishes to, to DEST. The homelab's images ship this
+# moatery beside main's workloadctl, so the Forgejo workflows test against
+# it. moatery installs into its Fedora's Python, so the registry holds a
+# build per Fedora, in the group fedora-<version>.
 #
 # The registry signs its metadata, not its packages: dnf refuses metadata
 # the registry's key (.forgejo/rpm-registry.gpg) did not sign, and a package
@@ -10,8 +12,9 @@
 #   .forgejo/scripts/forge-moatery-rpm "$SERVER/api/packages/$OWNER/rpm" DEST
 set -euo pipefail
 [ "$#" -eq 2 ] || { echo "usage: $0 REPO DEST" >&2; exit 2; }
-repo=$1
 dest=$2
+. /etc/os-release
+repo=$1/fedora-$VERSION_ID
 key=$(realpath "$(dirname "$(realpath "$0")")/../rpm-registry.gpg")
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

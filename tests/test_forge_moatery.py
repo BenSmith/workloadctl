@@ -9,6 +9,7 @@ the script against stand-ins for dnf and rpm, and read the steps that call
 it.
 """
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ SCRIPT = REPO_ROOT / ".forgejo" / "scripts" / "forge-moatery-rpm"
 REPO = "REPO: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm"
 
 DNF = """#!/bin/bash
+echo "$@" > "$STUB_ARGS"
 [ -z "$STUB_REFUSE" ] || exit 1
 for a; do case "$a" in --destdir=*) d=${a#--destdir=} ;; esac; done
 mkdir -p "$d"
@@ -43,7 +45,8 @@ class ForgeMoatery(unittest.TestCase):
         dest = self.work / "moatery.rpm"
         done = subprocess.run(
             [str(SCRIPT), "https://forge.example/rpm", str(dest)],
-            env={**os.environ, "PATH": self.path, **extra},
+            env={**os.environ, "PATH": self.path,
+                 "STUB_ARGS": str(self.work / "dnf-args"), **extra},
             capture_output=True, text=True)
         return done, dest
 
@@ -51,6 +54,26 @@ class ForgeMoatery(unittest.TestCase):
         done, dest = self.fetch()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(dest.read_text(), "built\n")
+
+    def test_the_group_is_this_hosts_fedoras(self):
+        """moatery installs into its Fedora's Python: a Fedora 45 host
+        (Python 3.15) cannot install the Fedora 44 build."""
+        release = Path("/etc/os-release").read_text()
+        version = re.search(r'^VERSION_ID="?([^"\n]*)"?$', release, re.M)[1]
+        done, _ = self.fetch()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(
+            f"--repofrompath=forge,https://forge.example/rpm/fedora-{version} ",
+            (self.work / "dnf-args").read_text())
+
+    def test_main_publishes_to_every_copr_targets_group(self):
+        packit = (REPO_ROOT / ".packit.yaml").read_text()
+        targets = sorted(set(re.findall(r"- fedora-(\d+)-x86_64", packit)))
+        text = (REPO_ROOT / ".forgejo" / "workflows" / "test.yml").read_text()
+        versions = re.search(r"FEDORA_VERSIONS: (.*)", text)[1].split()
+        self.assertTrue(targets)
+        self.assertEqual(sorted(versions), targets)
+        self.assertIn('"$PACKAGES/fedora-$v/upload"', text)
 
     def test_metadata_the_registry_key_did_not_sign_is_refused(self):
         """The packages are unsigned: gpgcheck would refuse every one, and
