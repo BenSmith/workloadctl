@@ -107,8 +107,9 @@ just test-all-runtime-remote HOST # same, driven from your laptop against a prep
 Both skip cleanly on a box without `/dev/kvm` + QEMU (and gate additionally
 needs OVMF + swtpm + the source images). The harness lives in
 `../runtime/` (`vmlaunch.py` boots/snapshots the guest, `vmtarget.py` is the
-`VMTarget`). Set `WLRT_KEEP_VM=1` to leave a failed run's guest running for
-inspection.
+`VMTarget`). Set `WLRT_KEEP_VM=1` to leave the guest running after the
+session for inspection. Every purge still runs, so the guest holds no
+test's workload: the flag changes no test's result.
 
 ## Layout
 
