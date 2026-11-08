@@ -74,6 +74,13 @@ def read_dropin(services_dir):
     return matches[0].read_text()
 
 
+def real(path):
+    """PATH as the generator writes an out-of-tree volume: symlinks resolved,
+    since systemd matches RequiresMountsFor= against real mount points. On a
+    bootc host /mnt and /srv are symlinks into /var."""
+    return str(Path(path).resolve())
+
+
 class TestGeneratorBasic(unittest.TestCase):
     def setUp(self):
         self.config_dir = tempfile.mkdtemp()
@@ -1066,7 +1073,7 @@ class TestGeneratorVolumeExpansion(unittest.TestCase):
         # podman would silently create the bind source if it were not mounted --
         # the container would then start healthy over an empty directory.
         service = self._service_for('["/mnt/models:/models:ro"]')
-        self.assertIn('RequiresMountsFor="/mnt/models"', service)
+        self.assertIn(f'RequiresMountsFor="{real("/mnt/models")}"', service)
 
     def test_anchored_volume_gets_no_requires_mounts_for(self):
         # Anchored paths live under /var/lib/workloads, which is mounted before
@@ -1087,7 +1094,7 @@ class TestGeneratorVolumeExpansion(unittest.TestCase):
         # $VAR there, so uq() must leave a literal '$' alone where dq() doubles
         # it. A doubled '$' would name a path that does not exist.
         service = self._service_for('["/mnt/a$b:/models:ro"]')
-        self.assertIn('RequiresMountsFor="/mnt/a$b"', service)
+        self.assertIn(f'RequiresMountsFor="{real("/mnt/a$b")}"', service)
 
     def test_writable_external_volume_is_in_read_write_paths(self):
         # ProtectSystem=strict mounts the whole hierarchy read-only inside the
@@ -1099,7 +1106,7 @@ class TestGeneratorVolumeExpansion(unittest.TestCase):
         service = self._service_for('["/srv/media:/media:rw"]')
         line = next(ln for ln in service.splitlines()
                     if ln.startswith("ReadWritePaths="))
-        self.assertIn('"/srv/media"', line)
+        self.assertIn(f'"{real("/srv/media")}"', line)
 
     def test_external_volume_with_no_opts_defaults_to_writable(self):
         # "host:guest" with no third field is rw in podman, so the unit has to
@@ -1107,7 +1114,7 @@ class TestGeneratorVolumeExpansion(unittest.TestCase):
         service = self._service_for('["/srv/media:/media"]')
         line = next(ln for ln in service.splitlines()
                     if ln.startswith("ReadWritePaths="))
-        self.assertIn('"/srv/media"', line)
+        self.assertIn(f'"{real("/srv/media")}"', line)
 
     def test_read_only_external_volume_is_not_made_writable(self):
         # podman enforces :ro in the container regardless, so naming it here
@@ -1148,7 +1155,7 @@ class TestGeneratorVolumeExpansion(unittest.TestCase):
         service = self._service_for('["/mnt/not-mounted-yet:/data:rw"]')
         line = next(ln for ln in service.splitlines()
                     if ln.startswith("ReadWritePaths="))
-        self.assertIn('"/mnt/not-mounted-yet"', line)
+        self.assertIn(f'"{real("/mnt/not-mounted-yet")}"', line)
 
     def test_anchored_volume_is_not_added_to_read_write_paths(self):
         # The workload root is already there; adding the same tree again would
@@ -2207,7 +2214,7 @@ class TestGeneratorVmWorkload(unittest.TestCase):
         self._write_vm_config(extra='volumes = ["/srv/data:/mnt/data"]')
         self._run()
         sidecar = self._read("workload-fedora-vm-virtiofs-mnt-data.service")
-        self.assertIn('RequiresMountsFor="/srv/data"', sidecar)
+        self.assertIn(f'RequiresMountsFor="{real("/srv/data")}"', sidecar)
 
     def test_virtiofsd_orders_after_declared_nested_mounts(self):
         # RequiresMountsFor= on the share root reaches the mounts along its
