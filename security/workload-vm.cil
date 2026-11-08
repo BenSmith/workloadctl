@@ -319,6 +319,12 @@
 ; to anything is another permission.
 (allow svirt_t init_t (unix_stream_socket (getattr ioctl read write)))
 
+; QEMU names the sender of the signal that stops it from the sender's /proc
+; entry. The shipped policy dontaudits that for init_t; here the sender is
+; workload-vm-notify, unconfined_service_t, and QEMU logs it as "<unknown
+; process>" either way. Nothing of the sender's is granted.
+(dontaudit svirt_t unconfined_service_t (dir (getattr open search)))
+
 ; passt runs beside QEMU, so QEMU can run its own -sandbox with spawn=deny
 ; (lib/egress_selinux.py, VM_PASST_TYPE). workload-vm-notify, which systemd
 ; runs as unconfined_service_t, starts it with runcon at passt_t: the

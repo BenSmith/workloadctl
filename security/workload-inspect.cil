@@ -576,12 +576,13 @@
 ; is 0711 before any inspector starts. The filecon above makes the new
 ; directory wlinspect_log_t at creation, so the create is checked against that
 ; type, and shipped policy grants systemd_tmpfiles_t nothing on it. Without
-; this rule tmpfiles logs "Permission denied" on every boot, and the directory
+; the create tmpfiles logs "Permission denied" on every boot, and the directory
 ; exists only once an inspector's LogsDirectory= has made it. Measured on a
 ; KVM host under enforcing 2026-09-27 with dontaudit rules off: `create` is
-; the whole denial. Correcting the mode of an existing directory needs nothing
-; more.
-(allow systemd_tmpfiles_t wlinspect_log_t (dir (create)))
+; the whole denial at boot. systemd-tmpfiles-clean.service opens and reads
+; every directory a `d` line names, aged or not, and fails the whole clean on
+; the one it cannot; the denial is dontaudited.
+(allow systemd_tmpfiles_t wlinspect_log_t (dir (create getattr open read search)))
 
 ; No module loads, as for every workload domain (see workload-vm.cil).
 (deny wlinspect_t kernel_t (system (module_request)))

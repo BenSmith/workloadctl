@@ -473,13 +473,20 @@ class TestBoundary(unittest.TestCase):
         rather than the mount."""
         self.assertIn("(allow init_t wlinspect_leaf_t (dir (mounton)))", _body())
 
-    def test_tmpfiles_may_create_the_record_parent(self):
+    def test_tmpfiles_may_create_and_clean_the_record_parent(self):
         """workloads-dirs.conf makes /var/log/workloadctl/egress at boot, and
         the filecon labels it wlinspect_log_t as it is created. Without the
-        grant tmpfiles fails on every boot with no AVC unless dontaudit rules
-        are off, and the directory appears only when an inspector starts."""
+        create tmpfiles fails on every boot with no AVC unless dontaudit rules
+        are off, and the directory appears only when an inspector starts.
+
+        The daily systemd-tmpfiles-clean.service opens and reads it too. On a
+        Fedora 45 gate (systemd 262), 2026-11-08, the clean failed every run
+        with "Failed to open directory /var/log/workloadctl/egress: Permission
+        denied" and status 73, the denial dontaudited; with the read the clean
+        passed under enforcing, dontaudit rules off."""
         self.assertIn(
-            "(allow systemd_tmpfiles_t wlinspect_log_t (dir (create)))", _body())
+            "(allow systemd_tmpfiles_t wlinspect_log_t "
+            "(dir (create getattr open read search)))", _body())
         conf = (ROOT / "systemd" / "workloads-dirs.conf").read_text()
         self.assertRegex(conf, r"(?m)^d\s+/var/log/workloadctl/egress\s")
 

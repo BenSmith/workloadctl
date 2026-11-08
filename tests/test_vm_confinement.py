@@ -130,6 +130,17 @@ class TestCilModule(unittest.TestCase):
             "(allow svirt_t wlvfsd_t (unix_stream_socket (connectto)))",
             self.rules)
 
+    def test_qemus_lookup_of_its_stopper_is_dontaudited_not_allowed(self):
+        """QEMU stopped by workload-vm-notify (unconfined_service_t) reads the
+        sender's /proc entry to name it in "terminating on signal 15 from
+        pid N". On a Fedora 45 gate, 2026-11-08, that left one svirt_t search
+        denial per stopped VM; the shipped policy dontaudits the same lookup
+        for an init_t sender. Hidden, never granted."""
+        self.assertIn(
+            "(dontaudit svirt_t unconfined_service_t (dir (getattr open search)))",
+            self.rules)
+        self.assertNotRegex(self.rules, r"\(allow svirt_t unconfined_service_t \(dir")
+
     def test_does_not_ship_the_blanket_unconfined_service_t_allow(self):
         """The scoped grant above replaces it; both would defeat the point."""
         self.assertNotRegex(
