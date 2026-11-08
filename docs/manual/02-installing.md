@@ -8,7 +8,8 @@ it is built to be baked into a bootc image as well.
 
 - Fedora 43 or later, with systemd. workloadctl is built and tested with
   SELinux enforcing, and installs policy modules of its own.
-- Python 3.14 and podman 5.3 or later, which Fedora 43 and 44 both ship.
+- Python 3.14 or later and podman 5.3 or later, which Fedora 43, 44 and 45
+  all ship.
 - For VM workloads: an x86_64 host with KVM (`/dev/kvm`).
 
 The package pulls in everything else it runs: passt, nftables, openssl, the
