@@ -100,7 +100,6 @@ member of the group.
 ```
 _wl-sunshine-streaming:600100000:65536  # main subuid range (this UID's; see docs/manual/10-troubleshooting.md)
 _wl-sunshine-streaming:39:1           # video (GID 39)
-_wl-sunshine-streaming:63:1           # audio (GID 63)
 _wl-sunshine-streaming:104:1          # render (GID 104)
 _wl-sunshine-streaming:105:1          # input (GID 105)
 ```
@@ -373,26 +372,15 @@ image-owned (`/usr/lib/udev/rules.d/72-uinput-input.rules`,
 
 ## Audio Setup
 
-**Problem**: No audio output despite `/dev/snd` being mapped into the container.
+The stream's audio needs no sound card. The container runs its own stack as
+three systemd units (`pipewire`, `wireplumber`, `pipewire-pulse`), each
+started as the container user after `container-bootstrap.service`, and
+Sunshine captures the sink they play into.
 
-**Root cause**: The workload user wasn't in the `audio` group, so the
-container process couldn't access `/dev/snd/*` devices (owned by `audio`,
-GID 63).
-
-**Fix**:
-1. Added `audio` to `extra_groups` in the workload TOML
-2. Added `/dev/snd` to `devices` list
-3. The container does NOT use host PipeWire/PulseAudio — it runs its own stack
-   as three systemd units (`pipewire`, `wireplumber`, `pipewire-pulse`), each
-   started as the container user after `container-bootstrap.service`
-4. WirePlumber auto-detects the ALSA devices under `/dev/snd`; there is no
-   card-selection config to maintain
-
-`audio = true` is deliberately *not* set in the TOML: that flag bind-mounts the
-host's PipeWire/Pulse sockets in, which would put a second sound server in front
-of the one this container runs. `/dev/snd` comes in as a `[storage]` volume
-rather than a `--device` because it is a directory whose node list changes across
-reboots.
+No host sound device comes in, and the workload is not in `audio`.
+`audio = true` is deliberately *not* set either: that flag bind-mounts the
+host's PipeWire/Pulse sockets in, which would put a second sound server in
+front of the one this container runs.
 
 ---
 
