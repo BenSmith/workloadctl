@@ -97,6 +97,7 @@ def _verify_all(updated: list, manager: WorkloadManager,
     info(" checking")
 
     rolled_back = 0
+    verified: list = []
     for config, old_ids in updated:
         have_old = any(old_ids.values())
         if config.has_health_check():
@@ -112,6 +113,7 @@ def _verify_all(updated: list, manager: WorkloadManager,
             if all(s == "healthy" for s in statuses.values()):
                 info(f"  ✓ {config.name}: healthy")
                 verdict(config, "healthy")
+                verified.append(config)
             elif any(s == "starting" for s in statuses.values()) and have_old:
                 # One container is still starting — give it the longest
                 # remaining interval before declaring failure.
@@ -129,6 +131,7 @@ def _verify_all(updated: list, manager: WorkloadManager,
                 if all(s == "healthy" for s in statuses.values()):
                     info(" healthy")
                     verdict(config, "healthy")
+                    verified.append(config)
                 else:
                     detail = ", ".join(f"{local_name}={s or 'unknown'}" for local_name, s in statuses.items()
                                        if s != "healthy")
@@ -158,6 +161,7 @@ def _verify_all(updated: list, manager: WorkloadManager,
             if not failed:
                 info(f"  ✓ {config.name}: active")
                 verdict(config, "active")
+                verified.append(config)
             elif have_old:
                 info(f"  ✗ {config.name}: service crashed ({', '.join(failed)})")
                 _do_rollback(config, manager)
@@ -166,6 +170,11 @@ def _verify_all(updated: list, manager: WorkloadManager,
             else:
                 warn(f"  ⚠ {config.name}: service crashed (no previous image to roll back)")
                 verdict(config, "crashed")
+
+    # Only verified workloads: a rolled-back one keeps its rejected image
+    # for inspection, and the next successful update's prune removes it.
+    for config in verified:
+        manager.podman(config).prune_dangling()
 
     return rolled_back
 

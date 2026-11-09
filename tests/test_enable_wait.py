@@ -114,6 +114,9 @@ class WaitHealthy(unittest.TestCase):
                       text)
 
 
+MANAGER = mock.MagicMock(name="manager")
+
+
 class TheWaitIsWired(unittest.TestCase):
     """cmd_enable calls the wait after the start, and only when asked."""
 
@@ -139,7 +142,7 @@ class TheWaitIsWired(unittest.TestCase):
         mocks = [p.start() for p in patches]
         self.addCleanup(mock.patch.stopall)
         with redirect_stdout(io.StringIO()):
-            cmd_enable.cmd_enable(args, "manager")
+            cmd_enable.cmd_enable(args, MANAGER)
         named = dict(zip(
             ("require_root", "workload_enabled_marker", "preflight_checks",
              "run_host_setup", "apply_selinux_policy", "apply_vm_fcontext",
@@ -150,7 +153,7 @@ class TheWaitIsWired(unittest.TestCase):
 
     def test_wait_runs_after_the_start_with_its_timeout(self):
         m, config = self.run_enable(45)
-        m["_wait_healthy"].assert_called_once_with(config, "manager", 45)
+        m["_wait_healthy"].assert_called_once_with(config, MANAGER, 45)
         self.assertTrue(m["start_service"].called)
 
     def test_no_wait_without_the_flag(self):

@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterable
 
+from cli_log import warn
 from service_runtime import ensure_runtime_dir
 
 
@@ -391,6 +392,24 @@ class Podman:
 
     def network_create(self, name: str) -> None:
         self._run("network", "create", name)
+
+    def prune_dangling(self) -> bool:
+        """Remove untagged images from this user's store; never `-a`, so
+        every tagged image (rollback tags, pet snapshots, the image a
+        container runs) stays. Returns True when something was removed.
+
+        Pruning is housekeeping: a failure warns and returns False, and
+        never fails the verb that asked for it.
+        """
+        try:
+            result = self.run("image", "prune", "-f", capture_output=True)
+        except Exception as e:
+            warn(f"  ⚠ Image prune skipped: {e}")
+            return False
+        if result.returncode != 0:
+            warn(f"  ⚠ Image prune failed: {(result.stderr or '').strip()}")
+            return False
+        return bool(result.stdout.strip())
 
     # ---------------- escape hatch -----------------
 

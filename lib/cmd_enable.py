@@ -113,6 +113,7 @@ def cmd_enable(args, manager: WorkloadManager):
             emit_result([{"workload": args.workload, "result": "failed",
                           "reason": str(e)}], ok=False)
             sys.exit(1)
+        manager.podman(config).prune_dangling()
     start_service(config)
 
     already_running = subprocess.run(

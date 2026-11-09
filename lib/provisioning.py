@@ -336,6 +336,10 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
     or already current there — meaning the override supplied the image and
     no pull should happen.
 
+    Never prunes: the update path calls this before it tags the image being
+    replaced as the rollback target, and a stopped workload's image is held
+    by no container, so a prune here could delete it. Callers prune.
+
     Compares image IDs between root and user stores; transfers if the user
     store is missing the image or has a stale copy after a rebuild.
     Raises ImageTransferError on a failed transfer, and for a pull=never

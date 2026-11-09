@@ -39,10 +39,9 @@ def cmd_images(args, manager: WorkloadManager):
                     # WORKLOADS_BASE/<name> — that's the root, one level above the
                     # real podman graphroot, so the prune would hit an empty store.
                     home = entry.pw_dir
-                    result = Podman.for_user(
+                    if Podman.for_user(
                         entry.pw_name, entry.pw_uid, home
-                    ).run("image", "prune", "-f", capture_output=True)
-                    if result.returncode == 0 and result.stdout.strip():
+                    ).prune_dangling():
                         pruned = True
                 except Exception:
                     continue

@@ -420,6 +420,8 @@ class ContainerSubstrate(Substrate):
                 pod = self.manager.podman(self.config)
                 self._pet_snapshot_and_remove(pod, self.config.container_name)
             self._restart_or_fail()
+            if self.manager.user_exists(self.config):
+                self.manager.podman(self.config).prune_dangling()
             return None
 
         specs = self.config.container_specs()
