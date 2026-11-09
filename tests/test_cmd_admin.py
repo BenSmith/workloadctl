@@ -1743,6 +1743,36 @@ class DiagnoseSubgidDelegationsTest(DiagnoseUserExistsTest):
         self.assertIn("Adding a delegation", check["message"])
 
 
+class DiagnoseImageShiftTest(DiagnoseUserExistsTest):
+    """The battery runs the image_shift check over the image's layers."""
+
+    def _checks(self, facts):
+        self.pod.gid_map.return_value = [(0, 10005, 1), (1, 600000, 65536)]
+        self.pod.image_info.return_value = {"GraphDriver": {"Data": {}}}
+        with mock.patch.object(diagnose_battery, "image_shift_facts",
+                               return_value=facts) as read:
+            code, out = self._run(json_mode=True)
+        self.read = read
+        return {c["check"]: c for c in json.loads(out)["checks"]}
+
+    def test_a_shifted_image_fails_the_check(self):
+        checks = self._checks(
+            ({14: 1, 24: 3}, {12: "mail", 22: "utmp"}, None, 0))
+        self.assertFalse(checks["image_shift"]["passed"])
+        self.assertIn("+2", checks["image_shift"]["message"])
+        self.assertEqual(self.read.call_args.args[1],
+                         str(workload_lib.workload_state_dir("app")))
+
+    def test_a_clean_image_passes_the_check(self):
+        checks = self._checks(
+            ({12: 1, 22: 3}, {12: "mail", 22: "utmp"}, None, 0))
+        self.assertTrue(checks["image_shift"]["passed"])
+
+    def test_an_image_not_judged_adds_no_check(self):
+        checks = self._checks(None)
+        self.assertNotIn("image_shift", checks)
+
+
 class EditControlFileExtraTest(EditControlFileTest):
     """_edit_control_file: symlink-escape guard and executable-bit handling."""
 

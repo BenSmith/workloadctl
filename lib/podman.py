@@ -302,6 +302,12 @@ class Podman:
         )
         return out[0] if out else None
 
+    def gid_map(self) -> list[tuple[int, int, int]]:
+        """The user namespace's gid map as (namespace, host, size) rows."""
+        proc = self._run("unshare", "cat", "/proc/self/gid_map")
+        return [tuple(int(f) for f in line.split())
+                for line in proc.stdout.splitlines() if line.strip()]
+
     def container_inspect(self, name: str) -> dict | None:
         """Full inspect dict for a container, or None if not found."""
         out = self._run(

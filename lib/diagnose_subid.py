@@ -184,3 +184,76 @@ def subgid_delegation_check(
             f"{_gid_names(pending, names)}. Adding a delegation shifts the "
             f"group ids of the workload's existing image and volume files.")
     return False, " ".join(parts) + " " + _MANUAL, None
+
+
+
+_SHIFT_RANGE = 16
+
+
+def _shift_by_histogram(counts, groups):
+    """(k, named at k, named as stored) for the offset that names the most
+    files, or None when none names more than the stored ids do."""
+    def named(k):
+        return sum(c for g, c in counts.items()
+                   if g - k >= 1 and g - k in groups)
+
+    best = max((k for k in range(-_SHIFT_RANGE, _SHIFT_RANGE + 1) if k),
+               key=lambda k: (named(k), -abs(k), k))
+    if named(best) > named(0):
+        return best, named(best), named(0)
+    return None
+
+
+def image_shift_check(check_name, image, counts, groups, shadow_gid, outside):
+    """(check, passed, message, fix) for whether an image's stored group
+    ids still match its own /etc/group, or None when there is no group
+    file to judge by.
+
+    `counts` is {gid: files} for files in the image's layers on a gid of 1
+    or more, translated to the workload's namespace ids (gid 0 never moves
+    for a layer stored without a recorded map, so it says nothing);
+    `groups` is {gid: name} from the image's /etc/group; `shadow_gid` is
+    /etc/shadow's translated gid, or None; `outside` counts files whose
+    host gid is outside the workload's current map.
+
+    A layer stored under this user's map cannot have a gid outside it
+    unless the layout changed, so `outside` is a finding on its own.
+    /etc/shadow is the anchor when the image names a shadow group: a gid
+    within 16 of it is the shift, and an equal one settles the image as
+    clean. Without an anchor the verdict is the offset that names clearly
+    more files than the stored ids do; a few gids the image never named
+    are not a finding by themselves.
+    """
+    if not groups:
+        return None
+    shift = None
+    evidence = []
+    shadow = next((g for g, n in sorted(groups.items()) if n == "shadow"),
+                  None)
+    anchored = False
+    if shadow_gid is not None and shadow_gid >= 1 and shadow is not None:
+        if shadow_gid == shadow:
+            anchored = True
+        elif abs(shadow_gid - shadow) <= _SHIFT_RANGE:
+            anchored = True
+            shift = shadow_gid - shadow
+            evidence.append(f"/etc/shadow is on gid {shadow_gid} but the "
+                            f"image's shadow group is {shadow}")
+    if not anchored:
+        found = _shift_by_histogram(counts, groups)
+        if found:
+            shift, at_k, as_stored = found
+            total = sum(counts.values())
+            evidence.append(f"{at_k} of {total} files name a group at "
+                            f"{shift:+d}, {as_stored} as stored")
+    if outside > 0:
+        evidence.append(f"{outside} files have a host gid outside the "
+                        f"current gid map")
+    if not evidence:
+        return (check_name, True,
+                f"Image {image}: group ids match its /etc/group", None)
+    head = (f"Image {image} was stored under a different subgid layout "
+            f"(shifted by {shift:+d})" if shift is not None else
+            f"Image {image} was stored under a different subgid layout")
+    return (check_name, False,
+            f"{head}: {'; '.join(evidence)}. {_MANUAL}", _MANUAL)

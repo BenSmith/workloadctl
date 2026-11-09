@@ -27,6 +27,7 @@ from diagnose_egress import (
     vm_egress_check, vm_network_check,
 )
 from diagnose_image_age import image_age_check
+from diagnose_image_shift import image_shift_facts
 from shares import load_shares, memberships, shares_file
 from diagnose_inspect import inspect_check
 from diagnose_resolve import container_resolve_check, vm_resolve_check
@@ -39,7 +40,9 @@ from diagnose_selinux import (
     gpu_selinux_check, selinux_label_check, vm_confinement_check,
     vm_socket_dir_selinux_check,
 )
-from diagnose_subid import subid_derived_check, subid_overlap_check
+from diagnose_subid import (
+    image_shift_check, subid_derived_check, subid_overlap_check,
+)
 from ensure_container import subgid_delegation_check_for
 from egress_selinux import (
     VM_SOCKET_FCONTEXT_PATTERN, VM_SOCKET_SELINUX_TYPE,
@@ -60,7 +63,8 @@ from recursive_readonly import (
 )
 from workload_lib import (
     expand_volume_path, HOST_USERNS_OPT_IN, normalize_containers,
-    selinux_module_name, selinux_type_name, WORKLOADCTL_VERSION,
+    selinux_module_name, selinux_type_name, workload_state_dir,
+    WORKLOADCTL_VERSION,
 )
 from workload_uid import (
     derived_subid_range, login_defs_subid_window, read_subid_entry,
@@ -582,6 +586,29 @@ def _image_age_checks(config, manager, _check, podman_read):
             _check(*result)
 
 
+def _image_shift_checks(config, manager, _check, podman_read):
+    """Each present image's stored group ids against its own /etc/group:
+    shifted when the subgid layout changed since the layers were stored."""
+    podman = manager.podman(config)
+    ok, gid_map = podman_read(podman.gid_map)
+    if not ok or not isinstance(gid_map, list):
+        return
+    state_dir = str(workload_state_dir(config.name))
+    cache = {}
+    for cname, image, _pull in config.container_specs():
+        ok, info = podman_read(podman.image_info, image)
+        if not ok or not isinstance(info, dict):
+            continue
+        facts = image_shift_facts(info, state_dir, gid_map, cache)
+        if facts is None:
+            continue
+        check_name = (f"image_shift[{cname}]" if config.is_multi
+                      else "image_shift")
+        result = image_shift_check(check_name, image, *facts)
+        if result:
+            _check(*result)
+
+
 def _share_checks(config, _check, shares=None, getxattr=os.getxattr):
     """Each share the workload is in: declared, there, and at its category
     (shares.py). A label that cannot be read (no SELinux) is not judged."""
@@ -1022,6 +1049,7 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
     if user_exists and not config.is_vm:
         _image_checks(config, manager, _check, podman_read)
         _image_age_checks(config, manager, _check, podman_read)
+        _image_shift_checks(config, manager, _check, podman_read)
 
     if _service_file_checks(config, _check):
         _units_current_checks(config, _check)
