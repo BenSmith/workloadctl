@@ -4,8 +4,13 @@ diagnose_subid — is a workload's subordinate id range the one it should have?
 Pure verdicts over what the battery read out of /etc/subuid and /etc/subgid;
 the range arithmetic they compare against lives in lib/workload_uid.py.
 subid_derived_check is the load-bearing one and subid_overlap_check its
-corroboration — each docstring says why.
+corroboration — each docstring says why. subgid_delegation_check reads the
+single-gid lines a workload's delegated groups put in /etc/subgid.
 """
+
+import re
+
+_MANUAL = 'See 08-security.md, "When a delegated group changes".'
 
 
 def subid_derived_check(
@@ -106,3 +111,76 @@ def subid_overlap_check(
             "urgent on its own — check `/etc/subuid` for a human user's range "
             "that already overlaps this one, which is the case that has "
             "already gone wrong rather than one that might")
+
+
+def _gid_names(gids, names):
+    return ", ".join(f"{g} ({names[g]})" if g in names else str(g)
+                     for g in gids)
+
+
+def extra_gidmap_host_gids(security: dict) -> set[int]:
+    """Host gids the `extra_gidmaps` of a [security] table name, which the
+    operator delegates by hand."""
+    hosts = set()
+    for m in security.get("extra_gidmaps", []):
+        match = re.fullmatch(r"\+?\d+:@?(\d+):(\d+)", m)
+        if match:
+            host, size = (int(g) for g in match.groups())
+            hosts.update(range(host, host + size))
+    return hosts
+
+
+def subgid_delegation_check(
+    subgid_text: str,
+    username: str,
+    required: list[int],
+    mapped: set[int],
+    names: dict[int, str] | None = None,
+) -> tuple[bool, str, str | None]:
+    """Verdict: do the user's single-gid subgid lines match the groups the
+    workload delegates?
+
+    podman numbers a rootless user's namespace by sorting its subgid ranges
+    by host id, and the single-gid lines sort before the main range. Adding
+    or removing one shifts the group ids of the files already in the
+    workload's images and volumes, so both directions are findings:
+
+    - stale: a `user:G:1` line whose G is neither in `required` (what the
+      writer would delegate) nor in `mapped` (host gids `extra_gidmaps`
+      names, delegated by hand);
+    - pending: a required G with no line yet.
+
+    A user with no main range line is not provisioned: nothing exists to
+    shift, so the verdict is clean. A line with a count other than 1 is the
+    main range and never stale. Only `username`'s lines count.
+    """
+    names = names or {}
+    lines = []
+    for raw in subgid_text.splitlines():
+        parts = raw.strip().split(":")
+        if len(parts) != 3 or parts[0] != username:
+            continue
+        try:
+            lines.append((int(parts[1]), int(parts[2])))
+        except ValueError:
+            continue
+    if not any(count != 1 for _, count in lines):
+        return True, "Subgid delegations match the required groups", None
+    present = [start for start, count in lines if count == 1]
+    stale = sorted({g for g in present
+                    if g not in required and g not in mapped})
+    pending = [g for g in required if g not in present]
+    if not stale and not pending:
+        return True, "Subgid delegations match the required groups", None
+    parts = []
+    if stale:
+        parts.append(
+            f"{username} has subgid delegations no workload group needs: "
+            f"{_gid_names(stale, names)}. Removing a delegation shifts the "
+            f"group ids of the workload's existing image and volume files.")
+    if pending:
+        parts.append(
+            f"{username} needs subgid delegations it does not have yet: "
+            f"{_gid_names(pending, names)}. Adding a delegation shifts the "
+            f"group ids of the workload's existing image and volume files.")
+    return False, " ".join(parts) + " " + _MANUAL, None

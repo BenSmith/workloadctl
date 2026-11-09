@@ -16,13 +16,16 @@ module's docstring for why the copy matters.
 
 import grp
 import os
+import re
 import posixpath
 import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 
 import service_runtime
+from diagnose_subid import extra_gidmap_host_gids, subgid_delegation_check
 from config_parser import parse_volume_spec, workload_root_dir
+from shares import load_shares, resolve as resolve_shares
 from workload_lib import (
     expand_volume_path, normalize_containers, workload_state_dir,
 )
@@ -35,6 +38,57 @@ from ensure_common import (
     _provision_dir_secure, _descend_nofollow, _make_missing_dirs_secure,
     volume_dir_mode,
 )
+
+
+def delegated_gids(config, warn=None):
+    """The host gids a workload needs a single-gid subgid line for, in order.
+
+    These are the `extra_groups` of the config as the units run it (pass it
+    through shares.resolve first). A workload in the host user namespace
+    needs none: its host gids are natively available, and a non-contiguous
+    subgid entry for one creates a spurious mapping. A group that does not
+    exist is skipped, and `warn` is called with the reason.
+    """
+    if config.get("security", {}).get("userns", "") == "host":
+        return []
+    gids = []
+    for group_name in config.get("security", {}).get("extra_groups", []):
+        try:
+            gid = grp.getgrnam(group_name).gr_gid
+        except KeyError:
+            if warn:
+                warn(f"Group '{group_name}' not found, skipping subgid entry")
+            continue
+        if gid not in gids:
+            gids.append(gid)
+    return gids
+
+
+def subgid_delegation_check_for(
+    config: dict, username: str, subgid_path: Path,
+) -> tuple[bool, str, str | None]:
+    """subgid_delegation_check over a workload's config and the subgid file.
+
+    `config` is the workload as written; the share groups are resolved here
+    the way the units run it, so this and the writer agree on "required".
+    """
+    shares, _ = load_shares()
+    resolved = resolve_shares(config, shares)
+    required = delegated_gids(resolved)
+    mapped = extra_gidmap_host_gids(resolved.get("security", {}))
+    try:
+        text = Path(subgid_path).read_text()
+    except FileNotFoundError:
+        text = ""
+    listed = {int(g) for g in re.findall(
+        rf"^{re.escape(username)}:(\d+):1$", text, re.M)}
+    names = {}
+    for gid in set(required) | mapped | listed:
+        try:
+            names[gid] = grp.getgrgid(gid).gr_name
+        except KeyError:
+            pass
+    return subgid_delegation_check(text, username, required, mapped, names)
 
 
 def configure_subuid_subgid(pw, config):
@@ -73,19 +127,11 @@ def configure_subuid_subgid(pw, config):
     required_uid_entries = [main_entry]
     required_gid_entries = [main_entry]
 
-    # Extra-group subgid entries are only needed when the container runs in its
-    # own user namespace.  For userns=host the GIDs are natively available.
-    userns = config.get("security", {}).get("userns", "")
-    if userns != "host":
-        for group_name in config.get("security", {}).get("extra_groups", []):
-            try:
-                gid = grp.getgrnam(group_name).gr_gid
-            except KeyError:
-                ensure_common.log(f"  WARNING: Group '{group_name}' not found, skipping subgid entry")
-                continue
-            gid_entry = f"{username}:{gid}:1"
-            if gid_entry not in required_gid_entries:
-                required_gid_entries.append(gid_entry)
+    for gid in delegated_gids(
+            config, warn=lambda m: ensure_common.log(f"  WARNING: {m}")):
+        gid_entry = f"{username}:{gid}:1"
+        if gid_entry not in required_gid_entries:
+            required_gid_entries.append(gid_entry)
 
     # Lock around check-then-write to handle parallel ExecStartPre. The shared
     # subid_lock() is the same SUBID_LOCK flock the allocators hold; this script

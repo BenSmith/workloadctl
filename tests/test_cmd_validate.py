@@ -550,6 +550,7 @@ class WarningPassedFlagTest(unittest.TestCase):
         "vm_internal_unresolvable": False,
         "container_internal_unresolvable": False,
         "vm_mac_collision": False,
+        "subgid_delegations": False,
     }
 
     @staticmethod

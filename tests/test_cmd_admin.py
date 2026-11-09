@@ -1446,7 +1446,7 @@ class ValidateSingleErrorsTest(unittest.TestCase):
     def test_existing_group_ok(self):
         cfg = self._cfg('[workload]\nname = "app"\n\n[container]\nimage = "x"\n'
                         '\n[security]\nextra_groups = ["render"]\n')
-        with mock.patch.object(cmd_validate.grp, "getgrnam", lambda g: object()):
+        with mock.patch.object(cmd_validate.grp, "getgrnam", lambda g: types.SimpleNamespace(gr_gid=900, gr_name=g)):
             res = self._validate(cfg)
         self.assertTrue(
             next(c for c in res["checks"] if c["check"] == "group_exists")["passed"])
@@ -1709,6 +1709,38 @@ class DiagnoseEdgeBranchesTest(DiagnoseUserExistsTest):
         check = next(c for c in data["checks"] if c["check"] == "uid_mapping")
         self.assertFalse(check["passed"])
         self.assertIn("Error reading subuid", check["message"])
+
+
+class DiagnoseSubgidDelegationsTest(DiagnoseUserExistsTest):
+    """The subgid_delegations check carries the stale/pending verdict."""
+
+    def _check_for(self, subgid_extra, groups=()):
+        extra = ", ".join(f'"{g}"' for g in groups)
+        (self.tmp / "app" / "workload.toml").write_text(
+            '[workload]\nname = "app"\n\n[container]\nimage = "x"\n'
+            f'\n[security]\nextra_groups = [{extra}]\n')
+        self._subgid += subgid_extra
+        with mock.patch("grp.getgrnam", lambda g: types.SimpleNamespace(
+                gr_gid=105, gr_name=g)):
+            code, out = self._run(json_mode=True)
+        return next(c for c in json.loads(out)["checks"]
+                    if c["check"] == "subgid_delegations")
+
+    def test_clean_when_the_lines_match(self):
+        check = self._check_for("_wl-app:105:1\n", groups=["render"])
+        self.assertTrue(check["passed"])
+
+    def test_stale_line_fails_the_check(self):
+        check = self._check_for("_wl-app:966:1\n")
+        self.assertFalse(check["passed"])
+        self.assertIn("966", check["message"])
+        self.assertIn("Removing a delegation", check["message"])
+
+    def test_pending_group_fails_the_check(self):
+        check = self._check_for("", groups=["render"])
+        self.assertFalse(check["passed"])
+        self.assertIn("105", check["message"])
+        self.assertIn("Adding a delegation", check["message"])
 
 
 class EditControlFileExtraTest(EditControlFileTest):

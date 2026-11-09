@@ -40,6 +40,7 @@ from diagnose_selinux import (
     vm_socket_dir_selinux_check,
 )
 from diagnose_subid import subid_derived_check, subid_overlap_check
+from ensure_container import subgid_delegation_check_for
 from egress_selinux import (
     VM_SOCKET_FCONTEXT_PATTERN, VM_SOCKET_SELINUX_TYPE,
     VM_SOCKET_SELINUX_TYPE_REAL,
@@ -219,7 +220,7 @@ def _user_exists_check(config, manager, _check) -> bool:
 
 
 def _subid_checks(config, _check):
-    """Subuid/subgid configured, derived from the uid, and clear of login.defs."""
+    """Subuid/subgid configured, derived from the uid, clear of login.defs, and delegating the groups the workload needs."""
     with_entries = subid_files_with_entries(config.username)
     subuid_exists = subuid_file() in with_entries
     subgid_exists = subgid_file() in with_entries
@@ -252,6 +253,8 @@ def _subid_checks(config, _check):
                    *subid_derived_check(entries, expected, config.uid))
         if window:
             _check("subid_overlap", *subid_overlap_check(entries, window))
+    _check("subgid_delegations", *subgid_delegation_check_for(
+        config.config, config.username, subgid_file()))
 
 
 def _linger_check(config, _check) -> bool:

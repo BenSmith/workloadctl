@@ -18,7 +18,9 @@ from container_network_config import (
     container_internal_entries,
     container_uses_inspect,
 )
+from ensure_container import subgid_delegation_check_for
 from workload_lib import expand_volume_path, GENERATOR_OWNED_DIRECTIVES
+from workload_uid import subgid_file
 from workload_selinux import shadowed_filecon_paths
 from egress_policy import internal_hosts, vm_uses_inspect
 from broker_config import vm_credential_entries
@@ -552,6 +554,14 @@ def validate_single(config: WorkloadConfig, manager: WorkloadManager, json_mode=
                   f"workload(s): {', '.join(collisions)}",
                   passed=False,
                   fix="Rename one of the colliding VM workloads.")
+
+    # Adding or removing a delegated group renumbers the files already in the
+    # workload's images and volumes. The workload still runs, so a warning.
+    if not config.is_vm:
+        in_step, message, _ = subgid_delegation_check_for(
+            config.config, config.username, subgid_file())
+        if not in_step:
+            _warn("subgid_delegations", message, passed=False)
 
     errors = sum(1 for c in checks if c["severity"] == "error")
     warnings = sum(1 for c in checks if c["severity"] == "warning")
