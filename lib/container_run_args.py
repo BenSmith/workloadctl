@@ -153,24 +153,28 @@ def _keep_id_ids(userns_mode, uid):
     return ids["uid"], ids["gid"]
 
 
-def pod_member_user(security, uid, extra_groups):
-    """The --user= a pod member that names no user is given, or None.
+def default_user(security, uid):
+    """The --user= a container that names no user is given, or None.
 
-    `security` is the top-level block, which the pod create reads. Under
-    --userns=keep-id the pod hands its keep-id user to a member that names
-    none, but podman builds that member's capabilities as root's, and a
-    `podman exec` or health check as that user holds all of them, ambient.
-    Naming the same user puts the member on podman's non-root path: the
-    user holds what [security].capabilities adds, as in single mode, where
-    keep-id names the user itself. The image's USER is not used; the
-    member's own user sets another. The +N:@N:1 maps and userns=host give
-    the pod no user, and a member that names none runs as root.
+    `security` is the block the container's userns comes from: the
+    container's own in single and bridge mode, the workload's in pod
+    mode, where the pod create reads it. Under every keep-id form the
+    workload runs as the keep-id target (`_keep_id_ids`): the workload
+    uid and gid, or those the :uid=N,gid=N suffix names. That holds
+    whether keep-id is written as --userns or as +N:@uid:1 maps. The
+    image's USER is not used, and the process does not land on a subuid
+    as container root or as the image's user; the container's own user
+    sets another. userns=host names no user.
+
+    A named user also puts the container on podman's non-root path. An
+    unnamed pod member would get root's capabilities, and a `podman exec`
+    or health check as that user would hold all of them, ambient. Named,
+    the user holds what [security].capabilities adds, as in single mode.
     """
     userns_mode = security.get("userns", "keep-id")
     if not valid_userns_mode(userns_mode):
         userns_mode = "keep-id"
-    if (not userns_mode.startswith("keep-id")
-            or _needs_auto_maps(security, userns_mode, extra_groups)):
+    if not userns_mode.startswith("keep-id"):
         return None
     return "%d:%d" % _keep_id_ids(userns_mode, uid)
 
@@ -470,11 +474,13 @@ def _security_args(spec):
     container_user = container.get("container", {}).get("user", "")
     if container_user:
         args.append(f"--user={container_user}")
-    elif mode == "pod":
-        member_user = pod_member_user(config.get("security", {}), spec.uid,
-                                      extra_groups)
-        if member_user:
-            args.append(f"--user={member_user}")
+    else:
+        # The block this mode's userns comes from.
+        userns_block = (config.get("security", {}) if mode == "pod"
+                        else container.get("security", {}))
+        default = default_user(userns_block, spec.uid)
+        if default:
+            args.append(f"--user={default}")
 
     capabilities = container.get("security", {}).get("capabilities", [])
     for cap in capabilities:

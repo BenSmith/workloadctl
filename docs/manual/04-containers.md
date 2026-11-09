@@ -167,21 +167,37 @@ and drop the `Z`.
 
 ### Who owns the files
 
-Under the default user namespace, the UID inside the container that matches
-the workload's own is the workload user on the host. Files written as that
-UID belong to the workload user; files written as any other UID, container
-root included, belong to a subordinate ID. For an image that runs as a
-fixed user, `userns` in `[security]` moves the workload user to that UID:
+By default the container runs as the workload user, with its UID and GID,
+whatever `USER` the image names. Files it writes belong to the workload user
+on the host. A container that names its own `user` in `[container]` runs as
+that instead.
+
+An image that has to run as its own fixed user gets `userns` in `[security]`
+set to that user's UID and GID, which makes that UID the workload user:
 
 ```toml
 [security]
 userns = "keep-id:uid=1000,gid=1000"
 ```
 
-For an image that has to run as root, `[container] user = "0"` with
-`[security] userns = "keep-id:uid=0,gid=0"` makes container root the workload
-user, still inside a private user namespace. [Security](08-security.md) covers
-user namespaces in full.
+For an image that has to run as root, `keep-id:uid=0,gid=0` makes container
+root the workload user, still inside a private user namespace; the default
+user is then `0:0`. [Security](08-security.md) covers user namespaces in
+full.
+
+#### When a container's identity changes
+
+A new `userns`, a new image user or a change of this default changes the UID
+a container runs as. Files it wrote before stay owned by the old ID, often a
+subordinate ID no host account has, and a program that checks the owner of
+its files may refuse them. Re-own them to the workload user:
+
+1. Stop the workload.
+2. List what the old ID owns in the workload's volumes, and keep the list so
+   the change can be reverted:
+   `find <dir> -uid <old> -o -gid <old>`.
+3. `chown` those files to the workload user.
+4. Change the setting and recreate the workload.
 
 ### Read-only all the way down
 
@@ -715,9 +731,8 @@ other on `localhost`, as the proxy above reaches the application on port 3000.
 Ports are published once, for the whole pod, in the top-level `[network]`. The
 containers share one user namespace too, so `userns` and the ID maps go in the
 top-level `[security]`; a container's own value is ignored with a warning.
-Under the default `keep-id`, a container that names no `user` runs as the
-workload user rather than its image's `USER`, unless the workload sets
-`extra_groups` or explicit ID maps. Pod mode suits tightly coupled sidecars
+Under `keep-id`, a container that names no `user` runs as the workload user
+rather than its image's `USER`. Pod mode suits tightly coupled sidecars
 behind one set of ports.
 
 In **bridge** mode each container has its own network namespace, all joined

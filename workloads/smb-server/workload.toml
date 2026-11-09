@@ -81,7 +81,7 @@ volumes = [
 ]
 
 [security]
-userns = "keep-id"
+userns = "keep-id:uid=0,gid=0"
 
 # Named users, for a share that is not guest (see README "Named users").
 # SMB_USERS lists them; each password is SMB_PASSWORD_<NAME> (upper case,

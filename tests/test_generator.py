@@ -691,8 +691,11 @@ class TestGeneratorMultiContainer(unittest.TestCase):
         self.assertIn("Requires=workload-stack-a.service workload-stack-b.service", umbrella)
 
 
-class TestPodMemberUser(unittest.TestCase):
-    """A pod member that names no user is given the pod's keep-id user.
+class TestDefaultUser(unittest.TestCase):
+    """A container that names no user is given its keep-id user, in every
+    mode and under every keep-id spelling.
+
+    The pod member case, measured first:
 
     Measured on the proving host (podman 5.8.7, 2026-09-30), with this
     generator's flags: --userns=keep-id on `podman pod create` and no user on
@@ -705,9 +708,8 @@ class TestPodMemberUser(unittest.TestCase):
     User, and its exec and health check held nothing, or exactly what
     --cap-add named, as single mode does. --user=1000 alone ran it with gid 0.
     keep-id's uid=/gid= suffixes moved the inherited user and closed the same
-    way. With the +N:@N:1 maps or userns=host the pod had no user and its
-    members ran as root, where naming a user would demote them. An image's
-    USER line kept its member off the root path, and is overridden now.
+    way. An image's USER line kept its member off the root path, and is
+    overridden. userns=host names no user.
     """
 
     def setUp(self):
@@ -725,12 +727,17 @@ class TestPodMemberUser(unittest.TestCase):
         lines = ["[workload]", 'name = "stack"', f'mode = "{mode}"']
         if security:
             lines += ["[security]", *security]
-        lines += ["[[containers]]", 'name = "a"', "[containers.container]",
-                  'image = "img-a"', *member]
+        if mode == "single":
+            lines += ["[container]", 'image = "img-a"', *member]
+            unit_name = "workload-stack.service"
+        else:
+            lines += ["[[containers]]", 'name = "a"', "[containers.container]",
+                      'image = "img-a"', *member]
+            unit_name = "workload-stack-a.service"
         write_config(self.config_dir, "stack", "\n".join(lines) + "\n")
         r = run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         self.assertEqual(r.returncode, 0, r.stderr)
-        unit = (Path(self.services_dir) / "workload-stack-a.service").read_text()
+        unit = (Path(self.services_dir) / unit_name).read_text()
         run = [line for line in unit.splitlines()
                if line.startswith("ExecStart=") and "podman run" in line]
         self.assertEqual(len(run), 1, unit)
@@ -772,21 +779,86 @@ class TestPodMemberUser(unittest.TestCase):
         run, _, _ = self._generate(member=['user = "node"'])
         self.assertEqual(re.findall(r"--user=(\S+)", run), ["node"])
 
-    def test_a_pod_with_no_user_names_none(self):
-        for security in (
-            ['extra_uidmaps = ["+5:@{UID}:1"]'],
-            ['userns = "host"', "unsafe_host_userns = true"],
-        ):
-            with self.subTest(security=security):
-                run, pod, _ = self._generate(security=security)
-                self.assertNotIn("--userns=keep-id", pod)
+    def _users(self, run):
+        return re.findall(r"--user=(\S+)", run)
+
+    def _generate_in(self, mode, security, member=(), top=()):
+        """_generate with `security` where `mode`'s userns is read. A
+        single container's [security] and the pod's are both the
+        workload's block; a bridge container reads its own."""
+        if mode == "bridge":
+            return self._generate(
+                mode=mode, security=top,
+                member=[*member, "[containers.security]", *security])
+        return self._generate(mode=mode, security=[*security, *top],
+                              member=member)
+
+    def test_every_mode_names_the_keep_id_user(self):
+        for mode in ("single", "bridge", "pod"):
+            with self.subTest(mode=mode):
+                run, _, uid = self._generate_in(mode, [])
+                self.assertEqual(self._users(run), [f"{uid}:{uid}"])
+
+    def test_keep_id_suffixes_name_the_ids_in_every_mode(self):
+        for mode in ("single", "bridge", "pod"):
+            for userns, want in (
+                ("keep-id:uid=0,gid=0", "0:0"),
+                ("keep-id:uid=65532,gid=65532", "65532:65532"),
+            ):
+                with self.subTest(mode=mode, userns=userns):
+                    run, _, _ = self._generate_in(
+                        mode, [f'userns = "{userns}"'])
+                    self.assertEqual(self._users(run), [want])
+
+    def test_an_invalid_userns_names_the_keep_id_user_in_every_mode(self):
+        for mode in ("single", "bridge", "pod"):
+            with self.subTest(mode=mode):
+                run, _, uid = self._generate_in(mode, ['userns = "bogus"'])
+                self.assertEqual(self._users(run), [f"{uid}:{uid}"])
+
+    def test_explicit_maps_name_the_user_and_keep_the_groups(self):
+        for mode in ("single", "bridge", "pod"):
+            for label, security, top in (
+                ("extra_groups", [], ['extra_groups = ["video"]']),
+                ("extra_uidmaps", ['extra_uidmaps = ["+5:@{UID}:1"]'], []),
+            ):
+                with self.subTest(mode=mode, source=label):
+                    run, pod, uid = self._generate_in(
+                        mode, security, top=top)
+                    self.assertEqual(self._users(run), [f"{uid}:{uid}"])
+                    self.assertNotIn("--userns=keep-id", pod or run)
+                    if label == "extra_groups":
+                        self.assertIn("--group-add=keep-groups", run)
+
+    def test_explicit_maps_name_the_suffix_ids(self):
+        for mode in ("single", "bridge", "pod"):
+            with self.subTest(mode=mode):
+                run, _, _ = self._generate_in(
+                    mode, ['userns = "keep-id:uid=0,gid=0"',
+                           'extra_uidmaps = ["+5:@{UID}:1"]'])
+                self.assertEqual(self._users(run), ["0:0"])
+
+    def test_userns_host_names_no_user(self):
+        for mode in ("single", "bridge", "pod"):
+            with self.subTest(mode=mode):
+                run, _, _ = self._generate_in(
+                    mode, ['userns = "host"'],
+                    top=["unsafe_host_userns = true"])
                 self.assertNotIn("--user=", run)
 
-    def test_bridge_mode_names_none(self):
-        run, pod, _ = self._generate(mode="bridge")
-        self.assertIsNone(pod)
-        self.assertIn("--userns=keep-id", run)
-        self.assertNotIn("--user=", run)
+    def test_an_explicit_user_is_the_only_one_in_every_mode(self):
+        for mode in ("single", "bridge", "pod"):
+            for security in ([], ['extra_uidmaps = ["+5:@{UID}:1"]'],
+                             ['userns = "keep-id:uid=0,gid=0"']):
+                with self.subTest(mode=mode, security=security):
+                    run, _, _ = self._generate_in(
+                        mode, security, member=['user = "node"'])
+                    self.assertEqual(self._users(run), ["node"])
+                    self.assertEqual(len(re.findall(r"--user\b(?!ns)", run)), 1)
+
+    def test_single_mode_puts_the_user_beside_the_userns(self):
+        run, _, uid = self._generate(mode="single")
+        self.assertIn(f"--userns=keep-id --user={uid}:{uid}", run)
 
 
 class TestGeneratorPlainEnvVars(unittest.TestCase):

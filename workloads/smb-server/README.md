@@ -117,12 +117,18 @@ Then add a stanza in `smb.conf` pointing at the container path. Keep the mount
     force user = root
 ```
 
-`force user = root` is not a privilege grant: under `userns = "keep-id"` the
-container's uid 0 is the unprivileged `_wl-smb-server` host user. It has to be
+`force user = root` is not a privilege grant: under
+`userns = "keep-id:uid=0,gid=0"` the container's uid 0 is the unprivileged
+`_wl-smb-server` host user, and the container runs as it. It has to be
 the container-side name, because smbd resolves it against the *container's*
 passwd database — the host username has no entry there, and an unresolvable
 name fails every tree connect with `NT_STATUS_NO_SUCH_USER`. `entrypoint.sh`
 handles the matching group half; see the comment there.
+
+Switching an existing instance from plain `keep-id` needs a one-time re-own of
+what the old container root wrote: its state, run and log directories and any
+file it wrote in a share. smbd refuses files owned by another id. [Who owns the
+files](../../docs/manual/04-containers.md#who-owns-the-files) has the steps.
 
 ## Port 445
 

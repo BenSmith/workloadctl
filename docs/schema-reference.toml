@@ -101,8 +101,8 @@
 # command = ["sleep", "infinity"]
 
 # The user the container runs as (podman --user), by UID or name.
-# Type: string. Default: the image's USER; in a pod-mode member under keep-id,
-# the pod's keep-id user.
+# Type: string. Default: under keep-id, the workload's keep-id uid and
+# gid, whatever the image's USER; under userns "host", the image's USER.
 # See: 04-containers.md "Who owns the files"; 08-security.md "User namespaces"
 # user = "0"
 
