@@ -11,6 +11,7 @@ profile that is and renders the derived one.
 
 Installed to /usr/libexec/workloadctl/container_run_args.py.
 """
+import json
 import os
 import grp
 import re
@@ -319,6 +320,9 @@ def _health_check_args(container):
     health_cmd = health.get("cmd", "")
     if not health_cmd:
         return []
+    if isinstance(health_cmd, list):
+        # "CMD" first keeps a one-element array from being read as shell form.
+        health_cmd = json.dumps(["CMD", *health_cmd])
     args = [f"--health-cmd {dq(health_cmd)}"]
     if "interval" in health:
         args.append(f"--health-interval={health['interval']}")

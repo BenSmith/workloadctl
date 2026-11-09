@@ -140,9 +140,11 @@
 # A check podman runs inside the container on a timer; `cmd` turns it on.
 # See: 04-containers.md "Health checks"
 
-# The check, run through the image's /bin/sh. Exit 0 is healthy.
-# Type: string. Default: unset (no check).
+# The check. A string runs through the image's /bin/sh; an array of strings
+# runs directly, with no shell, for an image that has none. Exit 0 is healthy.
+# Type: string, or non-empty array of strings. Default: unset (no check).
 # cmd = "wget -qO- http://127.0.0.1:8080/ > /dev/null || exit 1"
+# cmd = ["python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/')"]
 
 # Time between checks.
 # Type: duration, one number and one unit ("30s", "5m"). Default: "30s".

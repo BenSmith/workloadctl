@@ -476,10 +476,18 @@ start_period = "60s"
 on_failure = "kill"
 ```
 
-`cmd` turns the check on and is the only key you need. It runs through the
-image's `/bin/sh`, so the image needs a shell and whatever tool the command
-calls. A zero exit is healthy. `interval` is the time between checks (30s by
-default), `timeout` how long one may take (30s), `retries` how many failures
+`cmd` turns the check on and is the only key you need. A zero exit is
+healthy. A string runs through the image's `/bin/sh`, so the image needs a
+shell and whatever tool the command calls. An array of strings runs directly,
+with no shell; an image without one, such as a distroless image, needs this
+form:
+
+```toml
+[container.health]
+cmd = ["python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/')"]
+```
+
+`interval` is the time between checks (30s by default), `timeout` how long one may take (30s), `retries` how many failures
 in a row make the container unhealthy (3), and `start_period` a grace period
 after start during which failures do not count (none), for software that is
 slow to come up.

@@ -478,7 +478,11 @@ class TestWorkloadGeneration(unittest.TestCase):
         arrays = 0
         for filename, config in self.configs.items():
             cmd = config.get("container", {}).get("health", {}).get("cmd", "")
-            if not cmd.startswith("["):
+            if isinstance(cmd, list):
+                expected = ["CMD", *cmd]
+            elif cmd.startswith("["):
+                expected = json.loads(cmd)
+            else:
                 continue
             arrays += 1
             name = config["workload"]["name"]
@@ -488,7 +492,7 @@ class TestWorkloadGeneration(unittest.TestCase):
                     if line.startswith("ExecStart="))
                 argv = shlex.split(exec_start.removeprefix("ExecStart="))
                 value = json.loads(argv[argv.index("--health-cmd") + 1])
-                self.assertEqual(value, json.loads(cmd))
+                self.assertEqual(value, expected)
                 # podman runs a one-element array under /bin/sh -c.
                 self.assertGreater(len(value), 1)
         self.assertTrue(arrays, "no bundle writes its health cmd as an array")

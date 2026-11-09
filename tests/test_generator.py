@@ -3956,6 +3956,128 @@ class TestParseArgs(unittest.TestCase):
                          (Path("/o"), None, True))
 
 
+class TestHealthCmdArray(unittest.TestCase):
+    """`health.cmd` as a string (shell form) or an array (run directly)."""
+
+    def setUp(self):
+        self.config_dir = tempfile.mkdtemp()
+        self.services_dir = tempfile.mkdtemp()
+        self.sysusers_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        for d in (self.config_dir, self.services_dir, self.sysusers_dir):
+            shutil.rmtree(d)
+
+    @staticmethod
+    def flag(cmd):
+        from container_run_args import _health_check_args
+        args = _health_check_args({"container": {"health": {"cmd": cmd}}})
+        return args[0].removeprefix("--health-cmd ")
+
+    @staticmethod
+    def seen_by_podman(token):
+        """What podman receives for one ExecStart token, once systemd has
+        removed the quotes and undone the `%%` and `$$` escapes."""
+        import shlex
+        return shlex.split(token)[0].replace("%%", "%").replace("$$", "$")
+
+    def test_an_array_is_written_as_json_with_cmd_first(self):
+        value = self.seen_by_podman(
+            self.flag(["python3", "-c", "import sys"]))
+        self.assertEqual(
+            json.loads(value), ["CMD", "python3", "-c", "import sys"])
+
+    def test_a_one_element_array_still_leads_with_cmd(self):
+        self.assertEqual(
+            json.loads(self.seen_by_podman(self.flag(["x"]))), ["CMD", "x"])
+
+    def test_a_string_stays_shell_form(self):
+        self.assertEqual(self.flag("test -f /tmp/ok"), '"test -f /tmp/ok"')
+
+    def test_quote_percent_and_dollar_reach_podman_intact(self):
+        cmd = ['say "hi"', "100%", "$HOME", "a\\b"]
+        flag = self.flag(cmd)
+        self.assertNotIn("$HOME", flag.replace("$$", ""))
+        self.assertEqual(json.loads(self.seen_by_podman(flag)),
+                         ["CMD", *cmd])
+
+    def test_an_array_reaches_the_unit_file(self):
+        write_config(self.config_dir, "hc", """\
+            [workload]
+            name = "hc"
+            mode = "single"
+
+            [container]
+            image = "myapp:latest"
+            [container.health]
+            cmd = ["python3", "-c", "print(1)"]
+        """)
+        r = run_generator(self.config_dir, self.services_dir,
+                          self.sysusers_dir)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        svc = (Path(self.services_dir) / "workload-hc.service").read_text()
+        self.assertIn(
+            '--health-cmd "[\\"CMD\\", \\"python3\\", \\"-c\\", '
+            '\\"print(1)\\"]"', svc)
+
+
+class TestHealthCmdValidation(unittest.TestCase):
+    """`health.cmd` is a string or a non-empty array of strings, wherever a
+    health block can sit."""
+
+    @staticmethod
+    def forms(cmd):
+        health = {"cmd": cmd}
+        return {
+            "single": {"workload": {"name": "w"},
+                       "container": {"image": "x", "health": health}},
+            "nested": {"workload": {"name": "w", "mode": "pod"},
+                       "containers": [{"name": "a", "container": {
+                           "image": "x", "health": health}}]},
+            "sibling": {"workload": {"name": "w", "mode": "pod"},
+                        "containers": [{"name": "a",
+                                        "container": {"image": "x"},
+                                        "health": health}]},
+        }
+
+    @staticmethod
+    def health_errors(config):
+        return [e for e in validate_workload_config(config)
+                if "health" in e]
+
+    def test_a_bad_cmd_is_refused_in_every_form(self):
+        for cmd in (3, [], ["ok", 3], True, {"a": "b"}):
+            for form, config in self.forms(cmd).items():
+                with self.subTest(cmd=cmd, form=form):
+                    errors = self.health_errors(config)
+                    self.assertEqual(len(errors), 1, errors)
+                    self.assertIn("string or a non-empty array", errors[0])
+
+    def test_the_error_names_the_block(self):
+        forms = self.forms([])
+        self.assertIn("container.health.cmd",
+                      self.health_errors(forms["single"])[0])
+        self.assertIn("containers[a].container.health.cmd",
+                      self.health_errors(forms["nested"])[0])
+        self.assertIn("containers[a].health.cmd",
+                      self.health_errors(forms["sibling"])[0])
+
+    def test_an_array_may_not_name_the_podman_form_itself(self):
+        for first in ("CMD", "CMD-SHELL", "NONE"):
+            for form, config in self.forms([first, "true"]).items():
+                with self.subTest(first=first, form=form):
+                    errors = self.health_errors(config)
+                    self.assertEqual(len(errors), 1, errors)
+                    self.assertIn(f"starts with {first!r}", errors[0])
+
+    def test_a_string_and_a_non_empty_array_are_accepted(self):
+        for cmd in ("true", ["true"], ["python3", "-c", "pass"]):
+            for form, config in self.forms(cmd).items():
+                with self.subTest(cmd=cmd, form=form):
+                    self.assertEqual(self.health_errors(config), [])
+
+
 class TestGenerateShim(unittest.TestCase):
     """generators/workload-generate: argv to gen_run.run, its status back."""
 

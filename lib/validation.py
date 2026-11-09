@@ -238,6 +238,7 @@ def validate_workload_config(config: dict) -> list[str]:
         errors.extend(rro_volume_errors(volumes, where))
         errors.extend(_relabelled_readonly_errors(config, volumes, where))
     errors.extend(_container_choice_errors(config))
+    errors.extend(_health_cmd_errors(config))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
     # (mode) in lockstep so `is_multi <=> mode != "single"` holds. The generator
@@ -317,6 +318,42 @@ def _container_choice_errors(config: dict) -> list[str]:
         if pull is not None and pull not in VALID_PULL_POLICIES:
             errors.append(f"{where}.pull = {pull!r} must be one of "
                           f"{', '.join(VALID_PULL_POLICIES)}")
+    return errors
+
+
+def _health_cmd_errors(config: dict) -> list[str]:
+    """`health.cmd` is a string (shell form) or a non-empty array of strings
+    (run directly), wherever a health block can sit: under [container], under
+    [containers.container], or as the sibling [containers.health]."""
+    blocks = []
+    if isinstance(config.get("container"), dict):
+        blocks.append(("container.health", config["container"]))
+    ctrs = config.get("containers")
+    if isinstance(ctrs, list):
+        for c in ctrs:
+            if not isinstance(c, dict):
+                continue
+            name = c.get("name")
+            blocks.append((f"containers[{name}].health", c))
+            if isinstance(c.get("container"), dict):
+                blocks.append(
+                    (f"containers[{name}].container.health", c["container"]))
+    errors = []
+    for where, owner in blocks:
+        health = owner.get("health")
+        if not isinstance(health, dict) or "cmd" not in health:
+            continue
+        cmd = health["cmd"]
+        if isinstance(cmd, str):
+            continue
+        if not (isinstance(cmd, list) and cmd
+                and all(isinstance(a, str) for a in cmd)):
+            errors.append(f"{where}.cmd = {cmd!r} must be a string or a "
+                          f"non-empty array of strings")
+        elif cmd[0] in ("CMD", "CMD-SHELL", "NONE"):
+            errors.append(f"{where}.cmd starts with {cmd[0]!r}; list only the "
+                          f"command and its arguments, since the array form "
+                          f"already runs directly")
     return errors
 
 
