@@ -2283,26 +2283,43 @@ class TestContainerExecShell(unittest.TestCase):
         with self.assertRaises(NotApplicable):
             substrate.open_shell(console=True)
 
+    def _argv_calls(self, manager):
+        """The argv of each run_podman_exec call, in order."""
+        return [c[0][1] for c in manager.run_podman_exec.call_args_list]
+
+    def _assert_probe(self, manager, index, shell):
+        """Call `index` is a probe: captured, no -i/-t, runs `shell -c :`."""
+        call = manager.run_podman_exec.call_args_list[index]
+        argv = call[0][1]
+        self.assertEqual(argv[-3:], [shell, '-c', ':'])
+        self.assertNotIn('-i', argv)
+        self.assertNotIn('-t', argv)
+        self.assertTrue(call[1].get('capture_output'))
+
     def test_open_shell_tries_bash_first(self):
         substrate, manager = self._substrate()
         manager.run_podman_exec.return_value = _ok(returncode=0)
-        buf = io.StringIO()
-        with patch('sys.stdout', buf):
+        with patch('sys.stdout', io.StringIO()):
             substrate.open_shell()
-        # Only one call: bash succeeded (rc=0), no fallback to sh.
-        manager.run_podman_exec.assert_called_once()
-        args = manager.run_podman_exec.call_args[0][1]
-        self.assertIn('/bin/bash', args)
+        probe, interactive = self._argv_calls(manager)
+        self.assertEqual(manager.run_podman_exec.call_count, 2)
+        self._assert_probe(manager, 0, '/bin/bash')
+        self.assertEqual(interactive[-1], '/bin/bash')
+        self.assertIn('-i', interactive)
 
     def test_open_shell_falls_back_to_sh_on_127(self):
         substrate, manager = self._substrate()
-        manager.run_podman_exec.side_effect = [_ok(returncode=127), _ok(returncode=0)]
-        buf = io.StringIO()
-        with patch('sys.stdout', buf):
+        manager.run_podman_exec.side_effect = [
+            _ok(returncode=127), _ok(returncode=0), _ok(returncode=0),
+        ]
+        with patch('sys.stdout', io.StringIO()):
             substrate.open_shell()
-        self.assertEqual(manager.run_podman_exec.call_count, 2)
-        second_args = manager.run_podman_exec.call_args_list[1][0][1]
-        self.assertIn('/bin/sh', second_args)
+        bash_probe, sh_probe, interactive = self._argv_calls(manager)
+        self.assertEqual(manager.run_podman_exec.call_count, 3)
+        self._assert_probe(manager, 0, '/bin/bash')
+        self._assert_probe(manager, 1, '/bin/sh')
+        self.assertEqual(interactive[-1], '/bin/sh')
+        self.assertIn('-i', interactive)
 
     def test_open_shell_with_container_user_sets_env(self):
         toml = """\
@@ -2320,13 +2337,51 @@ CONTAINER_UID = "2000"
         manager = MagicMock()
         manager.run_podman_exec.return_value = _ok(returncode=0)
         substrate = ContainerSubstrate(config, manager)
-        buf = io.StringIO()
-        with patch('sys.stdout', buf):
+        with patch('sys.stdout', io.StringIO()):
             substrate.open_shell()
-        args = manager.run_podman_exec.call_args[0][1]
-        self.assertIn('--user', args)
-        self.assertIn('appuser', args)
-        self.assertIn('HOME=/home/appuser', args)
+        calls = self._argv_calls(manager)
+        self.assertEqual(len(calls), 2)
+        for args in calls:
+            self.assertIn('--user', args)
+            self.assertIn('appuser', args)
+            self.assertIn('HOME=/home/appuser', args)
+
+    def test_open_shell_no_shell_prints_message_and_exits_1(self):
+        substrate, manager = self._substrate()
+        manager.run_podman_exec.return_value = _ok(returncode=127)
+        err = io.StringIO()
+        with patch('sys.stdout', io.StringIO()), patch('sys.stderr', err):
+            with self.assertRaises(LifecycleError) as cm:
+                substrate.open_shell()
+        self.assertEqual(cm.exception.returncode, 1)
+        self.assertEqual(manager.run_podman_exec.call_count, 2)
+        for args in self._argv_calls(manager):
+            self.assertNotIn('-i', args)
+        self.assertIn('no /bin/bash or /bin/sh', err.getvalue())
+        self.assertIn('workloadctl exec test-wl -- <command>', err.getvalue())
+
+    def test_open_shell_no_shell_names_container_when_given(self):
+        config = _make_config(POD_TOML, 'test-pod')
+        manager = MagicMock()
+        manager.run_podman_exec.return_value = _ok(returncode=127)
+        substrate = ContainerSubstrate(config, manager)
+        err = io.StringIO()
+        with patch('sys.stdout', io.StringIO()), patch('sys.stderr', err):
+            with self.assertRaises(LifecycleError):
+                substrate.open_shell(container='web')
+        self.assertIn('workloadctl exec test-pod/web -- <command>', err.getvalue())
+
+    def test_interactive_127_is_not_a_missing_shell(self):
+        """bash present, and the last command typed in it was not found: its
+        exit 127 starts no other shell."""
+        substrate, manager = self._substrate()
+        manager.run_podman_exec.side_effect = [_ok(returncode=0), _ok(returncode=127)]
+        with patch('sys.stdout', io.StringIO()):
+            substrate.open_shell()
+        probe, interactive = self._argv_calls(manager)
+        self.assertEqual(manager.run_podman_exec.call_count, 2)
+        self.assertEqual(interactive[-1], '/bin/bash')
+        self.assertNotIn('/bin/sh', probe + interactive)
 
 
 # ── ContainerSubstrate.lifecycle() reboot / user_exists branches ─────────────

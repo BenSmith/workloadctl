@@ -267,18 +267,18 @@ class ContainerSubstrate(Substrate):
         container_user = env.get("CONTAINER_USER")
         container_uid = env.get("CONTAINER_UID")
 
-        exec_opts = _interactive_exec_flags()
+        user_opts: list[str] = []
         if container_user:
             uid = container_uid or "1000"
             home = f"/home/{container_user}"
-            exec_opts.extend([
+            user_opts.extend([
                 "--user", container_user, "--workdir", home,
                 "--env", f"HOME={home}",
                 "--env", f"XDG_RUNTIME_DIR=/run/user/{uid}",
                 "--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus",
             ])
         elif container_uid:
-            exec_opts.extend([
+            user_opts.extend([
                 "--user", container_uid,
                 "--env", f"XDG_RUNTIME_DIR=/run/user/{container_uid}",
                 "--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{container_uid}/bus",
@@ -286,12 +286,27 @@ class ContainerSubstrate(Substrate):
 
         info(f"Opening shell in {target}...")
         info()
-        # Try bash first, fall back to sh only if bash isn't available in the image.
-        # 127 = command not found; any other non-zero is propagated from the user's
-        # last command (e.g. 130 after ^C), not a reason to relaunch.
-        result = self.manager.run_podman_exec(self.config, [*exec_opts, target, "/bin/bash"])
-        if result.returncode == 127:
-            self.manager.run_podman_exec(self.config, [*exec_opts, target, "/bin/sh"], check=True)
+        # An interactive shell's own 127 can't be told apart from a missing
+        # binary, so probe first.
+        shell = None
+        for candidate in ("/bin/bash", "/bin/sh"):
+            probe = self.manager.run_podman_exec(
+                self.config, [*user_opts, target, candidate, "-c", ":"],
+                capture_output=True,
+            )
+            if probe.returncode != 127:
+                shell = candidate
+                break
+        if shell is None:
+            ref = f"{self.config.name}/{container}" if container else self.config.name
+            error(
+                f"Error: {ref} has no /bin/bash or /bin/sh. "
+                f"Run a command directly with: workloadctl exec {ref} -- <command>"
+            )
+            raise LifecycleError(1)
+        self.manager.run_podman_exec(
+            self.config, [*_interactive_exec_flags(), *user_opts, target, shell]
+        )
 
     def lifecycle(self, action: str) -> None:
         """Unified lifecycle for containers: start / stop / restart / reboot."""
