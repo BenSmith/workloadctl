@@ -13,12 +13,13 @@ Installed to /usr/libexec/workloadctl/validation.py.
 import re
 
 from config_parser import infer_workload_mode
+from gen_common import _external_host_path
 from shares import validate_memberships
 from workload_lib import (
     MAX_CONTAINER_NAME_LENGTH, CONTAINER_NAME_PATTERN, MAX_NAME_LENGTH,
     NAME_PATTERN, HOST_USERNS_OPT_IN, WORKLOAD_TOKEN_NAMES,
     WORKLOAD_TOKEN_PATTERN, _LIFTED_CONTAINER_KEYS, infer_workload_kind,
-    normalize_containers,
+    normalize_containers, expand_volume_path, workload_state_dir,
 )
 from container_validate import (
     validate_container_network, validate_publish_ports,
@@ -235,6 +236,7 @@ def validate_workload_config(config: dict) -> list[str]:
     errors.extend(validate_kernel_modules(config, kind))
     for where, volumes in _volume_lists(config):
         errors.extend(rro_volume_errors(volumes, where))
+        errors.extend(_relabelled_readonly_errors(config, volumes, where))
     errors.extend(_container_choice_errors(config))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
@@ -333,6 +335,39 @@ def _volume_lists(config: dict) -> list[tuple[str, list[str]]]:
         found = []
     return [(where, [v for v in volumes if isinstance(v, str)])
             for where, volumes in found if isinstance(volumes, list)]
+
+
+def _relabelled_readonly_errors(config: dict, volumes: list[str],
+                                where: str) -> list[str]:
+    """A `ro` mount that is also relabelled (`Z`/`z`), on a host path outside
+    the workload tree.
+
+    The unit's ProtectSystem=strict leaves a `ro` out-of-tree volume out of
+    ReadWritePaths (see volume_args), and relabelling is a write to the host
+    path, so podman fails at start. Inside the tree the path is writable.
+    """
+    name = config.get("workload", {}).get("name")
+    if not isinstance(name, str) or not name:
+        return []
+    home_dir = str(workload_state_dir(name))
+    errors = []
+    for volume in volumes:
+        expanded = expand_volume_path(volume, home_dir)
+        parts = expanded.split(":", 2)
+        if len(parts) < 3:
+            continue
+        opts = parts[2].split(",")
+        if not ({"ro", "rro"} & set(opts) and {"Z", "z"} & set(opts)):
+            continue
+        if _external_host_path(parts[0], name) is None:
+            continue
+        errors.append(
+            f"{where}: volume {volume!r} is read-only and relabelled "
+            f"(Z/z) outside the workload tree, and relabelling is a write "
+            f"the unit cannot make there; label the directory once with "
+            f"`chcon -R -t container_ro_file_t {parts[0]}` (readable by any "
+            f"container) and drop the Z/z, or drop ro")
+    return errors
 
 
 def uses_host_userns(config: dict) -> bool:

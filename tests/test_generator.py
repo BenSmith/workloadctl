@@ -20,6 +20,7 @@ from covhelper import python_cmd
 
 import gen_common
 import gen_run
+from validation import validate_workload_config
 from workload_seccomp import derived_profile
 from tests import REPO_ROOT, load_script, script_env
 
@@ -1557,6 +1558,81 @@ class TestGeneratorSlice(unittest.TestCase):
         run_generator(self.config_dir, self.services_dir, self.sysusers_dir)
         service = (Path(self.services_dir) / "workload-sys.service").read_text()
         self.assertIn("Slice=system.slice", service)
+
+
+class TestReadonlyRelabelOutsideTree(unittest.TestCase):
+    """A `ro` volume with `Z`/`z` outside the workload tree: relabelling is a
+    write the read-only unit cannot make there."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config_dir = Path(self.tmp.name) / "config"
+        self.services_dir = Path(self.tmp.name) / "services"
+        self.sysusers_dir = Path(self.tmp.name) / "sysusers"
+        for d in (self.config_dir, self.services_dir, self.sysusers_dir):
+            d.mkdir()
+
+    @staticmethod
+    def single(volume):
+        return {"workload": {"name": "w"}, "container": {"image": "x"},
+                "storage": {"volumes": [volume]}}
+
+    @staticmethod
+    def multi(volume):
+        return {"workload": {"name": "w", "mode": "pod"}, "containers": [
+            {"name": "a", "container": {"image": "x"}},
+            {"name": "b", "container": {"image": "x"},
+             "storage": {"volumes": [volume]}}]}
+
+    def refused(self, config):
+        return [e for e in validate_workload_config(config)
+                if "container_ro_file_t" in e]
+
+    def test_out_of_tree_ro_with_relabel_is_refused(self):
+        for opts in ("ro,Z", "ro,z", "rro,Z", "Z,ro", "ro,rprivate,z"):
+            with self.subTest(opts=opts):
+                errors = self.refused(self.single(f"/srv/app:/app:{opts}"))
+                self.assertEqual(len(errors), 1)
+                self.assertIn("storage.volumes", errors[0])
+                self.assertIn(f"/srv/app:/app:{opts}", errors[0])
+                self.assertIn(
+                    "chcon -R -t container_ro_file_t /srv/app", errors[0])
+
+    def test_multi_container_volumes_are_checked(self):
+        errors = self.refused(self.multi("/srv/app:/app:ro,Z"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("containers[b].storage.volumes", errors[0])
+
+    def test_in_tree_or_one_option_alone_passes(self):
+        for volume in ("./site:/app:ro,Z", "@/site:/app:ro,z",
+                       "/var/lib/workloads/w/data/x:/app:ro,Z",
+                       "/srv/app:/app:ro", "/srv/app:/app:Z",
+                       "/srv/app:/app:rw,z", "/srv/app:/app"):
+            with self.subTest(volume=volume):
+                self.assertEqual(self.refused(self.single(volume)), [])
+                self.assertEqual(self.refused(self.multi(volume)), [])
+
+    def test_generator_skips_the_workload(self):
+        for name, volume in (("bad", "/srv/app:/app:ro,Z"),
+                             ("fine", "/srv/app:/app:ro")):
+            write_config(self.config_dir, name, f"""\
+                [workload]
+                name = "{name}"
+
+                [container]
+                image = "myapp"
+
+                [storage]
+                volumes = ["{volume}"]
+            """)
+        result = run_generator(
+            self.config_dir, self.services_dir, self.sysusers_dir)
+        self.assertFalse(
+            (self.services_dir / "workload-bad.service").exists())
+        self.assertTrue(
+            (self.services_dir / "workload-fine.service").exists())
+        self.assertIn("container_ro_file_t", result.stderr)
 
 
 class TestGeneratorUserns(unittest.TestCase):

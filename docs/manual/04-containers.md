@@ -159,6 +159,12 @@ the same across restarts and recreates. Never relabel a system directory such
 as `/etc` or `/home`: the host's own services depend on its labels. For a
 directory several workloads use, declare a share instead (below).
 
+`Z` and `z` relabel the host path, which is a write, so on a path outside
+the workload tree they can't be combined with `ro`: `validate`
+refuses it, and the generator skips the workload. Label the directory once
+with `chcon -R -t container_ro_file_t <path>`, which any container can read,
+and drop the `Z`.
+
 ### Who owns the files
 
 Under the default user namespace, the UID inside the container that matches
