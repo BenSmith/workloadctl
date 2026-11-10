@@ -17,7 +17,7 @@ from cli_log import emit_result, error, info
 from workload_lib import workload_config_path
 from workloadctl_core import WorkloadConfig, WorkloadManager, require_root
 from substrate import get_substrate, service_active
-from provisioning import regenerate_units, transfer_image
+from provisioning import clear_rejected_builds, regenerate_units, transfer_image
 from shares_setup import apply_shares
 from workload_selinux import apply_vm_fcontext
 
@@ -226,6 +226,7 @@ def cmd_build(args, manager: WorkloadManager):
     if rc != 0:
         error(f"✗ Build failed (exit {rc})")
         sys.exit(rc)
+    clear_rejected_builds(config.name)
 
     info()
     info(f"✓ Built image for '{config.name}'")

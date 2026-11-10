@@ -591,20 +591,26 @@ class TestDispatch(MultiBuildBase):
     def test_cmd_build_success(self):
         self._ship("solo", "Containerfile", "FROM scratch\n")
         self._config("solo")
-        with mock.patch.object(imagebuild, "build_image", return_value=0):
+        with mock.patch.object(imagebuild, "build_image", return_value=0), \
+                mock.patch.object(cmd_lifecycle, "clear_rejected_builds") as clear:
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_lifecycle.cmd_build(_ns(workload="solo"), self.manager)
         self.assertIn("Built image", buf.getvalue())
+        # A build is the operator asking for what it built, a rolled-back
+        # build included.
+        clear.assert_called_once_with("solo")
 
     def test_cmd_build_propagates_failure(self):
         self._ship("solo", "Containerfile", "FROM scratch\n")
         self._config("solo")
-        with mock.patch.object(imagebuild, "build_image", return_value=3):
+        with mock.patch.object(imagebuild, "build_image", return_value=3), \
+                mock.patch.object(cmd_lifecycle, "clear_rejected_builds") as clear:
             with self.assertRaises(SystemExit) as cm:
                 with redirect_stdout(io.StringIO()):
                     cmd_lifecycle.cmd_build(_ns(workload="solo"), self.manager)
         self.assertEqual(cm.exception.code, 3)
+        clear.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -308,10 +308,12 @@ class DoRollbackTest(unittest.TestCase):
         mgr = mock.Mock()
         mgr.podman.return_value = pod
         with mock.patch.object(cmd_update, "restart_workload_service") as restart, \
+             mock.patch.object(cmd_update, "record_rejected_builds") as record, \
              redirect_stdout(io.StringIO()):
             cmd_update._do_rollback(cfg, mgr)
         pod.tag.assert_called_once_with("localhost/workload-rollback/app:latest",
                                         "localhost/app:latest")
+        record.assert_called_once_with(cfg, {"localhost/app:latest": "sha256:old"})
         restart.assert_called_once()
 
     def test_no_retag_when_rollback_image_absent(self):
@@ -326,9 +328,11 @@ class DoRollbackTest(unittest.TestCase):
         mgr = mock.Mock()
         mgr.podman.return_value = pod
         with mock.patch.object(cmd_update, "restart_workload_service"), \
+             mock.patch.object(cmd_update, "record_rejected_builds") as record, \
              redirect_stdout(io.StringIO()):
             cmd_update._do_rollback(cfg, mgr)
         pod.tag.assert_not_called()
+        record.assert_called_once_with(cfg, {})
 
 
 class VerifyAllTest(unittest.TestCase):

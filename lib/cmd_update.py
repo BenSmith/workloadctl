@@ -12,6 +12,7 @@ from workloadctl_core import (
     WorkloadManager,
     require_root,
 )
+from provisioning import record_rejected_builds
 from service_runtime import restart_workload_service
 from substrate import (
     get_substrate,
@@ -55,10 +56,13 @@ def _health_wait_seconds(config: WorkloadConfig) -> int:
 def _do_rollback(config: WorkloadConfig, manager: WorkloadManager):
     """Roll back every container to its previous image and restart."""
     pod = manager.podman(config)
+    rolled_back = {}
     for cname, image in config.container_images():
         tag = rollback_tag(config.name, cname if config.is_multi else None)
         if pod.image_id(tag):
+            rolled_back[image] = pod.image_id(image)
             pod.tag(tag, image)
+    record_rejected_builds(config, rolled_back)
     restart_workload_service(config.uid, config.service_name)
     info(f"  ✗ {config.name}: rolled back to previous image(s)")
 

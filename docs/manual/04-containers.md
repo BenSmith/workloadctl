@@ -949,7 +949,8 @@ sudo workloadctl enable tools
 `build` builds the image into root's image store, tagged exactly as
 `[container] image`. `enable`, `recreate` and `update` then copy root's copy
 into the workload user's store, so after a rebuild, `recreate` puts the
-workload on the new image.
+workload on the new image. A build that was rolled back is not copied again
+until the next `build` ([Rolling back](09-operating.md#rolling-back)).
 
 There are two ways to declare a built image. An image that exists only as a
 local build has `pull = "never"` and needs no `[build]` table; a `localhost/`

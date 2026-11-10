@@ -21,7 +21,9 @@ from pathlib import Path
 
 from backup import backup_impl, print_backup_size
 from cli_log import error, info, warn
-from provisioning import ImageTransferError, transfer_one_image
+from provisioning import (
+    ImageTransferError, record_rejected_builds, transfer_one_image,
+)
 from diagnose_image_age import image_created
 from podman import Podman, PodmanError
 from service_runtime import ensure_runtime_dir, restart_workload_service
@@ -572,6 +574,7 @@ class ContainerSubstrate(Substrate):
             )
             raise LifecycleError(1)
         current_id = target.get("current_id")
+        record_rejected_builds(self.config, {target["image"]: current_id})
         rollback_id = target["rollback_id"]
         info(
             f"  {target['label']}: {current_id[:12] if current_id else 'unknown'} → {rollback_id[:12]}"

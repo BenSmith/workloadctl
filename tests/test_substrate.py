@@ -1687,9 +1687,12 @@ class TestContainerRollbackTargets(unittest.TestCase):
             'rollback_id': 'abc123ab',
         }
         buf = io.StringIO()
-        with patch('sys.stdout', buf):
+        with patch('sys.stdout', buf), \
+                patch('substrate_container.record_rejected_builds') as record:
             substrate.rollback_to(target)
         manager.podman.return_value.tag.assert_called_once_with(tag, 'example.com/test:latest')
+        record.assert_called_once_with(
+            config, {'example.com/test:latest': 'def456de'})
 
     def test_rollback_to_retag_failure_raises_lifecycle_error(self):
         from podman import PodmanError

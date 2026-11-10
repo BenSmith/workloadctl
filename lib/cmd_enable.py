@@ -125,7 +125,7 @@ def cmd_enable(args, manager: WorkloadManager):
 
     if already_running:
         info(f"✓ Workload '{args.workload}' setup complete (already running)")
-        info(f"  To apply config changes to the live container: sudo workloadctl recreate {args.workload}")
+        info(f"  To apply config or image changes to the live container: sudo workloadctl recreate {args.workload}")
     else:
         info(f"✓ Workload '{args.workload}' enabled and starting")
         info(f"  Check status: workloadctl status {args.workload}")

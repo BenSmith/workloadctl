@@ -9,16 +9,17 @@ same step with the sign flipped -- have their own modules: the [host] setup
 hook is host_setup, the per-workload SELinux type and module workload_selinux.
 """
 
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
-from cli_log import child_stdout, error, info
+from cli_log import child_stdout, error, info, warn
 from config_parser import workload_root_dir
 from workload_lib import (
-    RUN_SYSTEMD_SYSTEM,
+    RUN_SYSTEMD_SYSTEM, replace_file_atomically,
 )
 from podman import Podman
 from workloadctl_core import (
@@ -308,6 +309,42 @@ class ImageTransferError(Exception):
     everywhere). The message is fully formatted for the operator."""
 
 
+REJECTED_BUILDS_NAME = "rejected-builds.json"
+
+
+def _rejected_builds(name: str) -> dict:
+    try:
+        data = json.loads(
+            (workload_root_dir(name) / REJECTED_BUILDS_NAME).read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_rejected_builds(config: WorkloadConfig, rolled_back: dict) -> None:
+    """Record the image ID each container was rolled back from ({image: id}),
+    for the images the workload builds itself. Root's store still holds that
+    build, and the transfer leaves it there until `build` runs again."""
+    buildable = {image for cname, image, pull in config.container_specs()
+                 if config.is_buildable(cname, pull)}
+    found = {image: image_id for image, image_id in rolled_back.items()
+             if image in buildable and image_id}
+    if not found:
+        return
+    record = _rejected_builds(config.name) | found
+    try:
+        replace_file_atomically(
+            workload_root_dir(config.name) / REJECTED_BUILDS_NAME,
+            json.dumps(record, indent=2) + "\n", owner=(0, 0))
+    except OSError as e:
+        warn(f"  ⚠ Could not record the rolled-back build: {e}. The next "
+             f"recreate will transfer it again.")
+
+
+def clear_rejected_builds(name: str) -> None:
+    (workload_root_dir(name) / REJECTED_BUILDS_NAME).unlink(missing_ok=True)
+
+
 def transfer_image(config: WorkloadConfig, manager: WorkloadManager):
     """Push locally-held images from root's store into the workload user store.
 
@@ -371,6 +408,20 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
             )
         return False
 
+    if (root_image_id != user_image_id
+            and root_image_id == _rejected_builds(config.name).get(image)):
+        info(f"  Root store's '{image}' ({root_image_id[:12]}) is the build "
+             f"that was rolled back; not transferring it.")
+        if user_image_id:
+            info(f"  To use it anyway: sudo workloadctl build {config.name}")
+            return True
+        if pull == "never":
+            raise ImageTransferError(
+                f"Error: the only '{image}' is the build that was rolled "
+                f"back\n  Build a new one first: "
+                f"sudo workloadctl build {config.name}")
+        return False
+
     if root_image_id != user_image_id:
         if user_image_id:
             info(f"  Root store has an updated '{image}' (rebuild detected), re-transferring...")
@@ -417,14 +468,6 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
                     f"{load_result.stderr.decode(errors='replace')}",
                 )
         info(f"  Image '{image}' transferred successfully")
-        if user_image_id:
-            active = subprocess.run(
-                ["systemctl", "is-active", "--quiet", config.service_name],
-                check=False
-            )
-            if active.returncode == 0:
-                info("  Note: container is still running the old image.")
-                info(f"  Run 'sudo workloadctl recreate {config.name}' to restart with the new image.")
     return True
 
 

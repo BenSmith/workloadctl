@@ -278,6 +278,16 @@ the old image, either hold off `update` until the registry has a fixed
 image, or pin the image in the TOML by version or digest and run `recreate`.
 To roll forward, run `update`.
 
+An image the workload builds itself stays rolled back. Root's store still
+holds the build you rolled back from, so `rollback`, and the automatic
+rollback inside `update`, record its image ID in
+`/var/lib/workloads/<name>/rejected-builds.json`. `enable`, `recreate` and
+`update` then leave a build with that ID in root's store, and say so. A
+build with a different ID is copied as usual. If the workload's own store
+has lost its image as well, a `pull = "never"` image is refused until you
+build again. To use the rolled-back build anyway, run `build`, which clears
+the record, and then `recreate`.
+
 A pet container keeps running from the container it already has. `rollback`
 and the automatic rollback inside `update` retag the image, but the
 container that restarts is still the one created from the new image. Run

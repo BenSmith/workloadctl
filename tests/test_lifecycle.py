@@ -1266,13 +1266,17 @@ image = "example.com/helper:latest"
                     provisioning.transfer_image(cfg, manager)
 
     def _transfer(self, cfg, results, pull, root_id="new-id",
-                  user_id="old-id"):
-        """transfer_one_image with podman doubled: `results` are the save,
-        load and is-active answers in turn; the save writes its archive.
-        Returns the run mock and the workload root used."""
+                  user_id="old-id", rejected=None):
+        """transfer_one_image with podman doubled: `results` are the save
+        and load answers in turn; the save writes its archive. `rejected`
+        is the workload's record of rolled-back builds, as the file's text.
+        Returns the run mock, the workload root used and what the transfer
+        returned."""
         manager = MagicMock()
         manager.podman.return_value.image_id.return_value = user_id
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        if rejected is not None:
+            (root / provisioning.REJECTED_BUILDS_NAME).write_text(rejected)
         results = iter(results)
 
         def run(argv, **kw):
@@ -1287,25 +1291,25 @@ image = "example.com/helper:latest"
              patch.object(provisioning, 'workload_root_dir', return_value=root), \
              patch.object(provisioning.subprocess, 'run', side_effect=run) as run_mock:
             for_root.return_value.image_id.return_value = root_id
-            provisioning.transfer_one_image(cfg, manager, "test-wl",
-                                            "example.com/test:latest", pull)
-        return run_mock, root
+            handled = provisioning.transfer_one_image(
+                cfg, manager, "test-wl", "example.com/test:latest", pull)
+        return run_mock, root, handled
 
     def test_transfer_one_image_needs_transfer_when_stale(self):
         with _cfg(_HOST_TOML, 'test-wl') as cfg:
-            run_mock, _ = self._transfer(
-                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
-                      MagicMock(returncode=1)], "never")
-            self.assertEqual(run_mock.call_count, 3)
+            run_mock, _, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0)],
+                "never")
+            self.assertEqual(run_mock.call_count, 2)
 
     def test_the_archive_is_roots_and_never_in_the_home(self):
         # The home is the workload user's, and a name there may be a link it
         # planted: the archive is saved in a root-only directory in the
         # workload root, and the load reads it on stdin.
         with _cfg(_HOST_TOML, 'test-wl') as cfg:
-            run_mock, root = self._transfer(
-                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
-                      MagicMock(returncode=1)], "never")
+            run_mock, root, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0)],
+                "never")
             save, load = run_mock.call_args_list[:2]
             archive = Path(save.args[0][save.args[0].index("-o") + 1])
             self.assertEqual(archive.parent.parent, root)
@@ -1340,11 +1344,157 @@ image = "example.com/helper:latest"
 
     def test_transfer_one_image_root_override_transfers_for_pull_missing(self):
         with _cfg(_CONTAINER_TOML + "\n[build]\n", 'test-wl') as cfg:
-            run_mock, _ = self._transfer(
-                cfg, [MagicMock(returncode=0), MagicMock(returncode=0),
-                      MagicMock(returncode=1)], "missing",
-                root_id="local-build-id", user_id="registry-id")
-            self.assertEqual(run_mock.call_count, 3)
+            run_mock, _, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0)],
+                "missing", root_id="local-build-id", user_id="registry-id")
+            self.assertEqual(run_mock.call_count, 2)
+
+    def test_a_rolled_back_build_stays_in_roots_store(self):
+        # Seen on the proving host: update rolled a [build] image back, and
+        # the next recreate saw root's copy differ, called it a rebuild and
+        # ran the rejected image again.
+        with _cfg(_HOST_TOML, 'test-wl') as cfg:
+            with redirect_stdout(io.StringIO()) as out:
+                run_mock, _, handled = self._transfer(
+                    cfg, [], "never",
+                    rejected='{"example.com/test:latest": "new-id"}')
+            run_mock.assert_not_called()
+            self.assertTrue(handled)
+            self.assertIn("rolled back", out.getvalue())
+            self.assertIn("sudo workloadctl build test-wl", out.getvalue())
+
+    def test_a_different_build_still_transfers(self):
+        with _cfg(_HOST_TOML, 'test-wl') as cfg:
+            run_mock, _, handled = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0)],
+                "never", rejected='{"example.com/test:latest": "older-id"}')
+            self.assertEqual(run_mock.call_count, 2)
+            self.assertTrue(handled)
+
+    def test_an_unreadable_record_holds_nothing_back(self):
+        with _cfg(_HOST_TOML, 'test-wl') as cfg:
+            run_mock, _, _ = self._transfer(
+                cfg, [MagicMock(returncode=0), MagicMock(returncode=0)],
+                "never", rejected='{"example.com/test:latest": ')
+            self.assertEqual(run_mock.call_count, 2)
+
+    def test_only_the_rolled_back_build_left_is_an_error_under_pull_never(self):
+        with _cfg(_HOST_TOML, 'test-wl') as cfg:
+            with redirect_stdout(io.StringIO()), \
+                    self.assertRaises(provisioning.ImageTransferError) as ctx:
+                self._transfer(cfg, [], "never", user_id="",
+                               rejected='{"example.com/test:latest": "new-id"}')
+            self.assertIn("rolled back", str(ctx.exception))
+            self.assertIn("sudo workloadctl build test-wl", str(ctx.exception))
+
+    def test_only_the_rolled_back_build_left_falls_back_to_the_pull(self):
+        with _cfg(_CONTAINER_TOML + "\n[build]\n", 'test-wl') as cfg:
+            with redirect_stdout(io.StringIO()):
+                run_mock, _, handled = self._transfer(
+                    cfg, [], "missing", user_id="",
+                    rejected='{"example.com/test:latest": "new-id"}')
+            run_mock.assert_not_called()
+            self.assertFalse(handled)
+
+
+class TestRejectedBuilds(unittest.TestCase):
+    """The record of rolled-back builds: both rollbacks write it, the
+    transfer reads it, `build` clears it."""
+
+    _MIXED_TOML = """\
+[workload]
+name = "test-wl"
+mode = "pod"
+
+[[containers]]
+name = "app"
+[containers.container]
+image = "example.com/app:latest"
+[containers.build]
+
+[[containers]]
+name = "helper"
+[containers.container]
+image = "example.com/helper:latest"
+"""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch.object(provisioning, 'workload_root_dir',
+                                       return_value=self.root))
+        self.path = self.root / provisioning.REJECTED_BUILDS_NAME
+
+    def test_only_the_images_the_workload_builds_are_recorded(self):
+        with _cfg(self._MIXED_TOML, 'test-wl') as cfg:
+            provisioning.record_rejected_builds(
+                cfg, {"example.com/app:latest": "a1",
+                      "example.com/helper:latest": "h1"})
+        self.assertEqual(json.loads(self.path.read_text()),
+                         {"example.com/app:latest": "a1"})
+
+    def test_a_later_rollback_adds_to_the_record(self):
+        self.path.write_text('{"example.com/app:latest": "a1", '
+                             '"example.com/gone:latest": "g1"}')
+        with _cfg(self._MIXED_TOML, 'test-wl') as cfg:
+            provisioning.record_rejected_builds(
+                cfg, {"example.com/app:latest": "a2"})
+        self.assertEqual(json.loads(self.path.read_text()),
+                         {"example.com/app:latest": "a2",
+                          "example.com/gone:latest": "g1"})
+
+    def test_nothing_to_record_writes_no_file(self):
+        with _cfg(self._MIXED_TOML, 'test-wl') as cfg:
+            provisioning.record_rejected_builds(
+                cfg, {"example.com/helper:latest": "h1",
+                      "example.com/app:latest": None})
+        self.assertFalse(self.path.exists())
+
+    def test_build_clears_the_record(self):
+        self.path.write_text('{"example.com/app:latest": "a1"}')
+        provisioning.clear_rejected_builds("test-wl")
+        self.assertFalse(self.path.exists())
+        provisioning.clear_rejected_builds("test-wl")
+
+    def test_a_rollback_holds_its_build_back_from_the_next_transfer(self):
+        # The seam: what each rollback writes is what the transfer reads.
+        from substrate import rollback_tag
+        import cmd_update
+        image = "example.com/test:latest"
+
+        def update_rollback(cfg, manager):
+            with patch.object(cmd_update, 'restart_workload_service'):
+                cmd_update._do_rollback(cfg, manager)
+
+        def rollback_command(cfg, manager):
+            ContainerSubstrate(cfg, manager).rollback_to(
+                {"label": "test-wl", "tag": rollback_tag("test-wl"),
+                 "image": image, "current_id": "rejected-id",
+                 "rollback_id": "good-id"})
+
+        for rollback in (update_rollback, rollback_command):
+            with self.subTest(rollback.__name__), \
+                    _cfg(_HOST_TOML, 'test-wl') as cfg, \
+                    patch.object(type(cfg), 'uid',
+                                 new_callable=lambda: property(lambda _: 1)), \
+                    redirect_stdout(io.StringIO()):
+                self.path.unlink(missing_ok=True)
+                manager = MagicMock()
+                pod = manager.podman.return_value
+                pod.image_id.side_effect = {
+                    image: "rejected-id",
+                    rollback_tag("test-wl"): "good-id"}.get
+                rollback(cfg, manager)
+                pod.tag.assert_called_once_with(rollback_tag("test-wl"),
+                                                image)
+                pod.image_id.side_effect = None
+                pod.image_id.return_value = "good-id"
+                with patch.object(provisioning.Podman, 'for_root') as root, \
+                        patch.object(provisioning.subprocess, 'run') as run:
+                    root.return_value.image_id.return_value = "rejected-id"
+                    handled = provisioning.transfer_one_image(
+                        cfg, manager, "test-wl", image, "never")
+                run.assert_not_called()
+                self.assertTrue(handled)
 
 
 # ── generate_units / start_service ─────────────────────────────────────────
