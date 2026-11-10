@@ -256,4 +256,4 @@ def image_shift_check(check_name, image, counts, groups, shadow_gid, outside):
             f"(shifted by {shift:+d})" if shift is not None else
             f"Image {image} was stored under a different subgid layout")
     return (check_name, False,
-            f"{head}: {'; '.join(evidence)}. {_MANUAL}", _MANUAL)
+            f"{head}: {'; '.join(evidence)}.", _MANUAL)

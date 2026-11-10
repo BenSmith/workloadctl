@@ -32,8 +32,8 @@ class ImageShiftCheckTest(unittest.TestCase):
         res = verdict({14: 1, 24: 3, 192: 1})
         self.assertFalse(res[1])
         self.assertIn("+2", res[2])
-        self.assertTrue(res[2].endswith("When a delegated group changes\"."))
-        self.assertEqual(res[3], res[2][res[2].index("See "):])
+        self.assertNotIn("08-security.md", res[2])
+        self.assertTrue(res[3].endswith("When a delegated group changes\"."))
 
     def test_negative_offset_is_signed(self):
         res = verdict({10: 1, 20: 3, 188: 1})
