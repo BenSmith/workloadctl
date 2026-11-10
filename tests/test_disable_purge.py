@@ -225,7 +225,8 @@ class TestPurgeBestEffort(unittest.TestCase):
     """cmd_disable --purge attempts every removal independently (one failure
     never skips the rest) and treats a never-provisioned user as already-clean."""
 
-    def _run_purge(self, getpwnam_side, *, userdel_leaves_user=False):
+    def _run_purge(self, getpwnam_side, *, userdel_leaves_user=False,
+                   order=None, released=True):
         """Drive cmd_disable(--purge) with the host-touching bits stubbed.
 
         Uses a VM workload so the purge path skips the subuid/subgid host-file
@@ -256,13 +257,27 @@ class TestPurgeBestEffort(unittest.TestCase):
                     return SimpleNamespace(pw_uid=10005)
                 raise KeyError(_name)
 
+            order = [] if order is None else order
+
+            def run(argv, *a, **k):
+                order.append(argv[0])
+                return MagicMock()
+
+            def stop(_username):
+                order.append('stop')
+
+            def wait(_uid):
+                order.append('wait')
+                return released
+
             args = SimpleNamespace(workload='pp', purge=True)
             exit_code = None
             with patch.object(cmd_disable, 'require_root', lambda: None), \
                  patch.object(config_parser, 'WORKLOADS_BASE', base), \
-                 patch.object(cmd_disable.subprocess, 'run', MagicMock()), \
+                 patch.object(cmd_disable.subprocess, 'run', run), \
                  patch.object(cmd_disable.time, 'sleep', lambda *_: None), \
-                 patch.object(cmd_disable, '_stop_user_manager', MagicMock()), \
+                 patch.object(cmd_disable, '_stop_user_manager', stop), \
+                 patch.object(cmd_disable, 'wait_logind_release', wait), \
                  patch.object(cmd_disable, 'run_host_setup', MagicMock()), \
                  patch.object(cmd_disable, 'apply_selinux_policy', MagicMock()), \
                  patch.object(cmd_disable, 'workload_run_files', MagicMock(return_value=[])), \
@@ -285,6 +300,25 @@ class TestPurgeBestEffort(unittest.TestCase):
         exit_code, removed, data_dir = self._run_purge(absent)
         self.assertIsNone(exit_code)  # clean exit, no sys.exit(1)
         self.assertIn(str(data_dir), removed)
+
+    def test_logind_lets_go_of_the_uid_before_userdel_frees_it(self):
+        # A new user given the uid while logind still holds the old record is
+        # filed under the old name: no linger, and its manager is stopped.
+        order = []
+        self._run_purge(lambda: SimpleNamespace(pw_uid=10005), order=order)
+        self.assertIn('userdel', order)
+        self.assertLess(order.index('stop'), order.index('wait'))
+        self.assertLess(order.index('wait'), order.index('userdel'))
+
+    def test_a_held_uid_warns_but_the_purge_goes_on(self):
+        order = []
+        with patch.object(cmd_disable, 'warn') as warn:
+            exit_code, removed, data_dir = self._run_purge(
+                lambda: SimpleNamespace(pw_uid=10005), order=order,
+                released=False)
+        self.assertIsNone(exit_code)
+        self.assertIn('userdel', order)
+        self.assertIn('10005', warn.call_args.args[0])
 
     def test_userdel_failure_still_removes_data_then_exits_nonzero(self):
         # User exists but userdel leaves it behind: the data dir is STILL

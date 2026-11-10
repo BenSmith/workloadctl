@@ -27,7 +27,9 @@ from workload_lib import (
     iter_workloads, selinux_module_name, USERNAME_PREFIX, workload_egress_dir,
     workload_username,
 )
-from workload_uid import remove_subid_entries, subid_files_with_entries
+from workload_uid import (
+    remove_subid_entries, subid_files_with_entries, wait_logind_release,
+)
 from workloadctl_core import WorkloadManager, require_root
 from cmd_backup import BACKUP_DIR
 
@@ -241,6 +243,9 @@ def cmd_cleanup(args, manager: WorkloadManager):
                        capture_output=True)
         subprocess.run(["loginctl", "disable-linger", str(uid)], check=False,
                        capture_output=True)
+        if not wait_logind_release(uid) and not args.json:
+            print(f"  logind still holds uid {uid}; a new workload given it "
+                  f"in the next few seconds may lose its user manager")
 
         remove_subid_entries(username)
 

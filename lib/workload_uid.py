@@ -10,6 +10,8 @@ import contextlib
 import fcntl
 import grp
 import pwd
+import subprocess
+import time
 from pathlib import Path
 
 from workload_addr import UID_MAX, UID_MIN
@@ -22,6 +24,13 @@ from workload_lib import (
 # generator writes its copy into RUN_SYSTEMD_SYSTEM). Both are scanned by
 # _reserved_uids_in_pending_sysusers to spot pinned-but-uncreated UIDs.
 RUN_SYSUSERS_D = Path("/run/sysusers.d")
+
+# logind keeps a user's record for UserStopDelaySec (10 s by default) after its
+# manager is told to stop. A new user given the uid inside that window is
+# filed under the old name, so logind checks linger under that name, finds
+# none, and stops the new user's manager at its next clean-up.
+LOGIND_RELEASE_SEC = 30
+LOGIND_POLL_SEC = 0.5
 
 # Subordinate-id range derivation. The base places every workload range above
 # the window Fedora's own `useradd` allocates subids from (SUB_UID_MAX=600100000
@@ -451,3 +460,22 @@ def claim_uid(name: str) -> tuple[int, str]:
         # slot we just took out of sequence.
         _allocated_uids.add(adopted)
         return adopted, "adopted"
+
+
+def logind_holds(uid: int) -> bool:
+    """Whether logind still has a record for `uid`."""
+    return subprocess.run(
+        ["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+         "org.freedesktop.login1.Manager", "GetUser", "u", str(uid)],
+        check=False, capture_output=True).returncode == 0
+
+
+def wait_logind_release(uid: int, timeout: float = LOGIND_RELEASE_SEC) -> bool:
+    """Wait until logind has dropped `uid`, before the uid is freed for reuse
+    (see LOGIND_RELEASE_SEC). False if it still holds it at `timeout`."""
+    deadline = time.monotonic() + timeout
+    while logind_holds(uid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(LOGIND_POLL_SEC)
+    return True

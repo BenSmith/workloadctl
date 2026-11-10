@@ -15,10 +15,11 @@ import subprocess
 import sys
 import time
 
-from cli_log import emit_result, error, info, json_enabled
+from cli_log import emit_result, error, info, json_enabled, warn
 from config_parser import workload_root_dir
 import image_fetch
 from workload_lib import workload_egress_dir, workload_enabled_marker
+from workload_uid import wait_logind_release
 from run_files import workload_run_files
 from substrate import get_substrate
 from egress_policy import inspect_record_dir
@@ -294,7 +295,10 @@ def cmd_disable(args, manager: WorkloadManager):
             try:
                 info(f"  Terminating user sessions for {config.username}...")
                 _stop_user_manager(config.username)
-                time.sleep(1)
+                if not wait_logind_release(uid):
+                    warn(f"  logind still holds uid {uid}; a new workload "
+                         f"given it in the next few seconds may lose its "
+                         f"user manager")
                 # Kill any straggler processes (rootless podman, conmon, etc.)
                 # so userdel doesn't print "user is currently used by process N".
                 subprocess.run(["pkill", "-KILL", "-u", str(uid)],
