@@ -256,8 +256,10 @@ When removing it, give them back the main-range gid:
 sudo find $dirs -gid $G -exec chgrp -h $host -- {} +
 ```
 
-After the recreate, check a few as the container sees them:
-`sudo workloadctl incant <name> -- unshare ls -ln <path>`.
+After the recreate, check a few as the container sees them, by their path
+inside the container: `sudo workloadctl exec <name> -- ls -ln <path>`.
+`incant <name> -- unshare` shows the workload user's own namespace
+numbering instead, which is not the container's.
 
 ## Capabilities
 
