@@ -9,7 +9,6 @@ cli_log's suppression never sees.
 """
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -20,8 +19,8 @@ from unittest import mock
 
 import cli_log
 import provisioning
+from tests import script_env
 
-LIB = Path(__file__).resolve().parent.parent / "lib"
 
 # A child process, so the setup script writes to a real fd 1.
 SETUP_UNDER_JSON = """
@@ -51,7 +50,7 @@ class ASetupScriptUnderJson(unittest.TestCase):
             return subprocess.run(
                 [sys.executable, "-c", SETUP_UNDER_JSON, str(script), mode],
                 capture_output=True, text=True, timeout=30,
-                env={**os.environ, "PYTHONPATH": str(LIB)})
+                env=script_env())
 
     def test_stdout_is_the_result_alone(self):
         p = self.run_child("json")
