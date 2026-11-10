@@ -20,17 +20,20 @@
 #        sudo firewall-cmd --reload
 #
 # Setup:
-#   1. Build the container:
+#   1. Copy this TOML into /etc/workloads.d/smb-server/:
+#        sudo workloadctl init smb-server
+#
+#   2. Build the container:
 #        sudo workloadctl build smb-server
 #
-#   2. Enable the workload (copies smb.conf template and starts Samba):
+#   3. Enable the workload (copies smb.conf template and starts Samba):
 #        sudo workloadctl enable smb-server
 #
-#   3. Edit the config to set share paths, users, and other settings:
+#   4. Edit the config to set share paths, users, and other settings:
 #        sudo nano /var/lib/workloads/smb-server/data/smb.conf
 #        sudo workloadctl recreate smb-server
 #
-#   4. Configure firewall:
+#   5. Configure firewall:
 #      Option A (direct port 445):
 #        sudo firewall-cmd --add-service=samba --permanent
 #        sudo firewall-cmd --reload

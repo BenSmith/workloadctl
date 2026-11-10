@@ -8,19 +8,24 @@ the LAN, so files go in from the host
 
 ## Setup
 
-1. **Build the container:**
+1. **Copy the bundle's TOML** into `/etc/workloads.d/smb-server/`:
+   ```bash
+   sudo workloadctl init smb-server
+   ```
+
+2. **Build the container:**
    ```bash
    sudo workloadctl build smb-server
    ```
 
-2. **Enable.** This creates the volume directories and seeds `smb.conf` from the
+3. **Enable.** This creates the volume directories and seeds `smb.conf` from the
    shipped template (it is a `[setup].required_files` entry with an absolute
    hint, so `enable` copies it for you):
    ```bash
    sudo workloadctl enable smb-server
    ```
 
-3. **Edit the config to set share paths and other settings, then apply:**
+4. **Edit the config to set share paths and other settings, then apply:**
    ```bash
    sudo nano /var/lib/workloads/smb-server/data/smb.conf
    sudo workloadctl recreate smb-server
@@ -33,7 +38,7 @@ the LAN, so files go in from the host
    through `resolve_control_file`: Containerfiles, `build.sh`, `[host].setup`,
    `policy.cil`. An override here would be silently ignored.
 
-4. **Open the firewall:**
+5. **Open the firewall:**
    ```bash
    sudo firewall-cmd --add-service=samba --permanent
    sudo firewall-cmd --reload
@@ -134,7 +139,10 @@ files](../../docs/manual/04-containers.md#who-owns-the-files) has the steps.
 
 The system image sets `net.ipv4.ip_unprivileged_port_start = 0`, so smbd can
 bind to port 445 directly. If running on a system without that sysctl, use a
-firewall redirect instead — see the comments in `workload.toml`.
+firewall redirect instead — see the comments in `workload.toml`. With
+neither, smbd can't bind: the log shows `open_socket_in failed: Permission
+denied`, smbd exits, and the unit restarts until systemd's start limit stops
+it.
 
 ## Troubleshooting
 
