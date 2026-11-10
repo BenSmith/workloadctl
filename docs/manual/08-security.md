@@ -106,13 +106,22 @@ container's `[containers.security]` sets its own.
 ### Explicit ID maps
 
 When a keep-id workload has `extra_groups`, workloadctl writes its user
-namespace as explicit maps: the workload user's UID and GID to the keep-id
-target, and each extra group's GID to the same GID inside. For anything
-those don't cover, `extra_uidmaps` and `extra_gidmaps` add maps of your own,
-in podman's `--uidmap` syntax, `+<container id>:@<host id>:<count>`. The `+`
-adds the map to the others rather than replacing them, and the `@` makes the
-second number an ID on the host. `{UID}` and `{GID}` stand for the workload
-user's own IDs.
+namespace as explicit maps. First the keep-id map itself, by host ID: the
+workload user's UID and GID go to the keep-id target, and the rest of its
+subordinate range fills the other container IDs, in order, as plain maps
+with no `+`. Then each extra group's GID is pinned to the same GID inside,
+with a `+` map. A pin replaces only its own container ID: every other
+container ID stays where keep-id puts it, so adding or removing a group
+moves no file's group. The one exception is the group's own ID. Files the
+container wrote under that GID before the group was added now show as the
+overflow group (65534), since the host ID they sit on is no longer mapped.
+
+For anything those don't cover, `extra_uidmaps` and `extra_gidmaps` add maps
+of your own, in podman's `--uidmap` syntax,
+`+<container id>:@<host id>:<count>`. They come last, and workloadctl puts
+the `+` on any that lacks it. The `+` adds the map to the others rather than
+replacing them, and the `@` makes the second number an ID on the host.
+`{UID}` and `{GID}` stand for the workload user's own IDs.
 
 The maps apply under every `keep-id` form and are ignored under
 `userns = "host"`. A host ID must be one the workload user is allowed to
@@ -133,13 +142,17 @@ extra_gidmaps = ["+44:@39:1"]
 ```
 
 The automatic map puts host GID 39 at 39 inside; the explicit one comes
-later and wins, so the group appears at 44 and container GID 39 falls to a
-subordinate ID. The generator logs a warning whenever a map names a host ID a
-second time, and `workloadctl doctor` shows it. Here the move is the point,
-but the same rule catches the workload's own IDs, which are always mapped: a
-map onto `{UID}` or `{GID}` moves the workload user away from its keep-id
-target. To make container root the workload user, write
-`userns = "keep-id:uid=0,gid=0"` instead.
+later and takes it, so the group and the files on it appear at 44, and
+container GID 39 maps to no host ID. Files the container wrote on GID 44
+before read as the overflow group (65534), as on any pin's own slot.
+`workloadctl validate` warns whenever a map names a host ID an earlier map
+already holds, and names both container IDs. It checks once the workload's
+user exists, after the first enable. Here the move is the point, but the
+same rule covers the IDs the keep-id map always holds: the workload's own
+UID and GID, and every ID in its subordinate range. A map onto `{UID}` or
+`{GID}` takes the workload user's ID from its keep-id target. To make
+container root the workload user, write `userns = "keep-id:uid=0,gid=0"`
+instead.
 
 ## Capabilities
 

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import shutil
 import tempfile
 import textwrap
 import unittest
@@ -18,8 +19,10 @@ from unittest import mock
 
 from covhelper import python_cmd
 
+import container_run_args
 import gen_common
 import gen_run
+import workload_uid
 from validation import validate_workload_config
 from workload_seccomp import derived_profile
 from tests import REPO_ROOT, load_script, script_env
@@ -3251,8 +3254,8 @@ class TestGeneratorAutoMaps(unittest.TestCase):
         svc = self._gen('extra_uidmaps = ["+1000:@{UID}:1"]')
         # auto-maps branch omits --userns entirely
         self.assertNotIn("--userns=", svc)
-        # workload user is auto-mapped (+UID:@UID:1)
-        self.assertRegex(svc, r"--uidmap \+\d+:@\d+:1")
+        # workload user is mapped by host id (UID:@UID:1), not pinned
+        self.assertRegex(svc, r"--uidmap (\d+):@\1:1")
         # explicit map with {UID} placeholder substituted to the numeric uid
         self.assertRegex(svc, r"--uidmap \+1000:@\d+:1")
 
@@ -3266,12 +3269,12 @@ class TestGeneratorAutoMaps(unittest.TestCase):
         svc = self._gen("""userns = "keep-id:uid=1000,gid=1000"
             extra_uidmaps = ["+5:@{UID}:1"]""")
         self.assertNotIn("--userns=", svc)
-        self.assertRegex(svc, r"--uidmap \+1000:@\d+:1")
-        self.assertRegex(svc, r"--gidmap \+1000:@\d+:1")
+        self.assertRegex(svc, r"--uidmap 1000:@\d+:1")
+        self.assertRegex(svc, r"--gidmap 1000:@\d+:1")
 
-    def test_a_second_map_onto_the_workload_uid_is_warned(self):
-        # Podman keeps the last map naming a host id: here root takes the
-        # workload's uid and keep-id's uid 1000 lands on a subordinate id.
+    def test_a_second_map_onto_the_workload_uid_is_not_logged(self):
+        # `validate` reports it (host_id_conflicts); the boot generator's
+        # log goes where nobody reads it.
         write_config(self.config_dir, "maps", """\
             [workload]
             name = "maps"
@@ -3282,31 +3285,11 @@ class TestGeneratorAutoMaps(unittest.TestCase):
             [security]
             userns = "keep-id:uid=1000,gid=1000"
             extra_uidmaps = ["+0:@{UID}:1"]
-            extra_gidmaps = ["+5:@{GID}:1"]
         """)
         result = run_generator(self.config_dir, self.services_dir,
                                self.sysusers_dir)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertRegex(result.stderr,
-                         r"uid map \+0:@\d+:1 maps host uid \d+ a second")
-        self.assertRegex(result.stderr,
-                         r"gid map \+5:@\d+:1 maps host gid \d+ a second")
-
-    def test_a_map_onto_another_host_id_is_not_warned(self):
-        write_config(self.config_dir, "maps", """\
-            [workload]
-            name = "maps"
-
-            [container]
-            image = "myapp"
-
-            [security]
-            extra_uidmaps = ["+5:@1:1"]
-        """)
-        result = run_generator(self.config_dir, self.services_dir,
-                               self.sysusers_dir)
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertNotIn("a second time", result.stderr)
+        self.assertNotIn("+0:@", result.stderr)
 
     def test_nonexistent_extra_group_skipped_in_maps(self):
         # get_group_gid returns None for an unknown group; the +GID map is skipped
@@ -3323,6 +3306,208 @@ class TestGeneratorAutoMaps(unittest.TestCase):
         self.assertIn("--group-add=keep-groups", svc)
         # gid 0 is already the mapped set seed; only assert the mapping when != workload gid
         self.assertRegex(svc, r"--gidmap \+\d+:@\d+:1")
+
+
+class TestHostIdConflicts(unittest.TestCase):
+    """host_id_conflicts: a map naming a host id an earlier map holds.
+    podman's `+` takes the id from the earlier entry: its files read as
+    the new container id, and the old one maps to no host id."""
+
+    UID = 10005
+    BASE = workload_uid.derived_subid_range(UID)[0]
+
+    def _conflicts(self, security, groups=()):
+        gids = {"video": 39, "render": 105}
+        with mock.patch.object(container_run_args, "get_group_gid",
+                               side_effect=gids.get):
+            return container_run_args.host_id_conflicts(
+                security, self.UID, list(groups), "maps")
+
+    def test_a_map_onto_the_workload_uid(self):
+        found = self._conflicts({"userns": "keep-id:uid=1000,gid=1000",
+                                 "extra_uidmaps": ["+0:@{UID}:1"]})
+        self.assertEqual(found, [
+            f"maps's uid map +0:@{self.UID}:1 names host uid {self.UID}, "
+            f"which container uid 1000 already holds. podman moves it to "
+            f"container uid 0: files on uid 1000 now read as 0, and "
+            f"container uid 1000 maps to no host uid."])
+
+    def test_a_map_onto_the_workload_gid_is_a_gid_finding(self):
+        found = self._conflicts({"extra_gidmaps": ["+5:@{GID}:1"]})
+        self.assertEqual(len(found), 1)
+        self.assertIn(f"gid map +5:@{self.UID}:1 names host gid", found[0])
+        self.assertIn(f"files on gid {self.UID} now read as 5", found[0])
+
+    def test_a_map_into_the_main_range(self):
+        found = self._conflicts(
+            {"extra_gidmaps": [f"+5:@{self.BASE + 3}:1"]})
+        self.assertEqual(len(found), 1)
+        self.assertIn("files on gid 3 now read as 5", found[0])
+
+    def test_moving_a_delegated_group_names_the_slot_it_leaves(self):
+        found = self._conflicts({"extra_gidmaps": ["+44:@39:1"]}, ["video"])
+        self.assertEqual(len(found), 1)
+        self.assertIn("files on gid 39 now read as 44", found[0])
+
+    def test_the_plus_is_added_before_the_check(self):
+        found = self._conflicts(
+            {"extra_gidmaps": [f"5:@{self.BASE + 3}:1"]})
+        self.assertIn(f"+5:@{self.BASE + 3}:1", found[0])
+
+    def test_ids_outside_every_map_are_not_findings(self):
+        self.assertEqual(self._conflicts({"extra_uidmaps": ["+5:@1:1"]}), [])
+        self.assertEqual(self._conflicts(
+            {"extra_gidmaps": [f"+5:@{self.BASE + 65536}:1"]}), [])
+        self.assertEqual(self._conflicts({}, ["video", "render"]), [])
+
+    def test_keep_id_as_userns_has_no_maps_to_check(self):
+        self.assertEqual(self._conflicts({}), [])
+        self.assertEqual(self._conflicts(
+            {"userns": "host", "extra_uidmaps": ["+0:@{UID}:1"]}), [])
+
+
+class TestKeepIdMapByHostId(unittest.TestCase):
+    """The explicit keep-id map: plain entries by host id for the main
+    subordinate range, then `+` pins. A `+` on the main range would make
+    podman insert it entry by entry, and a `+` entry on an empty list
+    makes podman fill the container's ids in sequence."""
+
+    UID = 10005
+    BASE = workload_uid.derived_subid_range(UID)[0]
+
+    def _args(self, security=None, groups=(), uid=UID):
+        gids = {"video": 39, "render": 105}
+        with mock.patch.object(container_run_args, "get_group_gid",
+                               side_effect=gids.get):
+            return container_run_args.build_userns_args(
+                security or {}, uid, list(groups), "maps")
+
+    def _maps(self, args, kind):
+        return [a.split(" ", 1)[1] for a in args
+                if a.startswith(f"--{kind}map ")]
+
+    def _place(self, entries):
+        """container id -> host id, as podman applies the entries: a plain
+        one lays its range, a `+` one carves out its own container id."""
+        placed = {}
+        for entry in entries:
+            container, host, size = entry.lstrip("+").split(":")
+            for i in range(int(size)):
+                placed[int(container) + i] = int(host.lstrip("@")) + i
+        return placed
+
+    def _assert_placed(self, entries, target, own, pins):
+        base, count = workload_uid.derived_subid_range(self.UID)
+        placed = self._place(entries)
+        for n in range(count):
+            if n in pins:
+                self.assertEqual(placed[n], pins[n])
+            elif n == target:
+                self.assertEqual(placed[n], own)
+            else:
+                self.assertEqual(placed[n], base + n - (n > target), n)
+
+    def test_root_target_with_one_pin(self):
+        uid = 10004
+        base = workload_uid.derived_subid_range(uid)[0]
+        args = self._args({"userns": "keep-id:uid=0,gid=0"}, ["video"],
+                          uid=uid)
+        self.assertEqual(args, [
+            f"--uidmap 0:@{uid}:1", f"--uidmap 1:@{base}:65536",
+            f"--gidmap 0:@{uid}:1", f"--gidmap 1:@{base}:65536",
+            "--gidmap +39:@39:1"])
+
+    def test_root_target_with_two_pins(self):
+        args = self._args({"userns": "keep-id:uid=0,gid=0"},
+                          ["video", "render"])
+        self.assertEqual(self._maps(args, "gid")[-2:],
+                         ["+39:@39:1", "+105:@105:1"])
+        self._assert_placed(self._maps(args, "gid"), 0, self.UID,
+                            {39: 39, 105: 105})
+
+    def test_default_keep_id_with_a_pin(self):
+        uid, base = self.UID, self.BASE
+        args = self._args(groups=["video", "render"])
+        rest = 65536 - uid
+        self.assertEqual(self._maps(args, "uid"), [
+            f"0:@{base}:{uid}", f"{uid}:@{uid}:1",
+            f"{uid + 1}:@{base + uid}:{rest}"])
+        self.assertEqual(self._maps(args, "gid"), [
+            f"0:@{base}:{uid}", f"{uid}:@{uid}:1",
+            f"{uid + 1}:@{base + uid}:{rest}",
+            "+39:@39:1", "+105:@105:1"])
+        self._assert_placed(self._maps(args, "gid"), uid, uid,
+                            {39: 39, 105: 105})
+        self._assert_placed(self._maps(args, "uid"), uid, uid, {})
+
+    def test_suffix_ids_with_a_pin(self):
+        args = self._args({"userns": "keep-id:uid=1000,gid=1000"}, ["video"])
+        self.assertEqual(self._maps(args, "gid")[:3], [
+            f"0:@{self.BASE}:1000", f"1000:@{self.UID}:1",
+            f"1001:@{self.BASE + 1000}:64536"])
+        self._assert_placed(self._maps(args, "gid"), 1000, self.UID,
+                            {39: 39})
+
+    def test_a_target_past_the_range_has_no_third_piece(self):
+        args = self._args({"userns": "keep-id:uid=70000,gid=70000"},
+                          ["video"])
+        self.assertEqual(self._maps(args, "gid"), [
+            f"0:@{self.BASE}:65536", f"70000:@{self.UID}:1",
+            "+39:@39:1"])
+
+    def test_no_map_of_the_main_range_is_a_pin(self):
+        for entry in self._maps(self._args(groups=["video"]), "gid")[:3]:
+            self.assertFalse(entry.startswith("+"), entry)
+
+    def test_extra_maps_are_pins_with_or_without_the_plus(self):
+        args = self._args({"extra_uidmaps": ["+5:@{UID}:1"],
+                           "extra_gidmaps": ["44:@39:1", "g7:@105:1"]},
+                          ["video"])
+        self.assertEqual(self._maps(args, "uid")[-1],
+                         f"+5:@{self.UID}:1")
+        self.assertEqual(self._maps(args, "gid")[-3:],
+                         ["+39:@39:1", "+44:@39:1", "+g7:@105:1"])
+
+    def test_extra_maps_alone_are_pins_after_the_plain_entries(self):
+        args = self._args({"extra_gidmaps": ["44:@39:1"]})
+        gid = self._maps(args, "gid")
+        self.assertEqual(gid[-1], "+44:@39:1")
+        self.assertFalse(any(e.startswith("+") for e in gid[:-1]))
+
+    def test_no_pins_and_no_extra_maps_leave_userns_alone(self):
+        self.assertEqual(self._args(), ["--userns=keep-id"])
+        self.assertEqual(self._args({"userns": "keep-id:uid=1000"}),
+                         ["--userns=keep-id:uid=1000"])
+
+    def test_the_pod_create_gets_the_same_maps(self):
+        config_dir = tempfile.mkdtemp()
+        services_dir = tempfile.mkdtemp()
+        sysusers_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, config_dir)
+        self.addCleanup(shutil.rmtree, services_dir)
+        self.addCleanup(shutil.rmtree, sysusers_dir)
+        write_config(config_dir, "stack", """\
+            [workload]
+            name = "stack"
+            mode = "pod"
+
+            [security]
+            extra_gidmaps = ["44:@39:1"]
+
+            [[containers]]
+            name = "a"
+            [containers.container]
+            image = "img-a"
+        """)
+        r = run_generator(config_dir, services_dir, sysusers_dir)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pod = (Path(services_dir) / "workload-stack-pod.service").read_text()
+        uid = int(re.search(r"/run/user/(\d+)", pod).group(1))
+        base = workload_uid.derived_subid_range(uid)[0]
+        self.assertNotIn("--userns=keep-id", pod)
+        self.assertIn(f"--gidmap 0:@{base}:{uid} "
+                      f"--gidmap {uid}:@{uid}:1 ", pod)
+        self.assertIn("--gidmap +44:@39:1", pod)
 
 
 class TestGeneratorMainEdgeCases(unittest.TestCase):

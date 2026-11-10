@@ -304,8 +304,10 @@
 # {UID} and {GID} stand for the workload user's IDs. A host ID must be one
 # the workload user may map: its own UID or GID, one in its subordinate range,
 # or an extra_groups GID; podman refuses to start the container otherwise.
-# When two maps name one host ID the later wins, which is how an ID is moved;
-# the generator warns. Read under every keep-id form, ignored under "host".
+# When two maps name one host ID the later wins, which is how an ID is moved,
+# and the container ID that held it is left unmapped; validate warns. Always
+# applied as `+` maps: a leading `+` is added when absent. Read under every
+# keep-id form, ignored under "host".
 # Type: array of strings. Default: [].
 # See: 08-security.md "Explicit ID maps"
 # extra_uidmaps = []

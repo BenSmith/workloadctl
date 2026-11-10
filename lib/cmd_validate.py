@@ -19,7 +19,13 @@ from container_network_config import (
     container_uses_inspect,
 )
 from ensure_container import subgid_delegation_check_for
-from workload_lib import expand_volume_path, GENERATOR_OWNED_DIRECTIVES
+from config_parser import infer_workload_mode
+from container_run_args import host_id_conflicts
+from shares import load_shares, resolve as resolve_shares
+from workload_addr import UID_MAX, UID_MIN
+from workload_lib import (
+    expand_volume_path, GENERATOR_OWNED_DIRECTIVES, normalize_containers,
+)
 from workload_uid import subgid_file
 from workload_selinux import shadowed_filecon_paths
 from egress_policy import internal_hosts, vm_uses_inspect
@@ -82,6 +88,25 @@ def _resolve_within(host: str, timeout: float):
             f"the lookup did not answer within {timeout:g}s, so whether it "
             f"would resolve at start is unknown from here")
     return box["ok"]
+
+
+def _userns_map_conflicts(config: dict, uid: int, name: str) -> list[str]:
+    """host_id_conflicts over every userns the units write: the pod's in pod
+    mode, each container's otherwise, with the share groups resolved the way
+    the units run them."""
+    shares, _ = load_shares()
+    resolved = resolve_shares(config, shares)
+    extra_groups = resolved.get("security", {}).get("extra_groups", [])
+    if infer_workload_mode(resolved) == "pod":
+        blocks = [resolved.get("security", {})]
+    else:
+        blocks = [c.get("security", {})
+                  for c in normalize_containers(resolved)]
+    found = []
+    for security in blocks:
+        found += [m for m in host_id_conflicts(security, uid, extra_groups,
+                                               name) if m not in found]
+    return found
 
 
 def validate_single(config: WorkloadConfig, manager: WorkloadManager, json_mode=False) -> dict:
@@ -562,6 +587,18 @@ def validate_single(config: WorkloadConfig, manager: WorkloadManager, json_mode=
             config.config, config.username, subgid_file())
         if not in_step:
             _warn("subgid_delegations", message, passed=False)
+
+    # A second map onto one host id leaves a container id unmapped. The main
+    # range comes from the uid, so this check waits for the first enable.
+    if not config.is_vm:
+        try:
+            uid = config.uid
+        except WorkloadUserNotFound:
+            uid = None
+        if uid is not None and UID_MIN <= uid <= UID_MAX:
+            for message in _userns_map_conflicts(config.config, uid,
+                                                 config.name):
+                _warn("userns_maps", message, passed=False)
 
     errors = sum(1 for c in checks if c["severity"] == "error")
     warnings = sum(1 for c in checks if c["severity"] == "warning")

@@ -42,6 +42,7 @@ from recursive_readonly import (
     RRO_HOOKS_DIR, rro_annotation, rro_volume_flag,
 )
 from validation import valid_userns_mode
+from workload_uid import derived_subid_range
 from workload_mcs import mcs_level
 from workload_seccomp import (
     SECCOMP_BASELINE, derived_profile_name, needs_derived_profile,
@@ -76,63 +77,104 @@ def build_userns_args(security, uid, extra_groups, name):
         log_msg(f"WARNING: {name} uses userns=host. Container root maps to workload user. "
                 f"Container escape grants workload user privileges.", level="warning")
 
-    extra_uidmaps = security.get("extra_uidmaps", [])
-    extra_gidmaps = security.get("extra_gidmaps", [])
     if _needs_auto_maps(security, userns_mode, extra_groups):
-        # GID == UID for workload users (sysusers convention)
-        gid = uid
-        # Honor the optional :uid=N,gid=N suffix on keep-id, which remaps the
-        # workload user to a different in-container uid/gid (e.g. for images
-        # that ship a fixed non-root user). Without this, +N:@N:1 hardcodes the
-        # in-container uid to the host workload uid, silently ignoring the
-        # suffix that the non-needs_auto_maps branch would have honored.
-        target_uid, target_gid = _keep_id_ids(userns_mode, uid)
-        # Auto-map the workload user's own UID and GID (+ prefix implies keep-id)
-        args.append(f"--uidmap +{target_uid}:@{uid}:1")
-        args.append(f"--gidmap +{target_gid}:@{gid}:1")
-        # Auto-map GIDs from extra_groups
-        mapped_gids = {gid}
-        for group in extra_groups:
-            group_gid = get_group_gid(group)
-            if group_gid is not None and group_gid not in mapped_gids:
-                args.append(f"--gidmap +{group_gid}:@{group_gid}:1")
-                mapped_gids.add(group_gid)
-        # Explicit maps from TOML (with {UID}/{GID} placeholder substitution)
-        host_ids = {"uid": {uid}, "gid": mapped_gids}
-        for kind, maps in (("uid", extra_uidmaps), ("gid", extra_gidmaps)):
-            for m in maps:
-                m = m.replace("{UID}", str(uid)).replace("{GID}", str(gid))
-                _warn_on_a_mapped_host_id(name, kind, m, host_ids[kind])
-                args.append(f"--{kind}map {m}")
+        args.extend(f"--{kind}map {m}" for kind, m in
+                    _explicit_maps(security, userns_mode, uid, extra_groups))
     else:
         args.append(f"--userns={userns_mode}")
     return args
 
 
-def _warn_on_a_mapped_host_id(name, kind, mapping, mapped):
-    """Warn when an extra map's host ids are already mapped. A host id
-    takes one container id, and podman keeps the last map that names it,
-    so the earlier container id silently lands on a subordinate id."""
-    match = re.fullmatch(r"\+?\d+:@?(\d+):(\d+)", mapping)
-    if not match:
-        return
-    host, size = (int(g) for g in match.groups())
-    ids = set(range(host, host + size))
-    if ids & mapped:
-        log_msg(f"WARNING: {name}'s {kind} map {mapping} maps host "
-                f"{kind} {min(ids & mapped)} a second time; podman keeps "
-                f"this map, and the container {kind} mapped to it before "
-                f"lands on a subordinate id.", level="warning")
-    mapped |= ids
+def _explicit_maps(security, userns_mode, uid, extra_groups):
+    """(kind, map) for each --uidmap and --gidmap, in the order written.
+
+    The keep-id map by host id comes first: plain entries that fill the
+    main subordinate range around the workload user's own id, at the
+    keep-id target (the :uid=N,gid=N suffix, or the workload's own ids).
+    Then a `+` pin per delegated gid, then the TOML's maps with {UID} and
+    {GID} substituted, each made a `+` map. A plain entry first, because a
+    `+` entry added to an empty list makes podman fill the container's ids
+    in sequence, which moves every id above a pin.
+    """
+    gid = uid  # GID == UID for workload users (sysusers convention)
+    target_uid, target_gid = _keep_id_ids(userns_mode, uid)
+    maps = [(kind, m)
+            for kind, target, own in (
+                ("uid", target_uid, uid), ("gid", target_gid, gid))
+            for m in _keep_id_pieces(uid, target, own)]
+    mapped_gids = {gid}
+    for group in extra_groups:
+        group_gid = get_group_gid(group)
+        if group_gid is not None and group_gid not in mapped_gids:
+            maps.append(("gid", f"+{group_gid}:@{group_gid}:1"))
+            mapped_gids.add(group_gid)
+    for kind in ("uid", "gid"):
+        for m in security.get(f"extra_{kind}maps", []):
+            m = m.replace("{UID}", str(uid)).replace("{GID}", str(gid))
+            if "+" not in re.match(r"[^\d]*", m).group():
+                m = "+" + m
+            maps.append((kind, m))
+    return maps
+
+
+def _keep_id_pieces(uid, target, own):
+    """The plain maps that put the workload user's `own` host id at the
+    in-container id `target` and the rest of its subordinate range where
+    keep-id puts it: container id N on base + N, less one above target."""
+    base, count = derived_subid_range(uid)
+    pieces = []
+    if target > 0:
+        pieces.append(f"0:@{base}:{min(target, count)}")
+    pieces.append(f"{target}:@{own}:1")
+    if target < count:
+        pieces.append(f"{target + 1}:@{base + target}:{count - target}")
+    return pieces
+
+
+def host_id_conflicts(security, uid, extra_groups, name):
+    """A message for each map that names a host id an earlier map already
+    gives a container id, as build_userns_args would write them.
+
+    podman's `+` takes the host id away from the earlier entry: the files
+    on it read as the new container id, and the container id that held it
+    maps to no host id. Empty when the userns is written as --userns. A map
+    with a flag or without `@` is not checked.
+    """
+    userns_mode = security.get("userns", "keep-id")
+    if not valid_userns_mode(userns_mode):
+        userns_mode = "keep-id"
+    if not _needs_auto_maps(security, userns_mode, extra_groups):
+        return []
+    held = {"uid": [], "gid": []}
+    found = []
+    for kind, m in _explicit_maps(security, userns_mode, uid, extra_groups):
+        match = re.fullmatch(r"\+?(\d+):@(\d+):(\d+)", m)
+        if not match:
+            continue
+        container, host, size = (int(g) for g in match.groups())
+        for held_host, held_container, held_size in held[kind]:
+            first = max(host, held_host)
+            if first < min(host + size, held_host + held_size):
+                lost = held_container + first - held_host
+                gained = container + first - host
+                found.append(
+                    f"{name}'s {kind} map {m} names host {kind} {first}, "
+                    f"which container {kind} {lost} already holds. podman "
+                    f"moves it to container {kind} {gained}: files on "
+                    f"{kind} {lost} now read as {gained}, and container "
+                    f"{kind} {lost} maps to no host {kind}.")
+                break
+        held[kind].append((host, container, size))
+    return found
 
 
 def _needs_auto_maps(security, userns_mode, extra_groups):
-    """True when keep-id is written as +N:@N:1 maps instead of --userns.
+    """True when keep-id is written as explicit maps instead of --userns.
 
-    When extra_groups or explicit maps are present, we emit +N:@N:1 flags
-    which imply keep-id behavior.
+    When extra_groups or explicit maps are present, the keep-id map is
+    spelled out by host id (build_userns_args) with `+` pins and extras.
     Podman 5.x treats --userns and --uidmap/--gidmap as mutually exclusive,
-    so we must omit --userns when + prefixed maps are used.
+    so --userns is omitted then.
     """
     return userns_mode.startswith("keep-id") and bool(
         extra_groups

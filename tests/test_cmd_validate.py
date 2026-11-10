@@ -20,7 +20,9 @@ from unittest import mock
 
 import cmd_validate  # noqa: E402
 import workload_lib  # noqa: E402
-from workloadctl_core import WorkloadConfig, WorkloadManager  # noqa: E402
+from workloadctl_core import (  # noqa: E402
+    WorkloadConfig, WorkloadManager, WorkloadUserNotFound,
+)
 
 
 def _ns(**kw):
@@ -508,6 +510,48 @@ class ValidateSingleInlinedSecretsTest(unittest.TestCase):
         self.assertTrue(checks[0]["passed"])
 
 
+class ValidateUsernsMapsTest(unittest.TestCase):
+    """validate reports a second map onto one host id (host_id_conflicts)
+    once the workload's uid exists, since the main range comes from it."""
+
+    TOML = (
+        '[workload]\nname = "clitest-maps"\n'
+        '[container]\nimage = "localhost/a:latest"\npull = "never"\n'
+        '[security]\nuserns = "keep-id:uid=1000,gid=1000"\n'
+        'extra_uidmaps = ["+0:@{UID}:1"]\n')
+
+    def setUp(self):
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(
+            workload_lib, "WORKLOAD_CONFIG_DIR", self.tmp))
+
+    def _rows(self, uid):
+        (self.tmp / "clitest-maps").mkdir()
+        (self.tmp / "clitest-maps" / "workload.toml").write_text(self.TOML)
+        config = WorkloadConfig("clitest-maps")
+        manager = mock.Mock(spec=WorkloadManager)
+        manager.user_exists.return_value = False
+        manager.get_all_configs.return_value = []
+        with mock.patch.object(WorkloadConfig, "uid",
+                               new_callable=mock.PropertyMock,
+                               **uid):
+            result = cmd_validate.validate_single(config, manager,
+                                                  json_mode=True)
+        return [c for c in result["checks"] if c["check"] == "userns_maps"]
+
+    def test_a_map_onto_the_workload_uid_is_a_warning(self):
+        rows = self._rows({"return_value": 10004})
+        self.assertEqual(len(rows), 1, rows)
+        self.assertEqual(rows[0]["severity"], "warning")
+        self.assertIn("files on uid 1000 now read as 0",
+                      rows[0]["message"])
+
+    def test_before_the_first_enable_nothing_is_checked(self):
+        rows = self._rows(
+            {"side_effect": WorkloadUserNotFound("clitest-maps")})
+        self.assertEqual(rows, [])
+
+
 class WarningPassedFlagTest(unittest.TestCase):
     """Every `_warn` site's `passed` value, pinned as one table.
 
@@ -551,6 +595,7 @@ class WarningPassedFlagTest(unittest.TestCase):
         "container_internal_unresolvable": False,
         "vm_mac_collision": False,
         "subgid_delegations": False,
+        "userns_maps": False,
     }
 
     @staticmethod
