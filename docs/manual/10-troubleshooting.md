@@ -111,6 +111,7 @@ The checks, in the order they print:
 |---|---|---|
 | `user_exists`, `home_dir` | the workload user or its home directory does not exist | [Starting](#starting) |
 | `subid_configured`, `subid_derived`, `subid_overlap` | the subordinate ID range is missing, or is not the one derived from the UID | [Permissions and ID maps](#permissions-and-id-maps) |
+| `subgid_delegations`, `image_shift` | the workload's delegated groups no longer match `/etc/subgid`, or a stored image was written under another layout; both warn | [When a delegated group changes](08-security.md#when-a-delegated-group-changes) |
 | `linger_enabled`, `user_session`, `runtime_dir` | the workload user's systemd manager or `/run/user/<uid>` is gone | [Starting](#starting) |
 | `selinux_module`, `workload_selinux_module_current`, `selinux_module_current` | a policy module is not loaded, or is older than the package's | [SELinux denials](#selinux-denials) |
 | `gpu_selinux` | an NVIDIA GPU is requested and nothing grants its device nodes; it warns, and passes, when only the older blanket `container_use_devices` boolean does | [SELinux denials](#selinux-denials) |
@@ -381,6 +382,17 @@ stopped: write the derived range (the check prints it) into both files, then
 shift the ownership of every file under `state/` from the old range to the
 new. Leave `data/` alone: its files belong to the workload's own UID, not to
 the subordinate range.
+
+### diagnose reports `subgid_delegations` or `image_shift`
+
+The workload's one-gid lines in `/etc/subgid` no longer match the groups
+its TOML delegates, or a stored image's group ids are offset from its own
+`/etc/group`. The stored images read as other groups; the volume files keep
+their gids, except those on the added or removed group's own gid.
+`validate` raises `subgid_delegations` as a warning before the recreate that
+would cause it. The remedy is a manual procedure,
+[When a delegated group
+changes](08-security.md#when-a-delegated-group-changes).
 
 UIDs run from 10000 to 52948, so a host can hold 42,949 workloads.
 

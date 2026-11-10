@@ -154,6 +154,111 @@ UID and GID, and every ID in its subordinate range. A map onto `{UID}` or
 container root the workload user, write `userns = "keep-id:uid=0,gid=0"`
 instead.
 
+### When a delegated group changes
+
+podman numbers a workload user's namespace by sorting its subordinate ranges,
+and each delegated group (an entry of `extra_groups`, a share's group, or a
+host gid named by `extra_gidmaps`) is a one-gid range in `/etc/subgid` that
+sorts ahead of the main range. Adding or removing one therefore renumbers
+the namespace under the images the workload has stored: their layers now
+read as other groups. The workload's volume files keep their container gids,
+because the maps are written by host id ([Explicit ID
+maps](#explicit-id-maps)); the one exception is the files on the added or
+removed group's own gid, below. workloadctl reports the drift and changes
+nothing.
+
+`validate` warns, as `subgid_delegations`, about a stale delegation (a line
+no group needs any more) and a pending one (a group that has no line yet, so
+the next `recreate` adds it). That is before the recreate that would shift
+anything.
+`diagnose` reports the same two, and adds `image_shift` for each stored
+image whose group ids no longer match its own `/etc/group`, naming the
+offset. Both messages point here.
+
+To move a workload across a change, by hand:
+
+1. Stop it.
+
+   ```bash
+   sudo workloadctl stop <name>
+   ```
+
+2. Remove its pods, containers and images, while the old group is still
+   mapped. Removing them afterwards fails or leaves layers on wrong ids.
+
+   ```bash
+   sudo workloadctl incant <name> -- pod rm -af
+   sudo workloadctl incant <name> -- rm -af
+   sudo workloadctl incant <name> -- rmi -af
+   ```
+
+3. Change the delegation. To add a group, add it to `extra_groups` (or
+   declare the share) in the TOML. To remove one, take it out of the TOML
+   and delete its line from `/etc/subgid`, which workloadctl never does
+   itself. The line is the workload user's one-gid line,
+   `_wl-<name>:<gid>:1`, as the `validate` message names it. Leave the main
+   range alone.
+
+4. For a removal, have podman rebuild its view of the namespace now that the
+   line is gone. An addition needs nothing here: the recreate below writes
+   the line.
+
+   ```bash
+   sudo workloadctl incant <name> -- system migrate
+   ```
+
+5. Move the files on the group's own gid, if they should keep it
+   ([below](#the-files-on-the-groups-own-gid)). The workload is still
+   stopped, so nothing reads them on the wrong group.
+
+6. Recreate the workload, and wait for it to come up: `recreate` returns
+   while the images are still being pulled.
+
+   ```bash
+   sudo workloadctl recreate <name>
+   sudo workloadctl health <name>
+   ```
+
+   `recreate` regenerates the unit, writes the `/etc/subgid` line an added
+   group needs and pulls the images again. Do not use `start` here: it does
+   not run the unit generator, so it brings the old unit up on the old maps,
+   with no line for the new group. Once `health` passes, `diagnose <name>`
+   should report no `subgid_delegations` or `image_shift` finding.
+
+#### The files on the group's own gid
+
+The files the container wrote on the group's gid `G` are the one thing a
+change moves. While the group is not delegated, container gid `G` sits on
+the main range: at host gid `base + G` when `G` is below the keep-id target
+`t`, and at `base + G - 1` when it is above. `base` is the start of the
+workload user's main `/etc/subgid` range, and `t` is the workload's own gid,
+or the `gid=` of a `userns = "keep-id:uid=N,gid=N"`. While it is delegated,
+container gid `G` is host gid `G`. So after a change, the files on the old
+host gid read as the overflow group (65534). Work out the two host gids:
+
+```bash
+name=<name>; G=<gid>
+t=$(id -g _wl-$name)    # or the gid= in userns = "keep-id:uid=N,gid=N"
+base=$(awk -F: -v u="_wl-$name" '$1==u && $3!=1 {print $2}' /etc/subgid)
+host=$(( G < t ? base + G : base + G - 1 ))
+dirs="/var/lib/workloads/$name/data /var/lib/workloads/$name/state"
+```
+
+When adding the group, give its files the group's own gid:
+
+```bash
+sudo find $dirs -gid $host -exec chgrp -h $G -- {} +
+```
+
+When removing it, give them back the main-range gid:
+
+```bash
+sudo find $dirs -gid $G -exec chgrp -h $host -- {} +
+```
+
+After the recreate, check a few as the container sees them:
+`sudo workloadctl incant <name> -- unshare ls -ln <path>`.
+
 ## Capabilities
 
 A process running as root inside a container holds podman's default
