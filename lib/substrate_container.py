@@ -304,9 +304,11 @@ class ContainerSubstrate(Substrate):
                 f"Run a command directly with: workloadctl exec {ref} -- <command>"
             )
             raise LifecycleError(1)
-        self.manager.run_podman_exec(
+        result = self.manager.run_podman_exec(
             self.config, [*_interactive_exec_flags(), *user_opts, target, shell]
         )
+        if result.returncode != 0:
+            raise LifecycleError(result.returncode)
 
     def lifecycle(self, action: str) -> None:
         """Unified lifecycle for containers: start / stop / restart / reboot."""

@@ -2373,15 +2373,25 @@ CONTAINER_UID = "2000"
 
     def test_interactive_127_is_not_a_missing_shell(self):
         """bash present, and the last command typed in it was not found: its
-        exit 127 starts no other shell."""
+        exit 127 starts no other shell, and is the shell's exit status."""
         substrate, manager = self._substrate()
         manager.run_podman_exec.side_effect = [_ok(returncode=0), _ok(returncode=127)]
         with patch('sys.stdout', io.StringIO()):
-            substrate.open_shell()
+            with self.assertRaises(LifecycleError) as cm:
+                substrate.open_shell()
+        self.assertEqual(cm.exception.returncode, 127)
         probe, interactive = self._argv_calls(manager)
         self.assertEqual(manager.run_podman_exec.call_count, 2)
         self.assertEqual(interactive[-1], '/bin/bash')
         self.assertNotIn('/bin/sh', probe + interactive)
+
+    def test_the_shell_exit_status_passes_through(self):
+        substrate, manager = self._substrate()
+        manager.run_podman_exec.side_effect = [_ok(returncode=0), _ok(returncode=3)]
+        with patch('sys.stdout', io.StringIO()):
+            with self.assertRaises(LifecycleError) as cm:
+                substrate.open_shell()
+        self.assertEqual(cm.exception.returncode, 3)
 
 
 # ── ContainerSubstrate.lifecycle() reboot / user_exists branches ─────────────
