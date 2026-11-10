@@ -22,8 +22,15 @@ Arms, one after another:
 - `rig-fetch-bad`: filtered, a tag that doesn't exist: the start fails and
   says why. The fetch step broken on purpose.
 - `rig-fetch-open`: unfiltered control: no fetch step, podman pulls.
+- `rig-fetch-mirror`: filtered, an image from a registry that doesn't
+  exist (`rig-upstream.invalid`) whose one mirror is the homelab registry
+  (`registry.local`), so it starts only if the fetch went through the
+  mirror. Skipped when `registry.local` doesn't answer.
 
-    sudo python3 tests/manual/image_fetch_rig.py
+    sudo python3 tests/manual/image_fetch_rig.py [arm ...]
+
+Arms are named without their `arm_` prefix (`main big tiny bad open
+mirror`); none named runs them all.
 
 Needs the workloadctl RPM installed, SELinux enforcing, and anonymous access
 to registry.access.redhat.com and docker.io. Turns dontaudit rules off for
@@ -47,8 +54,11 @@ MARK = "FETCH-RIG-UP"
 FETCH_BIN = "/usr/libexec/workloadctl/workload-image-fetch"
 CACHE = Path("/var/cache/private/workloadctl-fetch")
 BLOCK_CONF = Path("/etc/containers/registries.conf.d/99-image-fetch-rig.conf")
+MIRROR_CONF = Path("/etc/containers/registries.conf.d/99-image-fetch-rig-mirror.conf")
+MIRROR = "registry.local"
+MIRRORED = "rig-upstream.invalid/library/alpine:latest"
 NAMES = ("rig-fetch", "rig-fetch-big", "rig-fetch-tiny", "rig-fetch-bad",
-         "rig-fetch-open")
+         "rig-fetch-open", "rig-fetch-mirror")
 RESULTS = []
 
 
@@ -63,12 +73,16 @@ def run(argv, timeout=120, check=False):
                           timeout=timeout, check=check)
 
 
-def bundle(name, image, pull, filtered=True):
+def bundle(name, image, pull, filtered=True, shell=False):
+    if shell:
+        command = f'["sh", "-c", "echo {MARK}; exec sleep 1000000000"]'
+    else:
+        command = ('["python3", "-c", "import time; print(\\"' + MARK
+                   + '\\", flush=True); time.sleep(10**9)"]')
     lines = [
         "[workload]", f'name = "{name}"', "enabled = false", "",
         "[container]", f'image = "{image}"', f'pull = "{pull}"',
-        'command = ["python3", "-c", "import time; print(\\"' + MARK
-        + '\\", flush=True); time.sleep(10**9)"]', "",
+        f"command = {command}", "",
     ]
     if filtered:
         lines += ["[network]", 'hosts = ["pypi.org"]', 'tls = "inspect"',
@@ -169,6 +183,7 @@ def denials(offset):
 def cleanup():
     run(["umount", str(CACHE)])
     BLOCK_CONF.unlink(missing_ok=True)
+    MIRROR_CONF.unlink(missing_ok=True)
     for name in NAMES:
         run(["workloadctl", "disable", "--purge", name], timeout=180)
         run(["systemctl", "reset-failed", f"workload-{name}.service"])
@@ -369,6 +384,31 @@ def arm_open():
     run(["workloadctl", "disable", "--purge", name], timeout=180)
 
 
+def arm_mirror():
+    name = "rig-fetch-mirror"
+    print(f"\n== {name}: {MIRRORED}, mirrored only by {MIRROR}")
+    reach = run(["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
+                 f"https://{MIRROR}/v2/"], timeout=20).stdout
+    if reach != "200":
+        print(f"  [SKIP] {MIRROR} doesn't answer ({reach or 'no reply'})")
+        return
+    record("premise: the image's own registry doesn't resolve",
+           run(["getent", "hosts", MIRRORED.split("/")[0]]).returncode != 0)
+    MIRROR_CONF.write_text(
+        f'[[registry]]\nlocation = "{MIRRORED.split("/")[0]}"\n'
+        f'[[registry.mirror]]\nlocation = "{MIRROR}"\n')
+    try:
+        write(name, MIRRORED, "newer", shell=True)  # alpine: no python
+        since = int(time.time())
+        ok, r = enable(name, since)
+        log = unit_log(name, since)
+        record("a mirror-only image fetches through the mirror",
+               ok and "loaded '" + MIRRORED in log, log[-600:])
+    finally:
+        MIRROR_CONF.unlink(missing_ok=True)
+        run(["workloadctl", "disable", "--purge", name], timeout=180)
+
+
 def main():
     if os.geteuid() != 0:
         sys.exit("run as root (sudo)")
@@ -386,7 +426,14 @@ def main():
     offset = os.path.getsize(AUDIT)
     run(["semodule", "-DB"], timeout=300, check=True)
     try:
-        for arm in (arm_main, arm_big, arm_tiny, arm_bad, arm_open):
+        arms = (arm_main, arm_big, arm_tiny, arm_bad, arm_open, arm_mirror)
+        chosen = sys.argv[1:]
+        unknown = set(chosen) - {a.__name__[4:] for a in arms}
+        if unknown:
+            sys.exit(f"no such arm: {sorted(unknown)}")
+        for arm in arms:
+            if chosen and arm.__name__[4:] not in chosen:
+                continue
             try:
                 arm()
             except Exception as e:  # noqa: BLE001

@@ -202,15 +202,17 @@ class WorkerArgvTest(unittest.TestCase):
         self.assertEqual(argv[-3:], [image_fetch.WORKER, "inspect", IMAGE])
 
     def test_skopeo_inspect_takes_no_credentials(self):
-        self.assertEqual(image_fetch_worker.inspect_argv(IMAGE),
+        self.assertEqual(image_fetch_worker.inspect_argv("/c", IMAGE),
                          ["/usr/bin/skopeo", "inspect", "--no-creds",
-                          "--no-tags", f"docker://{IMAGE}"])
+                          "--no-tags", "--authfile", "/c/auth.json",
+                          f"docker://{IMAGE}"])
 
     def test_skopeo_copy(self):
         argv = image_fetch_worker.copy_argv("/c", "r.example/a@" + NEW,
                                             "r.example/a:1")
         self.assertEqual(argv[:3], ["/usr/bin/skopeo", "--tmpdir", "/c"])
         self.assertIn("--src-no-creds", argv)
+        self.assertEqual(argv[argv.index("--src-authfile") + 1], "/c/auth.json")
         self.assertIn("--remove-signatures", argv)
         self.assertEqual(argv[-2:], [f"docker://r.example/a@{NEW}",
                                      "oci-archive:/c/image.tar:r.example/a:1"])
@@ -245,6 +247,24 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertEqual(Path(cache, "error").read_text(),
                              "manifest unknown")
+
+    def test_the_empty_authfile_is_written_before_skopeo_runs(self):
+        """A mirror's credential lookup reads it; without it skopeo skips
+        the mirror."""
+        seen = []
+
+        def fake_run(argv, **kw):
+            path = argv[argv.index("--authfile") + 1]
+            seen.append(json.loads(Path(path).read_text()))
+            return mock.Mock(returncode=0, stderr="", stdout=json.dumps(
+                {"Digest": NEW, "LayersData": [{"Size": 1}]}))
+
+        with tempfile.TemporaryDirectory() as cache, \
+                mock.patch.dict(os.environ, {"CACHE_DIRECTORY": cache}), \
+                mock.patch.object(image_fetch_worker.subprocess, "run",
+                                  fake_run):
+            self.assertEqual(image_fetch_worker.main(["w", "inspect", IMAGE]), 0)
+        self.assertEqual(seen, [{}])
 
 
 class FreeSpaceTest(unittest.TestCase):

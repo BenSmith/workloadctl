@@ -21,6 +21,7 @@ SKOPEO = "/usr/bin/skopeo"
 INSPECT_NAME = "inspect.json"
 ARCHIVE_NAME = "image.tar"
 ERROR_NAME = "error"
+AUTH_NAME = "auth.json"
 ERROR_LIMIT = 2000
 
 
@@ -28,12 +29,19 @@ class WorkerError(Exception):
     pass
 
 
-def inspect_argv(image: str) -> list[str]:
-    # No credentials: skopeo would otherwise try the dynamic uid's
-    # /run/containers/<uid>/auth.json, be refused and stop. No tags: the
-    # listing pages through every tag in the repository, which for a large
-    # one takes minutes.
-    return [SKOPEO, "inspect", "--no-creds", "--no-tags", f"docker://{image}"]
+# No credentials, said twice. --no-creds covers only the registry the image
+# names; a mirror of it (registries.conf.d) is still looked up in the
+# dynamic uid's /run/containers/<uid>/auth.json, which it may not read, and
+# skopeo then skips the mirror and goes upstream. An empty authfile of its
+# own leaves nothing to look up.
+EMPTY_AUTH = "{}\n"
+
+
+def inspect_argv(cache: str, image: str) -> list[str]:
+    # No tags: the listing pages through every tag in the repository, which
+    # for a large one takes minutes.
+    return [SKOPEO, "inspect", "--no-creds", "--no-tags",
+            "--authfile", os.path.join(cache, AUTH_NAME), f"docker://{image}"]
 
 
 def copy_argv(cache: str, source: str, name: str) -> list[str]:
@@ -42,6 +50,7 @@ def copy_argv(cache: str, source: str, name: str) -> list[str]:
     # --remove-signatures: an OCI layout can't store them; they are still
     # checked during the copy, as policy.json requires.
     return [SKOPEO, "--tmpdir", cache, "copy", "--quiet", "--src-no-creds",
+            "--src-authfile", os.path.join(cache, AUTH_NAME),
             "--remove-signatures", f"docker://{source}",
             f"oci-archive:{os.path.join(cache, ARCHIVE_NAME)}:{name}"]
 
@@ -79,8 +88,9 @@ def _write(cache: str, name: str, text: str) -> None:
 
 
 def run(argv: list[str], cache: str) -> None:
+    _write(cache, AUTH_NAME, EMPTY_AUTH)
     if len(argv) == 3 and argv[1] == "inspect":
-        summary = summarize(_skopeo(inspect_argv(argv[2])))
+        summary = summarize(_skopeo(inspect_argv(cache, argv[2])))
         _write(cache, INSPECT_NAME, json.dumps(summary))
     elif len(argv) == 4 and argv[1] == "copy":
         _skopeo(copy_argv(cache, argv[2], argv[3]))
