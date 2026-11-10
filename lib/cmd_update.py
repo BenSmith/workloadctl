@@ -12,6 +12,7 @@ from workloadctl_core import (
     WorkloadManager,
     require_root,
 )
+from container_network_config import container_uses_inspect
 from provisioning import record_rejected_builds
 from service_runtime import restart_workload_service
 from substrate import (
@@ -213,13 +214,18 @@ def _update_plan(config: WorkloadConfig, manager: WorkloadManager) -> list[str]:
 
     user_present = manager.user_exists(config)
     pod = manager.podman(config) if user_present else None
+    filtered = container_uses_inspect(config.config)
     for cname, image, pull in specs:
         if pull == "never":
             lines.append(f"skip {image} (pull=never, built locally)")
             continue
         current = pod.image_id(image) if pod else None
         current_str = f"current {current[:19]}" if current else "not present locally"
-        lines.append(f"pull {image} (pull={pull}, {current_str})")
+        if filtered:
+            lines.append(f"fetch {image} outside the filter "
+                         f"(pull={pull}, {current_str})")
+        else:
+            lines.append(f"pull {image} (pull={pull}, {current_str})")
 
     if config.lifecycle == "pet":
         lines.append(f"snapshot the container overlay before recreating "

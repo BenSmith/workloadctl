@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+"""
+workload-image-fetch: bring one filtered container's image into its
+workload user's store, fetched outside the workload's egress filter.
+
+Usage: workload-image-fetch <workload-name> <container-name>
+
+A root (`+`) ExecStartPre of each filtered container's unit, ahead of
+`podman run --pull=never`. The program is lib/image_fetch.py.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+
+from image_fetch import ImageFetchError, container_spec, fetch_image
+from workloadctl_core import WorkloadConfig
+
+
+def main(argv):
+    if len(argv) != 3:
+        print(f"usage: {argv[0]} <workload-name> <container-name>",
+              file=sys.stderr)
+        return 2
+    try:
+        config = WorkloadConfig(argv[1])
+        image, pull = container_spec(config, argv[2])
+        fetch_image(config, argv[2], image, pull)
+    except ImageFetchError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

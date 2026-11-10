@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 
 from cli_log import child_stdout, error, info, warn
+from image_fetch import load_archive
 from config_parser import workload_root_dir
 from workload_lib import (
     RUN_SYSTEMD_SYSTEM, replace_file_atomically,
@@ -382,13 +383,8 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
     Raises ImageTransferError on a failed transfer, and for a pull=never
     image absent from every store (nothing can supply it).
 
-    Boundary note (B13): the `podman load` step below hand-builds its own
-    sudo invocation instead of going through `Podman.run()`. It needs a
-    `TMPDIR=config.home_dir` override the wrapper's `_build_cmd()` doesn't
-    expose (podman load's staging files must land somewhere the target user
-    can write — the wrapper only carries XDG_RUNTIME_DIR/HOME) and a `cwd`
-    set to the same dir for consistency. Documented here rather than growing
-    the wrapper's env handling for this one call site (see `Podman.run()`).
+    The load is image_fetch.load_archive, which a filtered workload's fetch
+    uses too.
     """
     if not config.is_buildable(cname, pull):
         return False
@@ -432,8 +428,7 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
         # pipeDir in /var/tmp as root (mode 700); the target user can't access
         # it, causing the load to fail with ENOENT on large images. The file
         # is root's, in a root-only directory in the workload root: the home
-        # is the workload user's, and a name there may be a link it planted.
-        # The load reads it on stdin and copies it into its own TMPDIR.
+        # is the workload user's.
         with tempfile.TemporaryDirectory(
                 prefix=".image-transfer-",
                 dir=workload_root_dir(config.name)) as transfer:
@@ -448,20 +443,9 @@ def transfer_one_image(config: WorkloadConfig, manager: WorkloadManager,
                     f"{save_result.stderr.decode(errors='replace')}",
                 )
 
-            # TMPDIR=config.home_dir: Podman.run()/_build_cmd() has no env
-            # override hook, so this bypasses the wrapper (see the class
-            # docstring note on Podman.run()).
             with open(archive, "rb") as stdin:
-                load_result = subprocess.run(
-                    ["sudo", "-n", "-u", config.username,
-                     "-E", f"XDG_RUNTIME_DIR=/run/user/{config.uid}",
-                     "-E", f"HOME={config.home_dir}",
-                     "-E", f"TMPDIR={config.home_dir}",
-                     "podman", "load"],
-                    stdin=stdin,
-                    capture_output=True,
-                    cwd=config.home_dir,
-                )
+                load_result = load_archive(config.username, config.uid,
+                                           config.home_dir, stdin)
             if load_result.returncode != 0:
                 raise ImageTransferError(
                     f"Error: Failed to transfer image '{image}': "

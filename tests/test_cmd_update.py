@@ -238,6 +238,17 @@ class UpdateDryRunTest(unittest.TestCase):
         self.assertIn("  b:", out)
         self.assertIsNone(code)
 
+    def test_filtered_plan_says_fetch(self):
+        cfg = _plan_cfg("x", specs=[("x", "example.com/x:latest", "newer")])
+        cfg.config = {"workload": {"name": "x"},
+                      "container": {"image": "example.com/x:latest"},
+                      "network": {"hosts": ["pypi.org"]}}
+        self.manager.user_exists.return_value = False
+        with mock.patch.object(cmd_update, "WorkloadConfig", lambda n: cfg):
+            out, err, code = self._run(_ns(all=False, workload="x", dry_run=True))
+        self.assertIn("fetch example.com/x:latest outside the filter", out)
+        self.assertNotIn("pull example.com", out)
+
     def test_vm_plan_mentions_disk_rebuild_not_pull(self):
         cfg = _plan_cfg("vmwl", is_vm=True)
         with mock.patch.object(cmd_update, "WorkloadConfig", lambda n: cfg):

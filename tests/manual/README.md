@@ -1394,3 +1394,46 @@ every card as the group's work. The sunshine arm got the same `EACCES` from
 the policy's missing `open`, so the control row passed on an AVC rather than on
 DAC. A row for the control's own denials was added before the sound device
 was dropped.
+
+## image_fetch_rig.py — does a filtered container get its image from outside its filter?
+
+Needs root, the workloadctl RPM installed, SELinux enforcing, and anonymous
+access to registry.access.redhat.com and docker.io. Turns dontaudit rules off
+for the run and restores them on exit.
+
+```bash
+sudo python3 tests/manual/image_fetch_rig.py
+```
+
+A filtered workload's image is fetched by `workload-image-fetch`
+(`lib/image_fetch.py`) as a `DynamicUser=` uid in a transient unit, and loaded
+as the workload user. Five arms: the main one (`pull = "newer"`, a small image
+in no store) runs a first start, a second start, a start with the registry
+blocked, a start stopped mid-copy, an `update` with a rollback target and a
+purge. A ~400 MB image checks the start timeout, a 16 MiB tmpfs over the fetch
+cache checks the free-space refusal, a missing tag is the fetch step broken on
+purpose, and an unfiltered workload is the control.
+
+**The fetch's uid is watched, not inferred.** The transient unit is collected
+the moment it ends, so a thread polls its `UID` during the start; a row on a
+journal line would pass for a fetch that ran as root.
+
+**The egress row has a control.** "The filter saw no registry attempt" is
+also what a filter that logs nothing would show, so the workload then dials
+the registry itself and the row after it requires that attempt in the record.
+
+**The killed-start row pins its premise.** A stop during the start kills the
+start step but not the transient unit; the rig asserts the unit is still
+copying afterwards, so the next row (the next start stops it first) measures
+the cleanup rather than a fetch that had already ended.
+
+Findings (tp, 2026-11-10, 32/32 on the second run):
+
+- The first run failed both rows that fetched from
+  registry.access.redhat.com: a non-raw `skopeo inspect` pages through every
+  tag of the repository for `RepoTags`, and Hummingbird's repositories have
+  thousands, so each inspect hit the 60 s `RuntimeMaxSec`. docker.io's
+  `python` passed. The worker now passes `--no-tags` (1 s).
+- The download ran as uid 65421, in the dynamic range. Nothing was written to
+  `/var/tmp`; no denials from the fetch chain with dontaudit off.
+- The 400 MB image fetched and started in 35 s.

@@ -4194,6 +4194,123 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         self.assertIn("After=workload-br-inspect.socket", head)
 
 
+class TestGeneratorFilteredImageFetch(unittest.TestCase):
+    """A filtered container fetches its image outside its filter in a root
+    start step, and podman never pulls (lib/image_fetch.py)."""
+
+    FETCH = "ExecStartPre=+/usr/libexec/workloadctl/workload-image-fetch"
+
+    def setUp(self):
+        self.config_dir = tempfile.mkdtemp()
+        self.services_dir = tempfile.mkdtemp()
+        self.sysusers_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        for d in (self.config_dir, self.services_dir, self.sysusers_dir):
+            shutil.rmtree(d)
+
+    def gen(self, name, toml):
+        write_config(self.config_dir, name, toml)
+        result = run_generator(self.config_dir, self.services_dir,
+                               self.sysusers_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def read(self, unit):
+        return (Path(self.services_dir) / unit).read_text()
+
+    def test_filtered_single_fetches_and_never_pulls(self):
+        self.gen("web", """\
+            [workload]
+            name = "web"
+
+            [container]
+            image = "docker.io/library/nginx:latest"
+            pull = "newer"
+
+            [network]
+            hosts = ["*.example.com"]
+            """)
+        service = self.read("workload-web.service")
+        self.assertIn(f'{self.FETCH} "web" "web"\n', service)
+        self.assertIn("--pull=never", service)
+        self.assertNotIn("--pull=newer", service)
+        self.assertIn("TimeoutStartSec=2100", service)
+        # Ahead of the podman run, which is ExecStart.
+        self.assertLess(service.index(self.FETCH), service.index("ExecStart="))
+
+    def test_filtered_pet_fetches_ahead_of_the_create(self):
+        self.gen("pet", """\
+            [workload]
+            name = "pet"
+            lifecycle = "pet"
+
+            [container]
+            image = "docker.io/library/nginx:latest"
+
+            [network]
+            hosts = ["*.example.com"]
+            """)
+        service = self.read("workload-pet.service")
+        self.assertLess(service.index(self.FETCH),
+                        service.index("/usr/bin/podman create"))
+
+    def test_pod_members_each_fetch_their_own_image(self):
+        self.gen("stack", """\
+            [workload]
+            name = "stack"
+            mode = "pod"
+
+            [network]
+            hosts = ["*.example.com"]
+
+            [[containers]]
+            name = "web"
+            [containers.container]
+            image = "docker.io/library/nginx:latest"
+
+            [[containers]]
+            name = "db"
+            [containers.container]
+            image = "docker.io/library/postgres:latest"
+            """)
+        for cname in ("web", "db"):
+            member = self.read(f"workload-stack-{cname}.service")
+            self.assertIn(f'{self.FETCH} "stack" "{cname}"\n', member)
+            self.assertIn("--pull=never", member)
+        self.assertNotIn(self.FETCH, self.read("workload-stack-pod.service"))
+
+    def test_filtered_pull_never_has_no_fetch(self):
+        self.gen("local", """\
+            [workload]
+            name = "local"
+
+            [container]
+            image = "localhost/app:latest"
+            pull = "never"
+
+            [network]
+            hosts = ["*.example.com"]
+            """)
+        service = self.read("workload-local.service")
+        self.assertNotIn("workload-image-fetch", service)
+        self.assertIn("TimeoutStartSec=300", service)
+
+    def test_unfiltered_still_pulls_rootless(self):
+        self.gen("plain", """\
+            [workload]
+            name = "plain"
+
+            [container]
+            image = "docker.io/library/nginx:latest"
+            pull = "newer"
+            """)
+        service = self.read("workload-plain.service")
+        self.assertNotIn("workload-image-fetch", service)
+        self.assertIn("--pull=newer", service)
+        self.assertIn("TimeoutStartSec=300", service)
+
+
 class TestParseArgs(unittest.TestCase):
     """gen_run.parse_args: the output dir, the narrowing, the start switch."""
 

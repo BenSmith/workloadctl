@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+"""
+workload-image-fetch-worker: the download half of workload-image-fetch, run
+as a throwaway DynamicUser= uid in the transient unit it starts.
+
+The program is lib/image_fetch_worker.py.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+
+from image_fetch_worker import main
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

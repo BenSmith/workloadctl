@@ -398,7 +398,7 @@ FIXTURES = {
             name = "cegsplice"
 
             [container]
-            image = "myapp"
+            image = "registry.example/myapp:latest"
 
             [network]
             mode = "pasta"
@@ -421,7 +421,7 @@ FIXTURES = {
             name = "ceginspect"
 
             [container]
-            image = "myapp"
+            image = "registry.example/myapp:latest"
 
             [network]
             mode = "pasta"

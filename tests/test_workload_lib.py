@@ -101,6 +101,44 @@ class TestSystemdModeValidation(unittest.TestCase):
         self.assertIn("containers[c1]", errs[0])
 
 
+class TestFilteredImageNameValidation(unittest.TestCase):
+    """A filtered container's image is fetched by skopeo and loaded under its
+    name (lib/image_fetch.py)."""
+
+    NET = {"hosts": ["pypi.org"]}
+
+    def _errs(self, config):
+        return [e for e in validate_workload_config(config) if ".image" in e]
+
+    def test_short_name_refused_when_filtered(self):
+        cfg = {"workload": {"name": "x"}, "network": self.NET,
+               "container": {"image": "nginx:latest"}}
+        errs = self._errs(cfg)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("must name its registry", errs[0])
+
+    def test_digest_pin_refused_when_filtered(self):
+        cfg = {"workload": {"name": "x"}, "network": self.NET,
+               "containers": [{"name": "c1", "container": {
+                   "image": "docker.io/library/nginx@sha256:" + "a" * 64}}]}
+        errs = self._errs(cfg)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("containers[c1]", errs[0])
+        self.assertIn("pinned by digest", errs[0])
+
+    def test_qualified_tag_accepted(self):
+        cfg = {"workload": {"name": "x"}, "network": self.NET,
+               "container": {"image": "docker.io/library/nginx:latest"}}
+        self.assertEqual(self._errs(cfg), [])
+
+    def test_unfiltered_and_pull_never_are_not_fetched(self):
+        for cfg in ({"workload": {"name": "x"},
+                     "container": {"image": "nginx"}},
+                    {"workload": {"name": "x"}, "network": self.NET,
+                     "container": {"image": "nginx", "pull": "never"}}):
+            self.assertEqual(self._errs(cfg), [])
+
+
 class TestPullPolicyValidation(unittest.TestCase):
 
     def _errs(self, config):

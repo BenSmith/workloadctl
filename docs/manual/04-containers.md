@@ -38,7 +38,9 @@ names the user the container runs as, by UID or name.
 - `"newer"` pulls on every start when the registry has a newer image;
 - `"never"` never pulls, so the image must already be on the host.
 
-`validate` refuses any other value.
+`validate` refuses any other value. A filtered workload's image is
+fetched outside its filter rather than pulled, with the same meaning; see
+[The image pull](06-networking.md#the-image-pull).
 
 Keep `"missing"`. `"always"` and `"newer"` act at every service start,
 boot included, so the image can change under a workload with nobody

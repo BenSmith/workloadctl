@@ -37,6 +37,7 @@ from gen_egress import (
     generate_resolve_service,
 )
 from container_run_args import RunSpec, volume_args, podman_run_args
+from image_fetch import START_TIMEOUT_SEC
 from gen_container_heads import (
     container_egress_exec, generate_pod_service, generate_net_service,
     generate_umbrella_service,
@@ -183,10 +184,19 @@ def _credential_loads(svc, credentials):
         svc.blank()
 
 
-def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid):
-    """ExecStartPre chain: write-env (the --env-file and the [[secrets.files]]
-    copies), nvidia CDI-spec check, and (single mode only) the fresh-pause
-    cleanup that works around the pasta stale-pause bug."""
+def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid,
+                    fetches_image=False):
+    """ExecStartPre chain: the image fetch (filtered containers), write-env
+    (the --env-file and the [[secrets.files]] copies), nvidia CDI-spec
+    check, and (single mode only) the fresh-pause cleanup that works around
+    the pasta stale-pause bug."""
+    if fetches_image:
+        # Root, so it can hand the download to a DynamicUser= uid outside the
+        # workload's filter; see lib/image_fetch.py.
+        cname = name if mode == "single" else container["name"]
+        svc.add("ExecStartPre",
+                f"+/usr/libexec/workloadctl/workload-image-fetch {dq(name)} "
+                f"{dq(cname)}")
     if writes_secrets:
         # Multi-container: pass the local container name so workload-write-env
         # resolves *that* container's env vars only and writes the matching
@@ -244,7 +254,7 @@ def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid)
 
 
 def _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, pull_policy,
-                     mode, uid, resources):
+                     mode, uid, resources, fetches_image=False):
     """run-vs-pet ExecStart + ExecStop/ExecStopPost."""
     if wl_lifecycle == "pet":
         # Pet lifecycle: create the container once; subsequent starts reuse the
@@ -257,7 +267,10 @@ def _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, pull_p
         svc.blank()
         svc.add("ExecStart", f"/usr/bin/podman start -a {container_name_quoted}")
     else:
-        svc.comment(f"Image pulling handled by podman run --pull={pull_policy}")
+        if fetches_image:
+            svc.comment("Image fetched outside the filter by workload-image-fetch")
+        else:
+            svc.comment(f"Image pulling handled by podman run --pull={pull_policy}")
         svc.blank()
         svc.add("ExecStart", podman_cmd)
 
@@ -320,7 +333,8 @@ def _logging(svc, container_name, resources):
     svc.blank()
 
 
-def _hardening(svc, name, uid, resources, external_rw_paths=()):
+def _hardening(svc, name, uid, resources, external_rw_paths=(),
+               fetches_image=False):
     """Restart/RestartSec + filesystem/socket-family hardening + default timeouts.
 
     `external_rw_paths` are writable volume host paths outside the workload tree
@@ -346,7 +360,8 @@ def _hardening(svc, name, uid, resources, external_rw_paths=()):
     svc.add("RestrictAddressFamilies", "~AF_ALG AF_PACKET")
 
     if "timeout_start_sec" not in resources:
-        svc.add("TimeoutStartSec", 300)
+        # A start that fetches the image has the whole download in it.
+        svc.add("TimeoutStartSec", START_TIMEOUT_SEC if fetches_image else 300)
     if "timeout_stop_sec" not in resources:
         svc.add("TimeoutStopSec", 30)
 
@@ -508,14 +523,14 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
 
     _exec_start_pre(svc, mode, name, container,
                     spec.has_secret_env_vars or spec.has_secret_files, gpu_vendor,
-                    uid)
+                    uid, spec.fetches_image)
 
     _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, spec.pull_policy,
-                     mode, uid, resources)
+                     mode, uid, resources, spec.fetches_image)
 
     _logging(svc, container_name, resources)
 
-    _hardening(svc, name, uid, resources, external_rw_paths)
+    _hardening(svc, name, uid, resources, external_rw_paths, spec.fetches_image)
 
     # Egress element-lifecycle arming (P1-7): single mode only -- this unit
     # IS the workload-level service here (it gets the wants symlink below),

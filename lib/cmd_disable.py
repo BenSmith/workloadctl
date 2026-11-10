@@ -17,6 +17,7 @@ import time
 
 from cli_log import emit_result, error, info, json_enabled
 from config_parser import workload_root_dir
+import image_fetch
 from workload_lib import workload_egress_dir, workload_enabled_marker
 from run_files import workload_run_files
 from substrate import get_substrate
@@ -350,6 +351,13 @@ def cmd_disable(args, manager: WorkloadManager):
                 shutil.rmtree(egress_dir)
             except OSError as e:
                 failures.append(f"remove {egress_dir}: {e}")
+
+        # A filtered workload's image fetch cache; its record went with the
+        # workload directory.
+        if image_fetch.cache_dir(config.name).exists():
+            info(f"  Removing image fetch cache "
+                 f"{image_fetch.cache_dir(config.name)}...")
+        image_fetch.remove_cache(config.name)
 
         # The per-request egress record, which lives under /var/log and not
         # under the workload root above, so the rmtree does not reach it.

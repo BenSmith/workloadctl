@@ -25,6 +25,7 @@ from provisioning import (
     ImageTransferError, record_rejected_builds, transfer_one_image,
 )
 from diagnose_image_age import image_created
+from image_fetch import ImageFetchError, fetch_image
 from podman import Podman, PodmanError
 from service_runtime import ensure_runtime_dir, restart_workload_service
 from substrate import (
@@ -443,6 +444,13 @@ class ContainerSubstrate(Substrate):
         pod = self.manager.podman(self.config)
         old_ids: dict[str, str] = {}
         changed = False
+        # A filtered workload's pull would land on its own inspector, so its
+        # images are fetched outside the filter. fetch_image holds the
+        # workload's fetch lock only for its own call: the restart below
+        # runs each unit's fetch step, which takes the same lock, and finds
+        # the digest it just recorded.
+        fetches = self.uses_inspect()
+        get = "fetching" if fetches else "pulling"
 
         for cname, image, pull in specs:
             old_id = pod.image_id(image)
@@ -479,13 +487,20 @@ class ContainerSubstrate(Substrate):
                     # substitutes whatever the registry now serves — with no
                     # rollback target for this container.
                     warn(f"  ⚠ No local copy of '{image}' in the workload "
-                         f"store — pulling fresh from the registry, no "
+                         f"store — {get} fresh from the registry, no "
                          f"rollback target for this container")
-                try:
-                    pod.pull(image)
-                except PodmanError as e:
-                    error(f"  ✗ Failed to pull {image}: {e.stderr}")
-                    raise ProvisionFailed(f"pull failed for {image}")
+                if fetches:
+                    try:
+                        fetch_image(self.config, cname, image, "update")
+                    except ImageFetchError as e:
+                        error(f"  ✗ {e}")
+                        raise ProvisionFailed(f"fetch failed for {image}")
+                else:
+                    try:
+                        pod.pull(image)
+                    except PodmanError as e:
+                        error(f"  ✗ Failed to pull {image}: {e.stderr}")
+                        raise ProvisionFailed(f"pull failed for {image}")
             new_id = pod.image_id(image)
             if old_id != new_id:
                 changed = True

@@ -2666,6 +2666,40 @@ pull = "never"
         mock_r.assert_called_once()
 
 
+    FILTERED_TOML = SINGLE_TOML + '\n[network]\nhosts = ["pypi.org"]\n'
+
+    def test_filtered_update_fetches_instead_of_pulling(self):
+        """A filtered workload's pull would land on its own inspector."""
+        substrate, manager = self._substrate(toml=self.FILTERED_TOML)
+        pod = manager.podman.return_value
+        pod.image_id.side_effect = ['old-id', 'new-id']
+        with _patch_uid(10001), \
+             patch.object(_container_mod, 'restart_workload_service') as mock_r, \
+             patch.object(_container_mod, 'fetch_image',
+                          return_value="loaded") as mock_f:
+            result = substrate.reprovision()
+        mock_f.assert_called_once_with(substrate.config, 'test-wl',
+                                       'example.com/test:latest', 'update')
+        pod.pull.assert_not_called()
+        pod.tag.assert_called_once()
+        self.assertEqual(pod.tag.call_args.args[0], 'old-id')
+        mock_r.assert_called_once()
+        self.assertEqual(result[1], {'test-wl': 'old-id'})
+
+    def test_filtered_fetch_failure_raises_provision_failed(self):
+        from image_fetch import ImageFetchError
+        from substrate import ProvisionFailed
+        substrate, manager = self._substrate(toml=self.FILTERED_TOML)
+        manager.podman.return_value.image_id.return_value = 'old-id'
+        with patch.object(_container_mod, 'fetch_image',
+                          side_effect=ImageFetchError("no route")), \
+             patch.object(_container_mod, 'restart_workload_service') as mock_r, \
+             patch('sys.stderr', io.StringIO()):
+            with self.assertRaises(ProvisionFailed):
+                substrate.reprovision()
+        mock_r.assert_not_called()
+
+
 # ── ContainerSubstrate.rollback() ─────────────────────────────────────────────
 
 class TestContainerRollback(unittest.TestCase):

@@ -52,7 +52,8 @@ Requires:       findutils
 # skopeo: `bundle add` copies a signed OCI artifact into an oci: layout with
 # --remove-signatures, verified against bundle-policy.json first
 # (lib/bundle_fetch.py); `podman artifact pull` can't write a signature into
-# its store.
+# its store. A filtered container's image is fetched with it too
+# (lib/image_fetch_worker.py).
 Requires:       skopeo
 # logrotate: the egress inspector's per-request records rotate through
 # logrotate/workloadctl-inspect, which nothing else reads; without it they
@@ -205,6 +206,10 @@ install -Dpm 0755 libexec/workload-container-filter \
     %{buildroot}%{_libexecdir}/workloadctl/workload-container-filter
 install -Dpm 0755 libexec/workload-container-inspect \
     %{buildroot}%{_libexecdir}/workloadctl/workload-container-inspect
+install -Dpm 0755 libexec/workload-image-fetch \
+    %{buildroot}%{_libexecdir}/workloadctl/workload-image-fetch
+install -Dpm 0755 libexec/workload-image-fetch-worker \
+    %{buildroot}%{_libexecdir}/workloadctl/workload-image-fetch-worker
 install -Dpm 0755 libexec/workload-vm-netdev \
     %{buildroot}%{_libexecdir}/workloadctl/workload-vm-netdev
 install -Dpm 0755 libexec/workload-vm-inspect \
@@ -579,6 +584,8 @@ fi
 %{_libexecdir}/workloadctl/workload-vm-filter
 %{_libexecdir}/workloadctl/workload-container-filter
 %{_libexecdir}/workloadctl/workload-container-inspect
+%{_libexecdir}/workloadctl/workload-image-fetch
+%{_libexecdir}/workloadctl/workload-image-fetch-worker
 %{_libexecdir}/workloadctl/workload-vm-netdev
 %{_libexecdir}/workloadctl/workload-vm-notify
 %{_libexecdir}/workloadctl/workload-vm-inspect

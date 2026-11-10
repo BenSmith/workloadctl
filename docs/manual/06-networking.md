@@ -128,21 +128,32 @@ left there does not block filtering.
 
 ### The image pull
 
-A container's image is pulled by the workload's own user when its unit
-starts, after the filter is armed, and so is any later pull such as the one
-`update` makes. If the image is not already in the workload's store, the pull
-goes to port 443, lands on the inspector and is refused, because a registry
-is not a host you would think to list. It looks like a registry outage.
+A filtered container never pulls its own image: a pull by the workload's
+user would go to port 443, land on its inspector and be refused. Instead,
+each container's unit starts with `workload-image-fetch`, which downloads
+the image as a throwaway system identity of its own, outside the
+workload's filter, and loads it into the workload's store. `podman run`
+then runs with `--pull=never`. `update` fetches the same way. The
+workload's own code never gets a route to a registry, and nothing goes in
+`hosts` for it.
 
-There are three ways around it, in the order worth trying:
+`pull` keeps its meaning. `"missing"` fetches only when the store lacks the
+image. `"newer"` and `"always"` ask the registry at every start, and
+download only when the tag's digest differs from the one last loaded or
+the store no longer holds that image. When the registry can't be reached,
+`"newer"` starts with the local image and says so in the journal, while
+`"always"`, and any start with no local image, fails. An image you build is
+transferred from root's store as it is for any workload.
 
-- Enable the workload with no trigger so the image is pulled, then add the
-  triggers and `recreate` it.
-- Build the image from a `Containerfile` in the bundle. Root builds it and
-  transfers it into the workload's store, and the workload never fetches it.
-- List the registry's names in `hosts`. This is the widest of the three: it
-  lets everything in the workload reach the registry, and a registry is
-  usually several names (its API, its token service, its blob storage).
+The fetch reads the host's own registry configuration in
+`/etc/containers`, mirrors included, but no credentials, so the image must
+be pullable anonymously. Its name must name its registry
+(`docker.io/library/nginx:latest`, not `nginx`) and a tag, not a digest;
+`validate` refuses the others. A start that has to download allows 35
+minutes rather than 5 unless `timeout_start_sec` says otherwise, and it
+refuses to begin when the cache in `/var/cache` or the workload's volume
+lacks room for the image. Why a fetch failed is in the unit's journal:
+`journalctl -u workload-<name>.service`.
 
 ## The same keys on both substrates
 
@@ -999,7 +1010,7 @@ bare status and puts the reason in the journal and the record, so
 | 401 from the provider on a brokered host | the sealed key is wrong or stale, or `auth_header`/`auth_format` is wrong | re-seal the key and restart the workload; check the convention |
 | 502 on a brokered host | the broker is not running | `systemctl status workload-<name>-broker.service` |
 | A timeout to a port other than 80 or 443 | no `allow` entry, or the entry's name now resolves elsewhere | add the entry; `diagnose`, then restart |
-| A filtered container's image pull fails | the registry is not in `hosts` | see [The image pull](#the-image-pull) |
+| A filtered container won't start, and the journal says the fetch outside the filter failed | the registry is unreachable, needs credentials, or lacks the tag; or a filesystem lacks room | see [The image pull](#the-image-pull) |
 | A bridge-mode container resolves nothing | its LAN resolver meets the default deny | an `allow` entry for the resolver on port 53 |
 | "No appropriate name servers" for a `.local` name | the guest sends `.local` to mDNS | a unicast name in the LAN's DNS |
 | Some sites are slow | HTTP/3 is dropped and the client falls back to TCP | nothing; it is counted separately |

@@ -107,6 +107,36 @@ if it fails), and a filtered workload that failed to arm does not start. `down`
 runs as `-+` from `ExecStopPost`, which systemd also runs on a kill or a
 failed start, and treats a missing element as the expected state.
 
+## The image fetch
+
+A filtered container's image is not pulled by its workload user, whose
+egress would land on its own inspector. Each filtered container's unit has
+a root `ExecStartPre`, `workload-image-fetch <name> <container>`
+(`lib/image_fetch.py`), ahead of `podman run --pull=never`, and `update`
+calls the same `fetch_image`.
+
+- The download runs in a transient unit, `workload-image-fetch-<name>`,
+  started with `systemd-run --wait` as `DynamicUser=yes`. The filter matches
+  only the `_wl-<name>` uid, so this uid is outside it. The unit's worker
+  (`lib/image_fetch_worker.py`) runs `skopeo inspect`, and then `skopeo
+  copy` of the inspected digest into an `oci-archive` in its
+  `CacheDirectory=`. No `--pipe`: from a unit's start step SELinux refuses
+  the bus broker the step's pipe, so results come back as files.
+- Root opens the archive with `O_NOFOLLOW`, requires a regular file, and
+  hands it to the workload user's `podman load` on stdin, so unpacking
+  stays rootless. It then records the manifest digest and the loaded image
+  id in `/var/lib/workloads/<name>/image-fetch.json`, which decides
+  whether the next `newer` or `always` start downloads at all.
+- A per-workload lock in `/run/lock` serialises the fetches of a
+  workload's containers. It belongs to the start step, not the unit, so
+  each fetch first stops a fetch unit an earlier, killed start left
+  running.
+
+The design rule: nothing the workload controls runs on the host as `_wl`
+outside the filter, inside a user namespace or not. Every filter element
+is keyed on that one uid, so a pull exempted by cgroup would have run
+podman as `_wl` over config and a store that uid owns.
+
 ## Who writes and reads each file
 
 | File | Written by | Read by |

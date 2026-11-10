@@ -108,6 +108,8 @@
 
 # When podman pulls the image as the service starts.
 # Type: string, "missing" | "always" | "newer" | "never". Default: "missing".
+# A filtered container's image is fetched outside its filter instead,
+# with the same meaning (06-networking.md "The image pull").
 # `update` pulls whatever this says, except "never". For an image you build
 # with `workloadctl build`, a copy in root's image store wins whatever this
 # says. validate refuses any other value.
@@ -401,8 +403,9 @@
 # key; one written here is ignored.
 # A VM has the same keys under [vm.network], filtered by default. Each VM
 # entry below says only where it differs from the container entry here.
-# The image pull is the workload's own traffic, so a registry not in hosts
-# is refused once filtering is on (06-networking.md "The image pull").
+# A filtered container's image is fetched outside its filter, so no
+# registry goes in hosts; the image must name its registry and a tag
+# (06-networking.md "The image pull").
 # On pasta in single or pod mode the workload's DNS is answered by its own
 # responder on the host. In bridge mode, or on a podman network of your own,
 # it goes to the host's nameservers as the workload's traffic, so a resolver

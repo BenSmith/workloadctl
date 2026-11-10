@@ -28,7 +28,10 @@ from vm_validate import validate_vm_config, vm_network_warnings
 from workload_seccomp import validate_seccomp
 from kernel_modules import validate_kernel_modules
 from recursive_readonly import rro_volume_errors
-from container_network_config import container_allow_entries
+from container_network_config import (
+    container_allow_entries, container_uses_inspect,
+)
+from image_ref import names_registry
 from egress_policy import container_uses_resolve
 
 
@@ -238,6 +241,7 @@ def validate_workload_config(config: dict) -> list[str]:
         errors.extend(rro_volume_errors(volumes, where))
         errors.extend(_relabelled_readonly_errors(config, volumes, where))
     errors.extend(_container_choice_errors(config))
+    errors.extend(_fetched_image_errors(config))
     errors.extend(_health_cmd_errors(config))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
@@ -294,11 +298,8 @@ VALID_SYSTEMD_MODES = ("always", "true", "false")
 VALID_PULL_POLICIES = ("missing", "always", "newer", "never")
 
 
-def _container_choice_errors(config: dict) -> list[str]:
-    """`systemd` and `pull` values the unit would carry and podman or the
-    generator would refuse only at start. `systemd` is lowercased as the
-    generator lowercases it, so a TOML bool passes; `pull` is matched
-    exactly."""
+def _container_blocks(config: dict) -> list[tuple[str, dict]]:
+    """(where, [container] table) for each container, as written."""
     blocks = []
     if isinstance(config.get("container"), dict):
         blocks.append(("container", config["container"]))
@@ -308,8 +309,16 @@ def _container_choice_errors(config: dict) -> list[str]:
             if isinstance(c, dict) and isinstance(c.get("container"), dict):
                 blocks.append((f"containers[{c.get('name')}].container",
                                c["container"]))
+    return blocks
+
+
+def _container_choice_errors(config: dict) -> list[str]:
+    """`systemd` and `pull` values the unit would carry and podman or the
+    generator would refuse only at start. `systemd` is lowercased as the
+    generator lowercases it, so a TOML bool passes; `pull` is matched
+    exactly."""
     errors = []
-    for where, block in blocks:
+    for where, block in _container_blocks(config):
         mode = block.get("systemd")
         if mode is not None and str(mode).lower() not in VALID_SYSTEMD_MODES:
             errors.append(f"{where}.systemd = {mode!r} must be one of "
@@ -318,6 +327,31 @@ def _container_choice_errors(config: dict) -> list[str]:
         if pull is not None and pull not in VALID_PULL_POLICIES:
             errors.append(f"{where}.pull = {pull!r} must be one of "
                           f"{', '.join(VALID_PULL_POLICIES)}")
+    return errors
+
+
+def _fetched_image_errors(config: dict) -> list[str]:
+    """A filtered container's image is fetched by skopeo and loaded under
+    its name (lib/image_fetch.py), so the name must say which registry,
+    since skopeo and podman expand short names differently, and must be a
+    tag: a digest-pinned name isn't known to survive the load."""
+    if not container_uses_inspect(config):
+        return []
+    errors = []
+    for where, block in _container_blocks(config):
+        image = block.get("image")
+        if not isinstance(image, str) or block.get("pull") == "never":
+            continue
+        if not names_registry(image):
+            errors.append(
+                f"{where}.image = {image!r} must name its registry (e.g. "
+                f"docker.io/library/...): a filtered workload's image is "
+                f"fetched outside its filter, by a tool that resolves short "
+                f"names differently from podman")
+        if "@" in image:
+            errors.append(
+                f"{where}.image = {image!r}: a filtered workload's image "
+                f"can't be pinned by digest; name a tag")
     return errors
 
 

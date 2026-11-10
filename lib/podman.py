@@ -434,9 +434,9 @@ class Podman:
         caller through the same user / XDG_RUNTIME_DIR / HOME identity as
         the typed methods (via `_spawn`), so it's a thin convenience, not
         a raw subprocess call. Boundary note (B13): a couple of call sites
-        legitimately bypass even this — `provisioning.transfer_one_image`
-        needs a `TMPDIR` override this class doesn't expose (podman load's
-        temp files must land somewhere the target user can write), and the
+        legitimately bypass even this — `image_fetch.load_archive` needs a
+        `TMPDIR` override this class doesn't expose (podman load's temp
+        files must land somewhere the target user can write), and the
         exporter builds a `Podman.for_user(...)` instance straight from a
         `pwd.getpwnam()` lookup because it has no `WorkloadConfig` to hand
         this class. Both are documented at their call sites rather than

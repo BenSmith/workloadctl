@@ -304,6 +304,14 @@ class RunSpec:
         return self.container["container"].get("pull", "missing")
 
     @property
+    def fetches_image(self) -> bool:
+        """A filtered container's image is fetched outside its filter by the
+        unit's workload-image-fetch step (lib/image_fetch.py), so podman
+        itself never pulls."""
+        return (container_uses_inspect(self.workload)
+                and self.pull_policy != "never")
+
+    @property
     def privileged(self) -> bool:
         """Workload-level, not per-container: one uid per workload, so a
         per-container answer here would be a lie (see D1)."""
@@ -469,7 +477,7 @@ def _base_run_args(spec, service_type, wl_lifecycle, systemd_mode):
     sdnotify = "conmon" if service_type == "notify" else "ignore"
     args.extend([
         f"--sdnotify={sdnotify}",
-        f"--pull={pull_policy}",
+        f"--pull={'never' if spec.fetches_image else pull_policy}",
         # passthrough: conmon hands the container's stdout/stderr fds straight
         # to the unit's journal stream (single copy, named via the unit's
         # SyslogIdentifier=). The journald driver would double-log every line:
