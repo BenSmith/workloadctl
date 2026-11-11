@@ -94,12 +94,11 @@ def _is_wildcard(pattern: str) -> bool:
 def _entries(doc: dict) -> list:
     """The document's `policy` array as the matcher's own type.
 
-    `methods` and `paths` come back as null where the key was absent, and null
-    is carried through as None rather than as an empty tuple: absent means ANY,
-    empty would mean NONE, and collapsing the two makes a single-entry host deny
-    everything instead of permitting everything. VmPolicyEntry's docstring calls
-    that the whole of §3's widening trap, and it fails in the safe direction,
-    which is exactly why a reader that got it wrong would survive review.
+    The document states both keys, `["*"]` for any, and the tuple keeps the
+    `"*"`, which the matcher reads as any. A missing key is carried through as
+    None, also any, rather than as an empty tuple, which would mean NONE:
+    collapsing the two makes a single-entry host deny everything, wrong in the
+    safe direction, which is how a reader that got it wrong survives review.
     """
     out = []
     for raw in doc.get("policy") or []:
@@ -290,13 +289,13 @@ def wildcard_patterns(doc: dict) -> list:
 def _field(values) -> str:
     """One entry field, rendering the absent/empty distinction as words.
 
-    None is "any" and an empty list is "(none)", and they must not render alike:
-    absent means any, empty would mean none, and a report that printed both as a
-    blank would hide the widening trap VmPolicyEntry's docstring is built
-    around. An empty list cannot come from the schema today -- it is refused --
-    which is precisely why the renderer must not assume it away.
+    None and `"*"` are "any" and an empty list is "(none)", and they must not
+    render alike: a report that printed both as a blank would hide the widening
+    trap VmPolicyEntry's docstring is built around. An empty list cannot come
+    from the schema today -- it is refused -- which is precisely why the
+    renderer must not assume it away.
     """
-    if values is None:
+    if values is None or "*" in values:
         return "any"
     return ", ".join(values) or "(none)"
 
@@ -421,8 +420,9 @@ def _json_view(view: dict) -> dict:
         "tls_treatment": tls_treatment(view),
         "matched": view["matched"],
         "governing": [{"host": e.host,
-                       "methods": None if e.methods is None else list(e.methods),
-                       "paths": None if e.paths is None else list(e.paths)}
+                       "methods": ["*"] if e.methods is None
+                       else list(e.methods),
+                       "paths": ["*"] if e.paths is None else list(e.paths)}
                       for e in view["governing"]],
     }
 

@@ -421,8 +421,8 @@ def vm_inspect_policy(net: dict) -> dict:
         "http2": [],
         "policy": [
             {"host": e.host,
-             "methods": None if e.methods is None else list(e.methods),
-             "paths": None if e.paths is None else list(e.paths),
+             "methods": ["*"] if e.methods is None else list(e.methods),
+             "paths": ["*"] if e.paths is None else list(e.paths),
              **({"credential": e.credential} if e.credential else {})}
             for e in vm_policy_entries(net)],
     }
@@ -473,8 +473,8 @@ def container_inspect_policy(net: dict) -> dict:
         "http2": [],
         "policy": [
             {"host": e.host,
-             "methods": None if e.methods is None else list(e.methods),
-             "paths": None if e.paths is None else list(e.paths),
+             "methods": ["*"] if e.methods is None else list(e.methods),
+             "paths": ["*"] if e.paths is None else list(e.paths),
              **({"credential": e.credential} if e.credential else {})}
             for e in container_policy_entries(net)],
     }

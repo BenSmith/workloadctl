@@ -622,14 +622,15 @@ class TestPolicyComposition(unittest.TestCase):
         self.assertTrue(self._policy({"host": "a.example"}).permits(
             "a.example", "DELETE", "/anything"))
 
-    def test_the_document_carries_absent_keys_as_null(self):
-        """JSON has a word for the difference, so the document uses it rather
-        than making the listener recover it from the schema."""
+    def test_the_document_states_an_absent_key_as_a_star(self):
+        """moatery refuses an entry without both keys, so the document says
+        `["*"]` where the config left one out, and never `[]`, which is none."""
         doc = vm_inspect_policy({"policy": [
             {"host": "a.example"},
             {"host": "b.example", "methods": ["GET"], "paths": ["/x"]}]})
         self.assertEqual(doc["policy"][0],
-                         {"host": "a.example", "methods": None, "paths": None})
+                         {"host": "a.example", "methods": ["*"],
+                          "paths": ["*"]})
         self.assertEqual(doc["policy"][1],
                          {"host": "b.example", "methods": ["GET"],
                           "paths": ["/x"]})

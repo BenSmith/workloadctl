@@ -1044,17 +1044,19 @@ class TestTheListenerReadsTheCredentialFromTheDocument(unittest.TestCase):
             "policy": [{"host": "plain.example", "methods": ["GET"]}]})
         self.assertIsNone(policy.credential_for("plain.example"))
 
-    def test_a_hand_edited_document_with_a_non_string_does_not_kill_the_start(self):
-        """The listener reads a FILE. A refusal here fails the START, which
-        takes the whole workload's egress down for a typo -- worse than one
-        host reaching the origin unbrokered and saying so in the record."""
+    def test_a_hand_edited_document_with_a_non_string_is_refused(self):
+        """Dropped, it sent the host unbrokered, and the provider's 401 for
+        the placeholder was the only sign of a typo. A generated document
+        cannot carry one; a hand-edited one is refused at the start, and a
+        reload keeps the policy it has."""
         with tempfile.TemporaryDirectory(prefix="policy-") as tmp:
             path = Path(tmp) / "policy.json"
             path.write_text(json.dumps({
                 "tls": "inspect", "hosts": [],
-                "policy": [{"host": "api.provider", "credential": 7}]}))
-            policy = load_policy(str(path))
-        self.assertIsNone(policy.credential_for("api.provider"))
+                "policy": [{"host": "api.provider", "methods": ["*"],
+                            "paths": ["*"], "credential": 7}]}))
+            with self.assertRaisesRegex(ValueError, "'credential'"):
+                load_policy(str(path))
 
     def test_the_first_governing_entry_that_carries_one_wins(self):
         """`validate` refuses two entries that match one host and disagree, so
@@ -1165,8 +1167,8 @@ class TestWhatDiagnoseSaysAboutBrokeredTraffic(unittest.TestCase):
     different moments: one answers 'is this host brokered at all', this one
     answers 'the provider is refusing me and every unit here is green'."""
 
-    BROKERED_LISTS = {"policy": [{"host": "api.provider", "methods": None,
-                                  "paths": None,
+    BROKERED_LISTS = {"policy": [{"host": "api.provider", "methods": ["*"],
+                                  "paths": ["*"],
                                   "credential": "provider-key"}]}
 
     def _fragments(self, **status):

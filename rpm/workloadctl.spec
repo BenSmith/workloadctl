@@ -94,8 +94,10 @@ Requires:       openssl
 # wlresolve_t. A lower floor installs a moatery that refuses the document at
 # the inspector's start, whose broker times out starting, or whose responder
 # is denied at every start. 0.6.0 is the first named moatery, with the
-# programs these units run under /usr/libexec/moatery.
-Requires:       moatery >= 0.6.0
+# programs these units run under /usr/libexec/moatery. 0.11.0 is the first
+# that reads ["*"] in an entry's methods as any method, which this
+# package's renderer writes: an earlier one denies every method there.
+Requires:       moatery >= 0.11.0
 # `workloadctl pcap` reads the host-side vantage back through tcpdump. Weak,
 # because capture is a diagnostic and `pcap -D` reports a missing tcpdump rather
 # than failing at the point of use.

@@ -407,7 +407,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(payload["origin"], "config")
         self.assertEqual(payload["query"]["governing"],
                          [{"host": "api.example.com", "methods": ["GET"],
-                           "paths": None}])
+                           "paths": ["*"]}])
 
     def test_json_carries_the_unreadable_count(self):
         code, out = self._run(self._args(json=True))

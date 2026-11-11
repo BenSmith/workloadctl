@@ -3165,7 +3165,7 @@ class TestContainerInspectPolicy(unittest.TestCase):
         self.assertEqual(doc["splice"], ["pinned.example.com"])
         self.assertEqual(doc["http2"], [])
         self.assertEqual(doc["policy"], [
-            {"host": "api.example.com", "methods": ["POST"], "paths": None,
+            {"host": "api.example.com", "methods": ["POST"], "paths": ["*"],
              "credential": "anthropic"},
         ])
 

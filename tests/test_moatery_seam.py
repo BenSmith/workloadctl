@@ -291,14 +291,14 @@ class TestTheDocumentIsTheOneMoateryReads(unittest.TestCase):
                           entry.credential),
                          ("api.example", ("POST",), ("/v1/*",), "tok"))
 
-    def test_an_absent_key_arrives_as_absent(self):
-        """null is ANY and [] is NONE; a loader that collapsed them would
-        deny everything on a host the config permits, in silence."""
+    def test_an_absent_key_arrives_as_any(self):
+        """The config's absent key is ANY, written `["*"]`; a writer that
+        sent `[]` would deny everything on a host the config permits, in
+        silence, and one that sent null is refused by the loader."""
         from egress_policy import vm_inspect_policy
         entry, = self._load(vm_inspect_policy({
             "policy": [{"host": "a.example"}]})).policy
-        self.assertIsNone(entry.methods)
-        self.assertIsNone(entry.paths)
+        self.assertEqual((entry.methods, entry.paths), (("*",), ("*",)))
         self.assertTrue(entry.permits("DELETE", "/anything"))
 
     def test_the_empty_http2_list_is_accepted_and_a_named_host_is_not(self):
