@@ -242,13 +242,7 @@ moatery-rpm dest="moatery.rpm" version="":
   #!/usr/bin/env bash
   set -euo pipefail
   version="{{version}}"
-  if [ -z "$version" ]; then
-    repo=$(sed -n 's/^repo=//p' moatery-copr/fetch)
-    version=$(dnf repoquery -q --refresh --repofrompath="moatery,$repo" \
-      --repo=moatery --latest-limit=1 --qf '%{version}\n' moatery)
-    [ -n "$version" ] || { echo "no moatery release in $repo" >&2; exit 1; }
-  fi
-  moatery-copr/fetch "$version" "{{dest}}"
+  moatery-copr/fetch "${version:-latest}" "{{dest}}"
   rpm -qp "{{dest}}"
 
 # Remove old build artifacts

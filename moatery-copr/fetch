@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# moatery's RPM at VERSION, from its Copr repository, to DEST, refused
-# unless it is signed by the project's key beside this script (pubkey.gpg).
-# The chroot is this host's Fedora's: the RPM installs into that Fedora's
-# Python. dnf download checks no signature: rpmkeys does, in a keyring of its
-# own, and _pkgverify_level makes it refuse an unsigned package, which plain
-# -K passes on its digests. --refresh, because a version released since
-# dnf last cached this repository's metadata is otherwise not found.
+# moatery's RPM at VERSION, or its newest release when VERSION is latest,
+# from its Copr repository, to DEST, refused unless it is signed by the
+# project's key beside this script (pubkey.gpg). The chroot is this host's
+# Fedora's: the RPM installs into that Fedora's Python. dnf download checks
+# no signature: rpmkeys does, in a keyring of its own, and _pkgverify_level
+# makes it refuse an unsigned package, which plain -K passes on its digests.
+# --refresh, because a version released since dnf last cached this
+# repository's metadata is otherwise not found.
 set -euo pipefail
 [ "$#" -eq 2 ] || { echo "usage: $0 VERSION DEST" >&2; exit 2; }
 version=$1
 dest=$2
 . /etc/os-release
 repo=https://download.copr.fedorainfracloud.org/results/benjamin-coder-smith/moatery/fedora-$VERSION_ID-x86_64/
+if [ "$version" = latest ]; then
+  version=$(dnf repoquery -q --refresh --repofrompath="moatery,$repo" \
+    --repo=moatery --latest-limit=1 --qf '%{version}\n' moatery)
+  [ -n "$version" ] || { echo "no moatery release in $repo" >&2; exit 1; }
+fi
 key=$(dirname "$(realpath "$0")")/pubkey.gpg
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
