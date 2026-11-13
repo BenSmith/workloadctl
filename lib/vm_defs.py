@@ -279,7 +279,10 @@ REGISTRATION_DOMAIN_PARENTS = (
 # itself but labels it by some means we cannot read from the seed text (an
 # image-baked fstab entry, a local policy granting sshd another type) opts out
 # of the SELinux check alone and keeps the mount check.
-SEED_PROVIDES_CHOICES = {"ca", "mounts", "home_context"}
+#
+# "home_owner": a seed whose `mounts:` puts a share inside the guest's home
+# hands the home back to the user by means the seed text does not show.
+SEED_PROVIDES_CHOICES = {"ca", "mounts", "home_context", "home_owner"}
 
 # workload-ensure-user exits with this when a custom seed fails one of the
 # contracts build_cloud_init_iso enforces (host key, CA bundle, volume mounts,

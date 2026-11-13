@@ -135,6 +135,17 @@ write_files:
 #    Only a share COVERING the home needs this. One mounted inside it
 #    (./work:/home/fedora/work) inherits the parent mount's context.
 #
+#    Mount such a share from runcmd (mount -t virtiofs TAG PATH), not with
+#    cloud-init's `mounts:` key: that runs before the user is created, so its
+#    mkdir makes the home root-owned and useradd leaves it so, without skel.
+#    A seed that does use `mounts:` for one must hand the home back in runcmd,
+#    and provisioning refuses one that does not (or declare "home_owner" in
+#    seed_provides if the guest does it by other means):
+#   - "chown ${WORKLOADCTL_VM_USER}: /home/${WORKLOADCTL_VM_USER}"
+#   - runuser -u ${WORKLOADCTL_VM_USER} -- cp -a --update=none /etc/skel/. /home/${WORKLOADCTL_VM_USER}/
+#   - chmod 0700 /home/${WORKLOADCTL_VM_USER}
+#   - restorecon -R -x /home/${WORKLOADCTL_VM_USER}
+#
 # runcmd (add these as items to the `runcmd:` list AT THE END OF THIS FILE --
 # a second `runcmd:` key here would not merge with it, it would replace it, and
 # the paravirtual clock below would silently stop being wired):

@@ -1054,8 +1054,10 @@
 # Concerns this seed handles itself, each turning off the check that refuses
 # a seed without it: "mounts" (it mounts every [vm].volumes share), "ca" (it
 # installs the egress CA on a filtered VM), "home_context" (it labels a share
-# over the guest's home so sshd can read it). It silences the check; it does
-# not do the work, so declare one only when the guest image really does.
+# over the guest's home so sshd can read it), "home_owner" (it hands the home
+# back to the user when its `mounts:` puts a share inside it). It silences
+# the check; it does not do the work, so declare one only when the guest
+# image really does.
 # Type: array of strings. Default: []. Refused: any other entry.
 # seed_provides = ["mounts"]
 

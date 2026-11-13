@@ -11,13 +11,16 @@ the ISO around it is ensure_vm's.
 Installed to /usr/libexec/workloadctl/vm_default_seed.py.
 """
 
+import shlex
 from pathlib import PurePosixPath
 
 from guest_ca import (
     CA_BUNDLE_PATH, CA_ENV_VARS, GUEST_BUNDLE_LINES, GUEST_CA_PATH,
 )
 from egress_policy import vm_uses_inspect
-from vm_defs import VM_GUEST_UID, VM_HOME_SELINUX_CONTEXT
+from vm_defs import (
+    VM_GUEST_HOME_BASE, VM_GUEST_UID, VM_HOME_SELINUX_CONTEXT,
+)
 from vm_ptp import vm_ptp_kvm_runcmd_lines, vm_ptp_kvm_seed_files
 
 
@@ -109,6 +112,57 @@ def covers_guest_home(guest_path: str, guest_home: PurePosixPath) -> bool:
     except ValueError:
             return False
     return True
+
+
+def home_repair_lines(guest_user: str, guest_home: PurePosixPath,
+                      mount_points: list) -> list:
+    """Shell lines giving the guest user back a home that a share mounted
+    strictly inside it made first.
+
+    cloud-init runs `mounts` before `users_groups`, so the mount's
+    `mkdir -p` creates the home and every directory down to the mount point
+    as root, and useradd then finds the home present: it neither takes it
+    over nor copies /etc/skel. runcmd runs after both. Only directories
+    still owned by root are handed over, the home at 0700 as useradd makes
+    it, and skel never overwrites. A share over the home itself is the
+    host's directory, left alone.
+    """
+    if any(covers_guest_home(mp, guest_home) for mp in mount_points):
+        return []
+    dirs = set()
+    for mp in mount_points:
+        path = PurePosixPath(mp)
+        if path == guest_home or guest_home not in path.parents:
+            continue
+        parent = path.parent
+        while parent != guest_home.parent:
+            dirs.add(parent)
+            parent = parent.parent
+    if not dirs:
+        return []
+    user = shlex.quote(guest_user)
+    home = shlex.quote(str(guest_home))
+    below = " ".join(shlex.quote(str(d)) for d in
+                     sorted(dirs - {guest_home},
+                            key=lambda d: (len(d.parts), str(d))))
+    lines = [
+        "taken=",
+        f"if [ \"$(stat -c %u {home})\" = 0 ]; then",
+        f"  chown {user}: {home} && taken=1",
+        "fi",
+    ]
+    if below:
+        lines += [
+            f"for d in {below}; do",
+            f"  if [ \"$(stat -c %u \"$d\")\" = 0 ]; then chown {user}: \"$d\"; fi",
+            "done",
+        ]
+    return lines + [
+        f"runuser -u {user} -- cp -a --update=none /etc/skel/. {home}/",
+        # After the copy: cp -a gives the home /etc/skel's own mode.
+        f"if [ -n \"$taken\" ]; then chmod 0700 {home}; fi",
+        f"restorecon -R -x {home} || true",
+    ]
 
 
 def virtiofs_mount_opts(guest_path: str, opts_str: str,
@@ -254,6 +308,11 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
     # Each block is a single `- |` shell fragment, so a failure in one does not
     # decide whether the next one runs.
     runcmd_blocks = [vm_ptp_kvm_runcmd_lines()]
+    home_lines = home_repair_lines(
+        guest_user, PurePosixPath(VM_GUEST_HOME_BASE) / guest_user,
+        [mp for _tag, mp, _fstype, _opts in mounts])
+    if home_lines:
+        runcmd_blocks.append(home_lines)
     if ca_cert:
         runcmd_blocks.append(list(GUEST_BUNDLE_LINES))
     if has_data_disk:

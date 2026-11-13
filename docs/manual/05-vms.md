@@ -367,11 +367,18 @@ directories](#sharing-host-directories).
 **The SELinux context on a share over the guest's home.** See
 [A share over the guest's home](#a-share-over-the-guests-home).
 
+**The home handed back, for a share inside it mounted with `mounts:`.**
+cloud-init runs `mounts:` before it creates the user, so a mount point
+inside the home makes the home root-owned, and the user cannot write in it.
+Mount such a share from `runcmd` instead, or `chown` the home to the user
+in `runcmd`; the starter seed shows how.
+
 **The egress CA, for a filtered VM.** See [Networking](06-networking.md).
 
 If the guest image already does one of these itself, for instance with a
 mount in its own `/etc/fstab`, declare it with
-`seed_provides = ["mounts"]`, `["home_context"]` or `["ca"]` in
+`seed_provides = ["mounts"]`, `["home_context"]`, `["home_owner"]` or
+`["ca"]` in
 `[vm.cloud_init]`. That turns the check off; it does not do the work.
 
 Three more things are not checked but matter: create `[vm].user` with UID

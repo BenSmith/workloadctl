@@ -15,7 +15,7 @@ import tempfile
 import tomllib
 import types
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 from tests import REPO_ROOT, load_script
@@ -181,6 +181,53 @@ class TestRenderDefaultUserData(unittest.TestCase):
         self.assertIn("final_message:", out)
         # Trailing newline so concatenation/append is safe.
         self.assertTrue(out.endswith("\n"))
+
+
+class TestHomeUnderAShare(unittest.TestCase):
+    """A share strictly inside the guest's home. cloud-init's `mounts` runs
+    before `users_groups`, so the mount point's `mkdir -p` made the home as
+    root and useradd then left it root-owned and without skel: found on a
+    real VM on the GPU host, 2026-11-13, with `./proj:/home/workload/proj`
+    (the user could not create a file in ~)."""
+
+    def render(self, *mount_points):
+        mounts = [(f"t{i}", mp, "virtiofs", "rw")
+                  for i, mp in enumerate(mount_points)]
+        return vm_default_seed.render_default_user_data(
+            name="myvm", guest_user="fedora", pubkey="ssh-ed25519 X",
+            mounts=mounts, has_data_disk=False)
+
+    def test_the_home_and_each_parent_of_the_mount_are_handed_back(self):
+        out = self.render("/home/fedora/a/b", "/home/fedora/proj")
+        self.assertIn('if [ "$(stat -c %u /home/fedora)" = 0 ]; then', out)
+        self.assertIn("chown fedora: /home/fedora && taken=1", out)
+        self.assertIn("for d in /home/fedora/a; do", out)
+        self.assertIn('then chown fedora: "$d"; fi', out)
+        self.assertIn("runuser -u fedora -- cp -a --update=none "
+                      "/etc/skel/. /home/fedora/", out)
+        self.assertIn("restorecon -R -x /home/fedora", out)
+
+    def test_a_share_directly_in_the_home_hands_back_the_home_alone(self):
+        out = self.render("/home/fedora/proj")
+        self.assertIn("chmod 0700 /home/fedora", out)
+        self.assertNotIn("for d in", out)
+
+    def test_the_home_is_made_private_after_skel_is_copied(self):
+        # cp -a of /etc/skel/. gives the home skel's 0755; seen on a real VM.
+        out = self.render("/home/fedora/proj")
+        self.assertGreater(out.index("chmod 0700 /home/fedora"),
+                           out.index("/etc/skel/."))
+
+    def test_it_runs_in_runcmd_after_the_user_exists(self):
+        out = self.render("/home/fedora/proj")
+        self.assertGreater(out.index("chown fedora:"), out.index("runcmd:"))
+
+    def test_a_share_elsewhere_or_over_the_home_leaves_it_alone(self):
+        for mounts in (("/mnt/x",), ("/home/fedora",),
+                       ("/home/fedora", "/home/fedora/proj"),
+                       ("/home/fedoraX/proj",)):
+            with self.subTest(mounts=mounts):
+                self.assertNotIn("chown", self.render(*mounts))
 
 
 class TestVirtiofsMountOpts(unittest.TestCase):
@@ -1573,6 +1620,79 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self._seed(self._HOME_MOUNT)
         with self.assertRaises(self.mod.SeedContractError):
             self._run_build(self._home_cfg())
+
+    # --- a share inside the home, mounted by cloud-init's `mounts:` --------
+    #
+    # `mounts:` runs before `users_groups`, so the mount point's mkdir makes
+    # the home as root and useradd leaves it root-owned, without skel: found
+    # on a real VM, 2026-11-13. The built-in seed repairs it in runcmd.
+
+    _WORK = {"vm": {"user": "fedora",
+                    "cloud_init": {"user_data_file": "user-data"},
+                    "volumes": ["./work:/home/fedora/work"]}}
+    _WORK_MOUNTS = ("mounts:\n  - [home-fedora-work, /home/fedora/work, "
+                    "virtiofs, rw, '0', '0']\n")
+
+    def _work(self, **ci):
+        cfg = {"vm": dict(self._WORK["vm"])}
+        cfg["vm"]["cloud_init"] = {**cfg["vm"]["cloud_init"], **ci}
+        return cfg
+
+    def test_mounts_inside_the_home_without_a_chown_is_refused(self):
+        self._seed(self._WORK_MOUNTS)
+        with self.assertRaises(self.mod.SeedContractError) as ctx:
+            self._run_build(self._work())
+        msg = str(ctx.exception)
+        self.assertIn("./work:/home/fedora/work", msg)
+        self.assertIn("home_owner", msg)
+
+    def test_a_chown_of_the_home_satisfies_it(self):
+        for runcmd in ("  - 'chown fedora: /home/fedora'\n",
+                       "  - chown fedora:fedora /home/fedora\n",
+                       "  - [chown, 'fedora:', /home/fedora]\n",
+                       "  - |\n    chown -R fedora:fedora '/home/fedora/'\n"):
+            with self.subTest(runcmd=runcmd):
+                self._seed(self._WORK_MOUNTS + "runcmd:\n" + runcmd)
+                self._run_build(self._work())
+
+    def test_a_chown_of_something_else_does_not(self):
+        for runcmd in ("  - chown fedora: /home/fedora/work\n",
+                       "  - chown fedora: /home/fedoraX\n",
+                       "#  - chown fedora: /home/fedora\n",
+                       "  - chown fedora: /home/fedora\n"):
+            with self.subTest(runcmd=runcmd):
+                self._seed(self._WORK_MOUNTS + "runcmd:\n" + runcmd)
+                with self.assertRaises(self.mod.SeedContractError):
+                    self._run_build(self._work())
+
+    def test_a_share_mounted_from_runcmd_needs_nothing(self):
+        """runcmd runs after the user exists, so the home is useradd's."""
+        self._seed("runcmd:\n  - mount -t virtiofs home-fedora-work "
+                   "/home/fedora/work\n")
+        self._run_build(self._work())
+
+    def test_home_owner_opts_out(self):
+        self._seed(self._WORK_MOUNTS)
+        self._run_build(self._work(seed_provides=["home_owner"]))
+
+    def test_a_share_over_the_home_takes_it_out_of_the_check(self):
+        self._seed(
+            "mounts:\n  - [home-fedora, /home/fedora, virtiofs, "
+            "'rw,context=\"system_u:object_r:user_home_t:s0\"', '0', '0']\n"
+            "  - [home-fedora-work, /home/fedora/work, virtiofs, rw, "
+            "'0', '0']\n")
+        cfg = self._work()
+        cfg["vm"]["volumes"] = ["./home:/home/fedora",
+                                "./work:/home/fedora/work"]
+        self._run_build(cfg)
+
+    def test_the_built_in_seed_satisfies_the_home_owner_check(self):
+        """The emitter and the check agree on what a hand-back looks like."""
+        cfg = {"vm": {"user": "fedora",
+                      "volumes": ["./work:/home/fedora/work"]}}
+        self._run_build(cfg)
+        self.assertTrue(self.mod.hands_back_home(
+            self._read_user_data(), PurePosixPath("/home/fedora")))
 
     def test_default_mode_emits_what_the_contract_demands(self):
         """The emitter and the check must agree: the built-in cloud-config's

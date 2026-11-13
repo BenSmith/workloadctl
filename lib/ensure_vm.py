@@ -212,6 +212,20 @@ def _write_state_text(anchor: Path, path: Path, text: str, pw) -> None:
         raise RuntimeError(f"cannot write {path} safely")
 
 
+def hands_back_home(live: str, guest_home: PurePosixPath) -> bool:
+    """Whether seed text has a chown of the guest's home itself: what a
+    seed whose `mounts:` lands inside the home must run (see the
+    home_owner check in build_cloud_init_iso). An unquoted list item
+    holding ": " is a YAML mapping, which fails cloud-init's schema and
+    skips the whole of runcmd, so it does not count."""
+    chown = re.compile(
+        r"chown\b[^\n]*[\s,\[]['\"]?" + re.escape(str(guest_home))
+        + r"/?['\"]?([\s,\]]|$)")
+    return any(chown.search(line)
+               and not re.match(r"\s*-\s+[^\s'\"\[|>].*: ", line)
+               for line in live.splitlines())
+
+
 def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None = None):
     """Build cloud-init seed ISO (meta-data + user-data) into the runtime dir.
 
@@ -529,7 +543,7 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                 # whose every home file is `virtiofs_t` and whose sshd cannot
                 # read authorized_keys.
                 #
-                # This is the worst of the three seed-completeness failures and
+                # This is the worst of the seed-completeness failures and
                 # the reason it is checked at all: it is not visible at boot.
                 # The guest keeps serving logins on whatever policy is already
                 # LOADED, so the seed looks correct for as long as the guest
@@ -576,6 +590,36 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                         f"[vm.cloud_init].seed_provides = [\"home_context\"] if "
                         f"the guest labels that mount by other means."
                     )
+
+        # cloud-init runs `mounts:` before `users_groups`: a mount point inside
+        # the guest's home makes the home as root first, and useradd then
+        # leaves it root-owned and without skel. The built-in seed repairs it
+        # in runcmd (home_repair_lines); a custom seed must too.
+        # A share over the home itself is the host's directory, left alone.
+        guest_home = PurePosixPath(VM_GUEST_HOME_BASE) / guest_user
+        vm_volumes = vm_cfg.get("volumes", []) or []
+        guest_paths = [parse_volume_spec(v)[1] for v in vm_volumes]
+        inside = [v for v, gp in zip(vm_volumes, guest_paths)
+                  if guest_home in PurePosixPath(gp).parents]
+        if (inside and "home_owner" not in seed_provides
+                and not any(covers_guest_home(gp, guest_home)
+                            for gp in guest_paths)
+                and re.search(r"^mounts:", live, re.M)
+                and not hands_back_home(live, guest_home)):
+            raise SeedContractError(
+                f"[vm.cloud_init].user_data_file for {name} mounts "
+                f"{inside[0]!r} inside the guest home {guest_home} through "
+                f"cloud-init's `mounts:`, which runs before the user is "
+                f"created: the home is made root-owned and useradd leaves it "
+                f"so, without skel, and {guest_user} cannot write in it. Add "
+                f"a runcmd item that chowns {guest_home} to {guest_user} "
+                f"(workloads/vm-base/cloud-init/user-data carries one; quote "
+                f"it, as an unquoted item holding ': ' is a YAML mapping and "
+                f"cloud-init then skips all of runcmd), mount "
+                f"the share from runcmd instead, or set "
+                f"[vm.cloud_init].seed_provides = [\"home_owner\"] if the "
+                f"guest hands the home back by other means."
+            )
     else:
         # Default mode: built-in cloud-config with SSH key + optional disks.
         # Collision-safe tags, same set the generator emits sidecar units for (B3).
