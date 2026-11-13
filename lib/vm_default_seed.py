@@ -123,8 +123,8 @@ def home_repair_lines(guest_user: str, guest_home: PurePosixPath,
     `mkdir -p` creates the home and every directory down to the mount point
     as root, and useradd then finds the home present: it neither takes it
     over nor copies /etc/skel. runcmd runs after both. Only directories
-    still owned by root are handed over, the home at 0700 as useradd makes
-    it, and skel never overwrites. A share over the home itself is the
+    still owned by root are handed over, and only a home taken here gets
+    skel (never overwriting) and 0700, as useradd makes it. A share over the home itself is the
     host's directory, left alone.
     """
     if any(covers_guest_home(mp, guest_home) for mp in mount_points):
@@ -142,25 +142,23 @@ def home_repair_lines(guest_user: str, guest_home: PurePosixPath,
         return []
     user = shlex.quote(guest_user)
     home = shlex.quote(str(guest_home))
-    below = " ".join(shlex.quote(str(d)) for d in
-                     sorted(dirs - {guest_home},
-                            key=lambda d: (len(d.parts), str(d))))
     lines = [
         "taken=",
-        f"if [ \"$(stat -c %u {home})\" = 0 ]; then",
-        f"  chown {user}: {home} && taken=1",
-        "fi",
+        (f"if [ \"$(stat -c %u {home})\" = 0 ]; then "
+         f"chown {user}: {home} && taken=1; fi"),
     ]
-    if below:
-        lines += [
-            f"for d in {below}; do",
-            f"  if [ \"$(stat -c %u \"$d\")\" = 0 ]; then chown {user}: \"$d\"; fi",
-            "done",
-        ]
+    for d in sorted(dirs - {guest_home},
+                    key=lambda d: (len(d.parts), str(d))):
+        d = shlex.quote(str(d))
+        lines.append(f"if [ \"$(stat -c %u {d})\" = 0 ]; then "
+                     f"chown {user}: {d}; fi")
     return lines + [
-        f"runuser -u {user} -- cp -a --update=none /etc/skel/. {home}/",
-        # After the copy: cp -a gives the home /etc/skel's own mode.
-        f"if [ -n \"$taken\" ]; then chmod 0700 {home}; fi",
+        # Only a home taken here missed skel; cp -a also gives the home
+        # /etc/skel's own mode, so the chmod follows it.
+        "if [ -n \"$taken\" ]; then",
+        f"  runuser -u {user} -- cp -a --update=none /etc/skel/. {home}/",
+        f"  chmod 0700 {home}",
+        "fi",
         f"restorecon -R -x {home} || true",
     ]
 

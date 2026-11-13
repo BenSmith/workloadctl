@@ -117,7 +117,10 @@ write_files:
 #    mkdir makes the home root-owned and useradd leaves it so, without skel.
 #    A seed that does use `mounts:` for one must hand the home back in runcmd,
 #    and provisioning refuses one that does not (or declare "home_owner" in
-#    seed_provides if the guest does it by other means):
+#    seed_provides if the guest does it by other means). A share deeper in
+#    (~/x/y) needs the same chown for each directory between (~/x). Quote the
+#    chown: an unquoted item holding ": " is a YAML mapping, and cloud-init
+#    then skips all of runcmd.
 #   - "chown ${WORKLOADCTL_VM_USER}: /home/${WORKLOADCTL_VM_USER}"
 #   - runuser -u ${WORKLOADCTL_VM_USER} -- cp -a --update=none /etc/skel/. /home/${WORKLOADCTL_VM_USER}/
 #   - chmod 0700 /home/${WORKLOADCTL_VM_USER}

@@ -199,10 +199,10 @@ class TestHomeUnderAShare(unittest.TestCase):
 
     def test_the_home_and_each_parent_of_the_mount_are_handed_back(self):
         out = self.render("/home/fedora/a/b", "/home/fedora/proj")
-        self.assertIn('if [ "$(stat -c %u /home/fedora)" = 0 ]; then', out)
-        self.assertIn("chown fedora: /home/fedora && taken=1", out)
-        self.assertIn("for d in /home/fedora/a; do", out)
-        self.assertIn('then chown fedora: "$d"; fi', out)
+        self.assertIn('if [ "$(stat -c %u /home/fedora)" = 0 ]; then '
+                      'chown fedora: /home/fedora && taken=1; fi', out)
+        self.assertIn('if [ "$(stat -c %u /home/fedora/a)" = 0 ]; then '
+                      'chown fedora: /home/fedora/a; fi', out)
         self.assertIn("runuser -u fedora -- cp -a --update=none "
                       "/etc/skel/. /home/fedora/", out)
         self.assertIn("restorecon -R -x /home/fedora", out)
@@ -210,13 +210,22 @@ class TestHomeUnderAShare(unittest.TestCase):
     def test_a_share_directly_in_the_home_hands_back_the_home_alone(self):
         out = self.render("/home/fedora/proj")
         self.assertIn("chmod 0700 /home/fedora", out)
-        self.assertNotIn("for d in", out)
+        self.assertEqual(out.count("chown "), 1)
 
     def test_the_home_is_made_private_after_skel_is_copied(self):
         # cp -a of /etc/skel/. gives the home skel's 0755; seen on a real VM.
         out = self.render("/home/fedora/proj")
         self.assertGreater(out.index("chmod 0700 /home/fedora"),
                            out.index("/etc/skel/."))
+
+    def test_skel_and_the_mode_only_follow_a_home_taken_here(self):
+        """A home the image already gave the user had skel; cp -a would
+        still give it /etc/skel's mode."""
+        out = self.render("/home/fedora/proj")
+        gate = out.index('if [ -n "$taken" ]; then')
+        end = out.index("fi", out.index("chmod 0700"))
+        self.assertTrue(gate < out.index("/etc/skel/.") < end)
+        self.assertTrue(gate < out.index("chmod 0700") < end)
 
     def test_it_runs_in_runcmd_after_the_user_exists(self):
         out = self.render("/home/fedora/proj")
@@ -1633,6 +1642,11 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
     _WORK_MOUNTS = ("mounts:\n  - [home-fedora-work, /home/fedora/work, "
                     "virtiofs, rw, '0', '0']\n")
 
+    def _plain(self):
+        cfg = self._work()
+        cfg["vm"]["volumes"] = []
+        return cfg
+
     def _work(self, **ci):
         cfg = {"vm": dict(self._WORK["vm"])}
         cfg["vm"]["cloud_init"] = {**cfg["vm"]["cloud_init"], **ci}
@@ -1656,14 +1670,74 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
                 self._run_build(self._work())
 
     def test_a_chown_of_something_else_does_not(self):
-        for runcmd in ("  - chown fedora: /home/fedora/work\n",
-                       "  - chown fedora: /home/fedoraX\n",
-                       "#  - chown fedora: /home/fedora\n",
-                       "  - chown fedora: /home/fedora\n"):
-            with self.subTest(runcmd=runcmd):
-                self._seed(self._WORK_MOUNTS + "runcmd:\n" + runcmd)
+        for seed in ("runcmd:\n  - 'chown fedora: /home/fedora/work'\n",
+                     "runcmd:\n  - 'chown fedora: /home/fedoraX'\n",
+                     "runcmd:\n#  - 'chown fedora: /home/fedora'\n",
+                     "runcmd:\n  - chown root:root /home/fedora\n",
+                     "bootcmd:\n  - chown fedora:fedora /home/fedora\n",
+                     ("write_files:\n  - path: /x.sh\n    content: |\n"
+                      "      chown fedora:fedora /home/fedora\n")):
+            with self.subTest(seed=seed):
+                self._seed(self._WORK_MOUNTS + seed)
                 with self.assertRaises(self.mod.SeedContractError):
                     self._run_build(self._work())
+
+    def test_a_deeper_share_needs_each_directory_between(self):
+        cfg = self._work()
+        cfg["vm"]["volumes"] = ["./w:/home/fedora/x/y"]
+        mounts = ("mounts:\n  - [home-fedora-x-y, /home/fedora/x/y, "
+                  "virtiofs, rw, '0', '0']\n")
+        self._seed(mounts + "runcmd:\n  - chown fedora:fedora /home/fedora\n")
+        with self.assertRaises(self.mod.SeedContractError) as ctx:
+            self._run_build(cfg)
+        self.assertIn("/home/fedora/x is made root-owned", str(ctx.exception))
+        self._seed(mounts + "runcmd:\n  - chown fedora:fedora /home/fedora "
+                   "/home/fedora/x\n")
+        self._run_build(cfg)
+
+    def test_a_mounts_block_without_the_share_needs_nothing(self):
+        self._seed("mounts:\n  - [vdb, /data, auto, defaults, '0', '2']\n"
+                   "runcmd:\n  - mount -t virtiofs home-fedora-work "
+                   "/home/fedora/work\n")
+        self._run_build(self._work())
+
+    def test_a_runcmd_item_yaml_reads_as_a_mapping_is_refused(self):
+        """cloud-init's schema check refuses it and skips every runcmd
+        item: seen on a real VM, 2026-11-13, with the hand-back chown."""
+        for item in ("  - chown fedora: /home/fedora\n",
+                     "  - echo done:\n",
+                     "- echo a: b\n"):
+            with self.subTest(item=item):
+                self._seed("runcmd:\n" + item)
+                with self.assertRaises(self.mod.SeedContractError) as ctx:
+                    self._run_build(self._plain())
+                self.assertIn("mapping", str(ctx.exception))
+
+    def test_a_runcmd_item_that_is_a_string_passes(self):
+        for item in ("  - 'echo a: b'\n",
+                     "  - [sh, -c, 'echo a: b']\n",
+                     "  - |\n    echo a: b\n",
+                     "  - echo a:b\n",
+                     "  - echo done  # note: comment\n"):
+            with self.subTest(item=item):
+                self._seed("runcmd:\n" + item)
+                self._run_build(self._plain())
+
+    def test_the_reference_snippet_is_one_text_and_satisfies_the_check(self):
+        """The commented hand-back in the vm-base seed and the scratch seed
+        is the same text, and uncommented it passes the check."""
+        def snippet(path):
+            text = (REPO_ROOT / path).read_text()
+            start = text.index("#    Mount such a share from runcmd")
+            end = text.index("restorecon -R -x /home/", start)
+            return text[start:text.index("\n", end)]
+        ref = snippet("workloads/vm-base/cloud-init/user-data")
+        self.assertEqual(ref, snippet("lib/scratch_vm.py"))
+        items = "".join(line[4:] + "\n" for line in ref.splitlines()
+                        if line.startswith("#   - "))
+        self.assertEqual(items.count("\n"), 4)
+        self._seed(self._WORK_MOUNTS + "runcmd:\n" + items)
+        self._run_build(self._work())
 
     def test_a_share_mounted_from_runcmd_needs_nothing(self):
         """runcmd runs after the user exists, so the home is useradd's."""
@@ -1690,9 +1764,13 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         """The emitter and the check agree on what a hand-back looks like."""
         cfg = {"vm": {"user": "fedora",
                       "volumes": ["./work:/home/fedora/work"]}}
+        cfg["vm"]["volumes"] = ["./w:/home/fedora/x/y"]
         self._run_build(cfg)
-        self.assertTrue(self.mod.hands_back_home(
-            self._read_user_data(), PurePosixPath("/home/fedora")))
+        runcmd = self.mod.seed_block(self._read_user_data(), "runcmd")
+        for d in ("/home/fedora", "/home/fedora/x"):
+            self.assertTrue(self.mod.chowns_to(
+                runcmd, "fedora", PurePosixPath(d)), d)
+        self.assertEqual(self.mod.mapping_items(runcmd), [])
 
     def test_default_mode_emits_what_the_contract_demands(self):
         """The emitter and the check must agree: the built-in cloud-config's

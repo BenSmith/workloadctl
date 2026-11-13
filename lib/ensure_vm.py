@@ -212,18 +212,48 @@ def _write_state_text(anchor: Path, path: Path, text: str, pw) -> None:
         raise RuntimeError(f"cannot write {path} safely")
 
 
-def hands_back_home(live: str, guest_home: PurePosixPath) -> bool:
-    """Whether seed text has a chown of the guest's home itself: what a
-    seed whose `mounts:` lands inside the home must run (see the
-    home_owner check in build_cloud_init_iso). An unquoted list item
-    holding ": " is a YAML mapping, which fails cloud-init's schema and
-    skips the whole of runcmd, so it does not count."""
-    chown = re.compile(
-        r"chown\b[^\n]*[\s,\[]['\"]?" + re.escape(str(guest_home))
-        + r"/?['\"]?([\s,\]]|$)")
-    return any(chown.search(line)
-               and not re.match(r"\s*-\s+[^\s'\"\[|>].*: ", line)
-               for line in live.splitlines())
+def seed_block(live: str, key: str) -> list:
+    """The lines under every top-level `key:` of seed text (comment lines
+    already dropped), up to the next top-level key."""
+    out, inside = [], False
+    for line in live.splitlines():
+        if line[:1] not in ("", " ", "\t", "-"):
+            inside = re.match(re.escape(key) + r"\s*:", line) is not None
+            continue
+        if inside:
+            out.append(line)
+    return out
+
+
+def mapping_items(block: list) -> list:
+    """The list items of a seed block that YAML reads as a mapping: an
+    unquoted plain item holding ": ". cloud-init's schema refuses one in
+    runcmd and then skips every item of it, not only that one."""
+    items = [line for line in block if re.match(r"\s*-(\s|$)", line)]
+    if not items:
+        return []
+    indent = min(len(line) - len(line.lstrip()) for line in items)
+    bad = []
+    for line in items:
+        if len(line) - len(line.lstrip()) != indent:
+            continue
+        body = line.strip()[1:].strip()
+        if not body or body[0] in "'\"[{|>&*!":
+            continue
+        if re.search(r":(\s|$)", re.sub(r"\s#.*", "", body)):
+            bad.append(line.strip())
+    return bad
+
+
+def chowns_to(block: list, user: str, path: PurePosixPath) -> bool:
+    """Whether a line of a seed block chowns `path` to `user`."""
+    q = "['\"]?"
+    pattern = re.compile(
+        r"\bchown" + q + r"(?:[\s,]+" + q + r"-[^\s,'\"]*" + q + r")*"
+        + r"[\s,]+" + q + re.escape(user) + r"(?::[^\s,'\"\]]*)?" + q
+        + r"(?:[\s,]+[^\n]*?)?[\s,\[]" + q + re.escape(str(path))
+        + r"/?" + q + r"(?:[\s,\];&|)]|$)")
+    return any(pattern.search(line) for line in block)
 
 
 def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None = None):
@@ -591,35 +621,53 @@ def build_cloud_init_iso(pw, config: dict, name: str, config_path: Path | None =
                         f"the guest labels that mount by other means."
                     )
 
+        runcmd = seed_block(live, "runcmd")
+        bad = mapping_items(runcmd)
+        if bad:
+            raise SeedContractError(
+                f"[vm.cloud_init].user_data_file for {name} has a runcmd item "
+                f"YAML reads as a mapping, not a command: {bad[0]!r}. An "
+                f"unquoted item holding ': ' is a key and a value; "
+                f"cloud-init's schema check refuses it and skips every item "
+                f"of runcmd. Quote the item."
+            )
+
         # cloud-init runs `mounts:` before `users_groups`: a mount point inside
-        # the guest's home makes the home as root first, and useradd then
-        # leaves it root-owned and without skel. The built-in seed repairs it
-        # in runcmd (home_repair_lines); a custom seed must too.
-        # A share over the home itself is the host's directory, left alone.
+        # the guest's home makes the home and each directory down to it as
+        # root first, and useradd then leaves the home root-owned and without
+        # skel. The built-in seed repairs it in runcmd (home_repair_lines); a
+        # custom seed must too. A share over the home itself is the host's
+        # directory, left alone.
         guest_home = PurePosixPath(VM_GUEST_HOME_BASE) / guest_user
         vm_volumes = vm_cfg.get("volumes", []) or []
         guest_paths = [parse_volume_spec(v)[1] for v in vm_volumes]
-        inside = [v for v, gp in zip(vm_volumes, guest_paths)
-                  if guest_home in PurePosixPath(gp).parents]
-        if (inside and "home_owner" not in seed_provides
+        mounts_text = "\n".join(seed_block(live, "mounts"))
+        if ("home_owner" not in seed_provides
                 and not any(covers_guest_home(gp, guest_home)
-                            for gp in guest_paths)
-                and re.search(r"^mounts:", live, re.M)
-                and not hands_back_home(live, guest_home)):
-            raise SeedContractError(
-                f"[vm.cloud_init].user_data_file for {name} mounts "
-                f"{inside[0]!r} inside the guest home {guest_home} through "
-                f"cloud-init's `mounts:`, which runs before the user is "
-                f"created: the home is made root-owned and useradd leaves it "
-                f"so, without skel, and {guest_user} cannot write in it. Add "
-                f"a runcmd item that chowns {guest_home} to {guest_user} "
-                f"(workloads/vm-base/cloud-init/user-data carries one; quote "
-                f"it, as an unquoted item holding ': ' is a YAML mapping and "
-                f"cloud-init then skips all of runcmd), mount "
-                f"the share from runcmd instead, or set "
-                f"[vm.cloud_init].seed_provides = [\"home_owner\"] if the "
-                f"guest hands the home back by other means."
-            )
+                            for gp in guest_paths)):
+            for vol_spec, gp in zip(vm_volumes, guest_paths):
+                path = PurePosixPath(gp)
+                if guest_home not in path.parents or not re.search(
+                        r"[\s,\[]['\"]?" + re.escape(str(path))
+                        + r"/?['\"]?([\s,\]]|$)", mounts_text, re.M):
+                    continue
+                for d in [p for p in path.parents if guest_home in
+                          p.parents or p == guest_home][::-1]:
+                    if chowns_to(runcmd, guest_user, d):
+                        continue
+                    raise SeedContractError(
+                        f"[vm.cloud_init].user_data_file for {name} mounts "
+                        f"{vol_spec!r} inside the guest home {guest_home} "
+                        f"through cloud-init's `mounts:`, which runs before "
+                        f"the user is created: {d} is made root-owned and "
+                        f"useradd leaves it so, and {guest_user} cannot "
+                        f"write in it. Add a runcmd item that chowns {d} to "
+                        f"{guest_user} (workloads/vm-base/cloud-init/user-data "
+                        f"carries the hand-back), mount the share from runcmd "
+                        f"instead, or set [vm.cloud_init].seed_provides = "
+                        f"[\"home_owner\"] if the guest hands it back by "
+                        f"other means."
+                    )
     else:
         # Default mode: built-in cloud-config with SSH key + optional disks.
         # Collision-safe tags, same set the generator emits sidecar units for (B3).
