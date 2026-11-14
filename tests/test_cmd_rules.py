@@ -32,7 +32,7 @@ def doc(**over):
     generated its input from the code under test's own upstream would follow a
     mistake there into a green run here."""
     base = {"tls": "inspect", "hosts": [], "internal_expected": [],
-            "splice": [], "http2": [], "policy": []}
+            "splice": [], "policy": []}
     base.update(over)
     return base
 

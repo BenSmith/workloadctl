@@ -3163,7 +3163,7 @@ class TestContainerInspectPolicy(unittest.TestCase):
         self.assertEqual(doc["hosts"], ["*.pypi.org"])
         self.assertEqual(doc["internal_expected"], ["db.lan"])
         self.assertEqual(doc["splice"], ["pinned.example.com"])
-        self.assertEqual(doc["http2"], [])
+        self.assertNotIn("http2", doc)
         self.assertEqual(doc["policy"], [
             {"host": "api.example.com", "methods": ["POST"], "paths": ["*"],
              "credential": "anthropic"},

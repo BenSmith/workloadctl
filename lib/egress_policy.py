@@ -373,10 +373,6 @@ def vm_inspect_policy(net: dict) -> dict:
     listener restarted onto a different `tls` reads a document that already
     says what the per-host list was.
 
-    `http2` is always empty. The inspector relays no HTTP/2 and refuses a
-    list that names a host; the key stays so that the document, and so its
-    digest, is the one every inspected workload already has.
-
     `policy` is the [[vm.network.policy]] entries, normalised. `methods` and
     `paths` are carried as null where the key was absent rather than as an
     empty list, because absent means ANY and empty would mean NONE -- and JSON
@@ -418,7 +414,6 @@ def vm_inspect_policy(net: dict) -> dict:
         "hosts": vm_allowed_hosts(net),
         "internal_expected": internal_hosts(net),
         "splice": splice_hosts(net),
-        "http2": [],
         "policy": [
             {"host": e.host,
              "methods": ["*"] if e.methods is None else list(e.methods),
@@ -452,8 +447,8 @@ def container_inspect_policy(net: dict) -> dict:
 
     Same JSON shape as vm_inspect_policy (lib/egress_policy.py) -- D6: the
     listener binary (moat-inspect) does not change between
-    substrates, so whichever wrote the file, it reads the same keys. `http2`
-    is always empty, as it is for a VM. `tls` is the EFFECTIVE mode (container_effective_tls_mode),
+    substrates, so whichever wrote the file, it reads the same keys. `tls`
+    is the EFFECTIVE mode (container_effective_tls_mode),
     not the literal key, since the container schema computes it per the
     three-rung ladder rather than defaulting it the way the VM schema does.
 
@@ -470,7 +465,6 @@ def container_inspect_policy(net: dict) -> dict:
         "hosts": container_allowed_hosts(net),
         "internal_expected": [e.host for e in container_internal_entries(net)],
         "splice": [e.host for e in container_splice_entries(net)],
-        "http2": [],
         "policy": [
             {"host": e.host,
              "methods": ["*"] if e.methods is None else list(e.methods),

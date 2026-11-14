@@ -107,10 +107,8 @@ MINT_HANDED = frozenset({
 BROKER_HANDED = BROKER_REQUIRED | {
     "--placeholder", "--auth-header", "--auth-format"}
 
-# Keys the document carries that the reader has no field for. `http2` is
-# always empty: moatery relays no HTTP/2 and refuses a list naming a host,
-# and the key stays so every workload's policy digest is unchanged.
-DOCUMENT_ONLY = frozenset({"http2"})
+# Keys the document carries that the reader has no field for.
+DOCUMENT_ONLY = frozenset()
 # Reader fields no policy document carries: the digest is the status
 # file's, and the request filters come from their own document.
 READER_ONLY = frozenset({"digest", "request_filters"})
@@ -301,12 +299,14 @@ class TestTheDocumentIsTheOneMoateryReads(unittest.TestCase):
         self.assertEqual((entry.methods, entry.paths), (("*",), ("*",)))
         self.assertTrue(entry.permits("DELETE", "/anything"))
 
-    def test_the_empty_http2_list_is_accepted_and_a_named_host_is_not(self):
+    def test_a_key_moatery_does_not_take_is_refused(self):
+        """moatery refuses a document key it does not take, so a key
+        written here and not there stops every inspector at its start."""
         from egress_policy import vm_inspect_policy
         doc = vm_inspect_policy({"hosts": ["a.example"]})
         self.assertEqual(self._load(doc).hosts, ("a.example",))
         with self.assertRaises(ValueError):
-            self._load({**doc, "http2": ["a.example"]})
+            self._load({**doc, "http2": []})
 
 
 class TestTheGeneratorHandsMoateryItsFlags(unittest.TestCase):

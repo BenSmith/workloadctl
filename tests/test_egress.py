@@ -3990,7 +3990,6 @@ class TestRung6PolicyDocument(unittest.TestCase):
             '  "hosts": [\n'
             '    "api.example"\n'
             '  ],\n'
-            '  "http2": [],\n'
             '  "internal_expected": [],\n'
             '  "policy": [\n'
             '    {\n'

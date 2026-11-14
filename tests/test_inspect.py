@@ -464,11 +464,9 @@ class TestPolicyDocument(unittest.TestCase):
         self.assertEqual(vm_inspect_policy({})["tls"], TLS_DEFAULT)
         self.assertEqual(vm_inspect_policy({"tls": "splice"})["tls"], "splice")
 
-    def test_the_http2_list_is_always_empty(self):
-        """The inspector relays no HTTP/2 and refuses a list naming a host;
-        the key stays so the document is the one every workload has."""
-        self.assertEqual(vm_inspect_policy({"hosts": ["a.example"]})["http2"],
-                         [])
+    def test_the_document_has_no_http2_key(self):
+        """The inspector relays no HTTP/2 and refuses the key."""
+        self.assertNotIn("http2", vm_inspect_policy({"hosts": ["a.example"]}))
 
     def test_the_policy_path_is_under_run_and_not_in_the_runtime_dir(self):
         """Under /run, because /run does not exist when the boot generator
