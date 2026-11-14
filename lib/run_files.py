@@ -140,10 +140,10 @@ def workload_run_files(config) -> list[WorkloadRunFile]:
         # unit owns the arming — it binds its ListenStream= before the service
         # ever runs — and the service owns the process and its cgroup
         # exemptions.
-        # G3 in the container egress-parity build spec: VM-only by
+        # VM-only by
         # construction -- this whole block is inside `if config.is_vm:`. The
         # container `else` branch below carries its own container_inspects,
-        # sourced from container_uses_inspect (P1-7..P1-9).
+        # sourced from container_uses_inspect.
         vm_inspects = vm_uses_inspect(config.config)
         files.append(WorkloadRunFile(
             run / f"workload-{name}-inspect.socket", "unit", "inspect-socket",
@@ -209,7 +209,7 @@ def workload_run_files(config) -> list[WorkloadRunFile]:
                     run / f"workload-{name}-{cname}.service", "unit", "container", True
                 ))
         # Container counterpart of the VM inspect-socket/service pair above
-        # (P1-9). Superset semantics, same as -pod/-net: always listed so the
+        #. Superset semantics, same as -pod/-net: always listed so the
         # removable view unlinks stale units, emitted only when
         # container_uses_inspect() fires.
         container_inspects = container_uses_inspect(config.config)
@@ -233,8 +233,8 @@ def workload_run_files(config) -> list[WorkloadRunFile]:
             run / f"workload-{name}-resolve.service", "unit", "resolve",
             container_resolves,
         ))
-        # The credential broker instance (P2-4), superset semantics again and
-        # for the reason G16 flagged: listed for every container so a workload
+        # The credential broker instance, superset semantics again and
+        # for the same reason: listed for every container so a workload
         # that drops its last credential has the unit unlinked rather than
         # left behind holding material nothing selects -- invisible to `drift`
         # and `disable` otherwise. The `present=` is the same predicate the

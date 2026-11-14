@@ -73,8 +73,8 @@ def get_enabled_workloads():
             # The alternative — deciding from the presence of the runtime
             # directory — cannot tell a filtered VM that has not started this
             # boot from an unfiltered one, and those two owe opposite output:
-            # zeros for the first, nothing at all for the second. G11 in the
-            # container egress-parity build spec: this function reads raw
+            # zeros for the first, nothing at all for the second.
+            # This function reads raw
             # TOML and can't build a WorkloadConfig/Substrate, so it calls
             # each substrate's pure predicate directly rather than through
             # get_substrate().
@@ -134,8 +134,8 @@ def collect_all():
 def collect_inspect():
     """[(name, payload)] for every enabled workload with an inspected egress.
 
-    Rung 5 T9, and it computes nothing: every figure comes from
-    `inspect_figures`, which `doctor` reads the same way. Decision 9's whole
+    It computes nothing: every figure comes from
+    `inspect_figures`, which `doctor` reads the same way. The whole
     point is that this file must not be the place a figure gets a second
     definition, and a Prometheus label is exactly the convenience that invites
     one — so the drop breakdown is passed through as the document carries it

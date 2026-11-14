@@ -6,10 +6,9 @@ WHY THIS EXISTS
 cli.md is a command reference nothing executes, so a verb added without a
 section costs nothing at the time and is invisible afterwards: the file still
 reads as complete, because a reference's only symptom of being incomplete is a
-thing that is not in it. Four verbs had accumulated that way — `doctor`,
-`egress`, `pcap` and `rules` — and the oldest of them predates the rung that
-noticed. `completions/workloadctl-completion.bash` had the identical rot and
-`tests/test_completions.py` is what stopped it; this is the same guard one
+thing that is not in it. Verbs accumulate that way.
+`completions/workloadctl-completion.bash` has the identical risk and
+`tests/test_completions.py` guards it; this is the same guard one
 artifact over.
 
 Every expectation is DERIVED from argparse rather than restated, which is the
@@ -140,7 +139,7 @@ class AnchorTest(unittest.TestCase):
 class TestSubstrateClaimsInHelp(unittest.TestCase):
     """A verb that serves both substrates must not advertise one of them.
 
-    THIS IS THE G7 CLASS, and it is the one kind of doc defect that MISREPORTS
+    THIS IS THE SUBSTRATE-NOUN CLASS, and it is the one kind of doc defect that MISREPORTS
     rather than merely reading oddly. `egress` reads the per-request record for
     a filtered container exactly as it does for a VM -- same listener binary,
     same record path, which is keyed by workload name and nothing else -- but
@@ -152,7 +151,7 @@ class TestSubstrateClaimsInHelp(unittest.TestCase):
     Pinned on the HELP LINE, not on prose: it is the sentence argparse puts in
     front of every operator, it is derived from the source rather than
     restated, and it is what a later substrate-widening would forget. `rules`
-    is deliberately not checked -- it IS VM-only, by decision (G5), and its
+    is deliberately not checked -- it IS VM-only, by decision, and its
     help is correct in saying so.
     """
 

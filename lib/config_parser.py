@@ -5,7 +5,7 @@ The bottom of the layering, next to credential_entries and egress_plane.
 Both substrates read the same TOML grammar, so the parse loops live below
 the shared plane rather than in either substrate's module -- a second copy is
 how two spellings of the same rule come to disagree. The hostname
-normalisation is one rung lower still, in inspect_document, because the
+normalisation is one layer lower still, in inspect_document, because the
 listener normalises too and must not import this grammar to do it. The credential block has its own module, credential_entries,
 for the same reason. Each substrate's own record types and readers sit above,
 in vm_network_config and container_network_config.

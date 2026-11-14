@@ -384,8 +384,8 @@ def _used_uids() -> set[int]:
 def get_next_uid() -> int:
     """Return the next free UID in the workload range [UID_MIN, UID_MAX].
 
-    Takes SUBID_LOCK itself so every caller — including the boot generator,
-    which used to allocate unlocked — is mutexed against a concurrent allocator
+    Takes SUBID_LOCK itself so every caller — the boot generator included —
+    is mutexed against a concurrent allocator
     picking the same free slot. Reentrant, so the enable path can keep the lock
     held across the subsequent sysusers write.
     """

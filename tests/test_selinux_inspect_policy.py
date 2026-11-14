@@ -4,7 +4,7 @@ These assert the properties of the module that cannot be seen by loading it —
 a module with the wrong filecon, or with a name_bind it does not need, loads
 cleanly and works. What it does instead is confine the wrong set of files, or
 grant a permission whose absence would have been the tell that the socket unit
-had failed. Both are silent, and both are the failure modes §7.9 names.
+had failed. Both are silent, and both are the failure modes that matter.
 
 Deliberately not asserted here: that the rule set is *sufficient*. That is an
 empirical question about one Fedora policy version and it is answered by
@@ -99,11 +99,9 @@ class TestSocketActivation(unittest.TestCase):
         `Accept=no` does not mean systemd never accepts: when the service goes
         away with connections pending, systemd flushes them by accepting and
         closing. Denied, it retries at the socket's trigger interval and spins
-        -- while the workload keeps working, which is why this was found by
-        reading an audit log rather than by anything failing. Measured on the
-        RESPONDER's socket 2026-08-27 and granted here too: the two units have
-        the same shape and the same restart path, so this one differs only in
-        not having been restarted under a harvest.
+        -- while the workload keeps working, so only the audit log shows it.
+        The responder's socket has the same shape and the same restart path,
+        so the grant is on both.
         """
         self.assertRegex(
             _body(),
@@ -148,22 +146,18 @@ class TestSocketActivation(unittest.TestCase):
 
 class TestInterpreter(unittest.TestCase):
     def test_the_interpreter_is_execute_map_on_bin_t_not_execute_no_trans(self):
-        """This test asserted the exact opposite until 2026-08-25, and the
-        module's header argued for it: grant execute_no_trans on the
-        base_ro_file_type attribute, by analogy with sshd_keygen_t, because
-        naming bin_t alone "misses lib_t".
+        """Not execute_no_trans on base_ro_file_type, by analogy with
+        sshd_keygen_t, on the theory that naming bin_t alone "misses lib_t".
 
-        A permissive harvest measured the truth. execute_no_trans is only
-        checked when an exec does NOT cause a domain transition; sshd-keygen's
+        execute_no_trans is only checked when an exec does NOT cause a domain transition; sshd-keygen's
         does not and ours does -- the typetransition asserted above is the
         difference. The domain uses `execute map` on bin_t (/usr/bin/python3),
         and base_ro_file_type is used for NOTHING. lib_t is not missed: base
         policy already grants every domain read access to base_ro_file_type
-        and execute/map on lib_t, which is why no denial ever appeared to
-        contradict the old rule.
+        and execute/map on lib_t.
 
-        The old assertion could not fail, because over-granting never
-        produces a denial -- which is the whole reason it survived."""
+        An over-grant never produces a denial, so only an assertion on the
+        rule itself can catch one."""
         body = _body()
         self.assertRegex(
             body,
@@ -171,13 +165,13 @@ class TestInterpreter(unittest.TestCase):
         self.assertNotRegex(body, r"\(allow\s+wlinspect_t\s+base_ro_file_type\s")
 
     def test_execute_no_trans_is_the_mint_and_nothing_else(self):
-        """Rung 3 DID need it -- for openssl, which is a different exec.
+        """The mint DOES need it -- for openssl, which is a different exec.
 
         The reasoning above still holds for the interpreter: an exec that
         causes a domain transition never checks execute_no_trans. openssl is
         run without one, so it does, and stdlib-only is why there is an exec at
         all -- binding a TLS library would be a Python dependency the RPM must
-        not declare. Measured under enforcing on a KVM host 2026-08-26.
+        not declare.
 
         This test exists so the permission stays attached to that reason: a
         later `execute_no_trans` on some other type would be a second program
@@ -298,7 +292,7 @@ class TestBoundary(unittest.TestCase):
     guest-controlled input cannot reach the workload's disks, volumes or state
     directory. The inspector inherits that reasoning.
 
-    Rung 3 gave the domain a private key to read and a leaf cache to write,
+    Termination gives the domain a private key to read and a leaf cache to write,
     both of which live in that state directory beside the disk images — and the
     boundary held by MOVING the material rather than by widening the domain.
     So these tests no longer say "cert_t and container_file_t appear nowhere";
@@ -364,13 +358,10 @@ class TestBoundary(unittest.TestCase):
         """The domain that parses what the internet sends does not speak to
         QEMU's agent channel.
 
-        It did for one rung: the minter's clock check dialled
-        /run/workload-vm/<name>/ga.sock before every fresh mint, which put a
-        `sock_file` grant, `svirt_t:unix_stream_socket connectto` and a
-        `self` unix_stream_socket line in this module. The check moved to
-        the clock keeper's own domain (workload-clock.cil, tested beside
-        this), and these three are the lines that prove it left rather than
-        being copied.
+        The clock keeper's own domain (workload-clock.cil, tested beside this)
+        dials /run/workload-vm/<name>/ga.sock. A `sock_file` grant,
+        `svirt_t:unix_stream_socket connectto` or a `self` unix_stream_socket
+        line in this module would put that channel in the inspector's.
         """
         self.assertEqual(self._perms("qemu_var_run_t", "sock_file"), set())
         self.assertEqual(self._perms("svirt_t", "unix_stream_socket"), set())
@@ -379,8 +370,8 @@ class TestBoundary(unittest.TestCase):
 
     def test_a_container_may_read_but_not_write_its_own_ca(self):
         """[network].ca_delivery = "env"/"mount" bind-mounts this same
-        certificate into the container -- confirmed on hardware 2026-09-05 to
-        EACCES without an explicit grant, since wlinspect_t's own read is a
+        certificate into the container, which EACCESes without an explicit
+        grant, since wlinspect_t's own read is a
         different domain. Read-only, and the cert only: the private key gets
         no grant here, matching the inspector's own boundary above.
         """
@@ -399,10 +390,10 @@ class TestBoundary(unittest.TestCase):
             set())
 
     def test_the_ca_key_is_the_inspector_s_alone(self):
-        """The 2026-10-11 security audit (F12): the key shared the
-        certificate's type, which every container domain may read, and a
-        process under another workload's container label opened it. Its own
-        type is read by wlinspect_t and nothing else in this module."""
+        """Under the certificate's type, which every container domain may
+        read, a process under another workload's container label could open
+        the key. Its own type is read by wlinspect_t and nothing else in this
+        module."""
         self.assertTrue(
             {"read", "open"} <= self._perms("wlinspect_ca_key_t", "file"))
         self.assertEqual(
@@ -479,11 +470,10 @@ class TestBoundary(unittest.TestCase):
         create tmpfiles fails on every boot with no AVC unless dontaudit rules
         are off, and the directory appears only when an inspector starts.
 
-        The daily systemd-tmpfiles-clean.service opens and reads it too. On a
-        Fedora 45 gate (systemd 262), 2026-11-08, the clean failed every run
-        with "Failed to open directory /var/log/workloadctl/egress: Permission
-        denied" and status 73, the denial dontaudited; with the read the clean
-        passed under enforcing, dontaudit rules off."""
+        The daily systemd-tmpfiles-clean.service opens and reads it too.
+        Without the read the clean fails every run with "Failed to open
+        directory /var/log/workloadctl/egress: Permission denied" and status
+        73, the denial dontaudited."""
         self.assertIn(
             "(allow systemd_tmpfiles_t wlinspect_log_t "
             "(dir (create getattr open read search)))", _body())

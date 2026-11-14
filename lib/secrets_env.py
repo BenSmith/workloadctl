@@ -100,7 +100,7 @@ def secret_lines(entry: dict, creds_dir: str | None) -> list[str]:
     # A purely-escaped value (`$${SECRET:name}`) is delivered as a literal and
     # reads no credential; only an *unescaped* ref actually needs the decrypted
     # credstore. auto_detect_credentials is escape-aware and is the exact scan
-    # the generator used to decide whether to emit LoadCredentialEncrypted --
+    # the generator uses to decide whether to emit LoadCredentialEncrypted --
     # so `demanded` is non-empty iff the unit has a CREDENTIALS_DIRECTORY.
     # Require it only then, so an escaped-only workload (no
     # LoadCredentialEncrypted, hence no CREDENTIALS_DIRECTORY) still writes

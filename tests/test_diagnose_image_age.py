@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """diagnose says when a workload's image is older than it should be.
 
-Nothing refreshes an image unattended (audit F26), so the check is the one
+Nothing refreshes an image unattended, so the check is the one
 place an operator learns a pull or a rebuild is due.
 """
 import tempfile

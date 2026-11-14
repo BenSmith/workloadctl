@@ -466,7 +466,7 @@ class TestTheCaMintIsHandedItsFlags(unittest.TestCase):
         self.assertEqual(set(flags), {"--name", "--state-dir"})
         self.assertEqual(flags["--name"], "web")
         # Minted in a root-only directory beside ca/, not in the workload
-        # user's ca/ (audit F34).
+        # user's ca/.
         self.assertEqual(Path(flags["--state-dir"]).parent, state)
 
     def test_the_ca_the_mint_writes_is_where_the_inspector_reads(self):

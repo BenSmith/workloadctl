@@ -5,12 +5,9 @@ ExecStart= line -- are spelled out here rather than imported and re-derived:
 the point of the test is that the file and the module agree, and a test that
 computes both sides from the same constant cannot fail when they drift apart.
 
-WHAT USED TO BE AT THE TOP OF THIS FILE, and why it is worth a line rather than
-a silent deletion: ~255 lines about a uid-keyed nft map that translated one
-advertised endpoint (192.0.2.1:8081) to one host-wide broker on 127.0.0.1:8081,
-plus the WORKLOAD_BROKER_URL the guest was told. Rung 6 deleted that whole
-mechanism. The gates that survive it are elsewhere and are deliberately not
-re-created here: `[vm.network].broker` is now a hard error, asserted in
+NO HOST-WIDE BROKER. There is no uid-keyed map to an advertised endpoint and
+no WORKLOAD_BROKER_URL for the guest. The gates that cover that are
+elsewhere: `[vm.network].broker` is now a hard error, asserted in
 tests/test_egress.py with the other retired-key refusals; the reservation
 that entry needed is inherited from 127.128.0.0/9 and asserted by
 TestReservedRanges; and the sweep the generator ran on every VM's stop is gone
@@ -457,11 +454,10 @@ class TestTheGuestHalf(unittest.TestCase):
         self.assertTrue(any("used by two" in e for e in errors), errors)
 
     def test_the_reserved_set_is_derived_from_its_producers(self):
-        """One producer now, and it used to be two.
+        """One producer.
 
-        WORKLOAD_BROKER_URL was the other, and rung 6 stopped seeding it -- the
-        guest is told no broker address at all. Derived rather than listed for
-        exactly this reason: the set exists to refuse a credential `env` that
+        The guest is told no broker address at all. Derived rather than listed
+        for this reason: the set exists to refuse a credential `env` that
         would silently overwrite a variable workloadctl writes, so a name kept
         in it after its writer went refuses a legal name for a collision that
         cannot happen.
@@ -599,7 +595,7 @@ class TestDriftSeesAHandEditedInstance(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Rung 6 T5 — the inspector dials the broker.
+# The inspector dials the broker.
 #
 # The branch is small (`_upstream_for` already took the dial as an argument),
 # and everything worth pinning is what it does NOT do: it does not consult the
@@ -694,7 +690,7 @@ class _BrokerRig(unittest.TestCase):
         A socketpair will not do for the upstream leg: `_Record.dialled` reads
         `getpeername()`, and an AF_UNIX socket answers something that is not an
         address pair -- so the record's `upstream` stays null and the one field
-        rung 6 decision 6 is about is untested. Bound on the broker's own
+        ADR 007 decision 6 is about is untested. Bound on the broker's own
         address, which 127/8 makes free, so the record carries the address
         family the decision turns on rather than a stand-in for it.
 
@@ -841,7 +837,7 @@ class TestTheBrokeredRequestGoesToTheBroker(_BrokerRig):
 class TestTheRefusalWhenTheBrokerIsDown(_BrokerRig):
 
     def test_the_reason_is_its_own_and_not_upstream_unreachable(self):
-        """Rung 6 decision 5. 'the provider is down' and 'a unit on this host
+        """ADR 007 decision 5. 'the provider is down' and 'a unit on this host
         is not answering' need different operator responses, and
         `workloadctl egress --reason` validates against a closed set -- so a
         merged reason is a filter that cannot select this failure."""
@@ -908,7 +904,7 @@ class TestTheRefusalWhenTheBrokerIsDown(_BrokerRig):
 
 
 class TestTheRecordOfABrokeredRequest(_BrokerRig):
-    """Rung 6 decision 6: `upstream` stays honest and `credential` is what
+    """ADR 007 decision 6: `upstream` stays honest and `credential` is what
     makes it readable."""
 
     def _one(self, request=_GET_BROKERED, responses=(_OK,), policy=None):
@@ -925,7 +921,7 @@ class TestTheRecordOfABrokeredRequest(_BrokerRig):
         """`upstream` is documented as the address actually dialled, and on a
         brokered request that is a loopback address. Recording the origin
         instead would put a second, false definition of 'what this request
-        touched' in the one document rung 5 built to be evidence."""
+        touched' in the one document built to be evidence."""
         rec = self._one()
         self.assertTrue(rec["upstream"].startswith("127.129."), rec["upstream"])
         self.assertNotIn("api.provider", rec["upstream"])
@@ -980,7 +976,7 @@ class TestTheCredentialFigures(_BrokerRig):
         self.assertEqual(snap["drop_reasons"][DROP_BROKER_UNREACHABLE], 1)
 
     def test_a_401_from_the_origin_is_counted(self):
-        """§11's second named failure, and the reason it is a counter rather
+        """The second named failure, and the reason it is a counter rather
         than a note: every layer of ours succeeded. The record says
         decision=forward, the policy admitted the host, the broker attached
         material -- and the provider said no."""
@@ -1016,7 +1012,7 @@ class TestTheCredentialFigures(_BrokerRig):
 
 
 class TestTheListenerReadsTheCredentialFromTheDocument(unittest.TestCase):
-    """The seam T1 wrote the key at and T5 reads it at. Neither half is
+    """The seam the generator writes the key at and the listener reads it at. Neither half is
     exercised by the other's tests, and a document that carries the key while
     the listener drops it is a workload whose every request quietly reaches
     the origin unbrokered."""
@@ -1269,7 +1265,7 @@ class TestTheRetiredKeyIsARefusal(unittest.TestCase):
 
 
 class TestTheAdvertisedAddressIsNotAdded(unittest.TestCase):
-    """D10: the dummy link survives, the 192.0.2.1 on it does not.
+    """the dummy link survives, the 192.0.2.1 on it does not.
 
     Both halves are asserted, because each alone is the wrong change. Dropping
     the link would break every filtered workload's inspector addresses, which
@@ -1372,13 +1368,10 @@ class TestTheProvidersAuthConvention(unittest.TestCase):
     """`auth_header`/`auth_format` on [[vm.network.credential]].
 
     ADR 007 names the profile as `(upstream, credential, auth_header,
-    auth_format)` and lists "one profile per sandbox" as the limit this rung
-    removes. The first render emitted the first two and silently defaulted the
-    rest, so every generated instance ran `x-api-key: {secret}` -- and a
-    provider wanting `Authorization: Bearer` answered 401 on a request the
-    inspector had recorded as fully authorised and brokered. The hand-written
-    host-wide config could express it; the generated one could not, which made
-    the new shape a regression for a whole class of provider with no key in
+    auth_format)`. A render that emitted the first two and silently defaulted
+    the rest would run `x-api-key: {secret}` everywhere -- and a provider
+    wanting `Authorization: Bearer` would answer 401 on a request the
+    inspector recorded as fully authorised and brokered, with no key in
     workload.toml to fix it with.
     """
 
@@ -1469,7 +1462,7 @@ class TestOneFlagPerHost(unittest.TestCase):
     """Splitting one host's rules across policy entries must still start.
 
     `/v1/*` for GET and `/v2/*` for POST, one credential, is the ordinary way
-    to write §3 and it validates -- the per-host credential rule only refuses
+    to write a policy and it validates -- the per-host credential rule only refuses
     entries that DISAGREE about which credential. Rendered per entry, the
     old document held `[sandboxes.agent.hosts."api.x.test"]` twice, which
     TOML refused outright: the broker exited at start and every brokered

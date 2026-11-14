@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The homelab registry takes pushes only from `ci`.
 
-One of two halves that only work together (F25 in the 2026-10 audit: zot answered
-anonymous pushes from anywhere on the LAN, and hosts accept the mirrored public
-names unsigned):
+One of two halves that only work together (zot otherwise answers anonymous
+pushes from anywhere on the LAN, and hosts accept the mirrored public names
+unsigned):
 
   - zot's shipped config: anonymous read everywhere; `ci` may write only CI's
     own repositories; nothing grants a write that reaches a mirrored name. zot

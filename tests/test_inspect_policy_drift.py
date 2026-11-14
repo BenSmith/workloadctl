@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rung 5 T3 — drift for the inspector's policy document.
+"""Drift for the inspector's policy document.
 
 `workloadctl drift` answers "do the running units match what this TOML would
 produce". The inspector's policy document is not a unit and is not in the unit
@@ -7,7 +7,7 @@ tree: it lives at /run/workload-vm/_policy/<name>/inspect.json, is written by
 `workload-vm-inspect up` at socket start rather than by the boot generator, and
 is read once by the listener at ITS start. So a workload can be exactly in sync
 in the unit tree and still have an inspector enforcing the previous start's
-policy — the state detail §7.7 names, and the one nothing could see before.
+policy — a state nothing else sees.
 
 Two properties carry the whole unit:
 
@@ -80,7 +80,7 @@ class TestThereIsOneRenderer(unittest.TestCase):
 
     def test_the_keys_are_sorted(self):
         # The document has to be a pure function of the TOML, and dict order
-        # is not. Finding 1 of the rung plan rests on this.
+        # is not.
         text = vm_inspect_policy_text({"hosts": ["a"]})
         keys = [line.split('"')[1] for line in text.splitlines()
                 if line.startswith('  "')]
@@ -158,17 +158,16 @@ class TestWhatCountsAsDrift(_PolicyDriftCase):
         self.assertEqual(cmd_drift.collect_policy_drift(), [])
 
     def test_an_inspected_container_is_COMPARED_not_skipped(self):
-        """G8 routed: the container renderer is what it is compared against.
+        """The container renderer is what it is compared against.
 
-        History, because both wrong answers shipped. First `_rendered_policy`
-        returned "" -- the orphan answer -- and every inspected container read
-        as a whole file REMOVED: permanent drift on a healthy workload, with a
-        remedy (restart) that could not clear it, and `doctor` carrying the
-        same diff. FOUND ON HARDWARE 2026-09-05. Then it returned None, which
-        is "no renderer for this substrate", and the caller skipped -- honest,
-        but it meant no container's document was ever checked.
+        Two wrong answers are possible. If `_rendered_policy` returned "" --
+        the orphan answer -- every inspected container would read as a whole
+        file REMOVED: permanent drift on a healthy workload, with a remedy
+        (restart) that cannot clear it, and `doctor` carrying the same diff.
+        If it returned None, "no renderer for this substrate", the caller
+        would skip, and no container's document would ever be checked.
 
-        Now it renders. A document matching the TOML is not drift.
+        It renders. A document matching the TOML is not drift.
         """
         self._config("cwl", _CONTAINER_INSPECTED)
         self._document("cwl", container_inspect_policy_text(
@@ -191,7 +190,7 @@ class TestWhatCountsAsDrift(_PolicyDriftCase):
     def test_a_container_is_compared_against_the_CONTAINER_renderer(self):
         """The reason routing the predicate alone was refused.
 
-        A hosts-only container is "splice" by the three-rung ladder and the VM
+        A hosts-only container is "splice" by the three-step ladder and the VM
         renderer would default the same TOML to "inspect". Comparing a
         container's document against the VM render would report drift on every
         inspected container on the fleet -- forever, and unclearable -- which

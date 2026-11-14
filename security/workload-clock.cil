@@ -59,10 +59,10 @@
 ; DELIBERATELY NOT GRANTED, on the sibling modules' rule: an entry leaves this
 ; list only when the domain acquires a real reason for it, never because a
 ; harvest shows it being attempted. Both are the interpreter starting up and
-; each fails silently. Measured 2026-09-20 with `semodule -DB` on two
-; enforcing hosts (TSC and hpet) across two full clock_rig runs: these, the
-; user-site probe below, and NOTHING else, with every tick reaching the agent
-; and the skewed guest repaired in the domain.
+; each fails silently. A `semodule -DB` harvest over full clock_rig runs on
+; TSC and hpet hosts shows these, the user-site probe below, and NOTHING else,
+; with every tick reaching the agent and the skewed guest repaired in the
+; domain.
 ;
 ;   getattr, ioctl on init_t:unix_stream_socket   Python asking whether its
 ;     stdout is a tty.

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """The VM unit confines what an escape into QEMU can write.
 
-The 2026-10-11 security audit (F30): a VM's unit set User= and Slice= and
-nothing else, so `systemd-analyze security` scored it 9.4 UNSAFE, worse than
-a deliberately unhardened control, and its QEMU ran in the host's mount
-namespace with the whole filesystem writable wherever its uid and label
-allowed. A container workload's unit has had ProtectSystem=strict, a private
-/tmp and a socket-family deny-list all along.
+A unit that sets only User= and Slice= scores 9.4 UNSAFE in
+`systemd-analyze security`, worse than a deliberately unhardened control,
+and its QEMU runs in the host's mount namespace with the whole filesystem
+writable wherever its uid and label allow. A VM's unit gets what a container
+workload's has: ProtectSystem=strict, a private /tmp and a socket-family
+deny-list.
 
 NoNewPrivileges is absent on purpose, and asserted absent: QEMU reaches
 svirt_t by a type transition at exec, which no_new_privs refuses.
 
-QEMU's own -sandbox (audit F21) was absent too while QEMU launched passt
-itself (`-netdev passt`): passt inherits the filter and fails under it,
-even `-sandbox on` alone (measured with QEMU 10.2.2 on the proving host).
-passt now runs beside QEMU, so a passt VM's QEMU runs the full sandbox. A
+QEMU's own -sandbox cannot be on while QEMU launches passt itself
+(`-netdev passt`): passt inherits the filter and fails under it, even
+`-sandbox on` alone (QEMU 10.2.2). passt runs beside QEMU, so a passt VM's
+QEMU runs the full sandbox. A
 bridged VM's does not: qemu-bridge-helper is a spawn, and the filter's
 no_new_privs keeps it from its privilege.
 """

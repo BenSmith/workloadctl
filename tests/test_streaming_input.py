@@ -4,7 +4,7 @@
 The image gives /dev/uinput and the nodes under /devices/virtual/input to a
 `uinput` group; the physical keyboards and mice stay `input`'s. A bundle that
 grants /dev/uinput joins `uinput`. One that joined `input` again would read
-every key typed at the host (audit F16), and nothing would fail.
+every key typed at the host, and nothing would fail.
 
 The image's half -- the udev rules and the group -- is held by the image's
 own suite.

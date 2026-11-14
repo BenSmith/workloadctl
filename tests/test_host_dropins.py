@@ -2,13 +2,13 @@
 """The host drop-ins the RPM ships against what a workload reaches outside
 its tree.
 
-The 2026-10-11 security audit found both gaps live. F17: a container line
-starting `<0>` was stored as emerg and journald walled it, escape sequences
-raw, to a logged-in terminal; the generator now sets SyslogLevelPrefix=no
-(tests.test_generator), and journald walls nothing, which also covers the
-journal socket some bundles mount. F9: a key a `_wl-` user wrote in its
-own home was accepted by the host's sshd (UsePAM skips the locked-password
-check) with TCP forwarding; nologin refused only the shell.
+Two gaps. A container line starting `<0>` is stored as emerg and journald
+walls it, escape sequences raw, to a logged-in terminal; the generator sets
+SyslogLevelPrefix=no (tests.test_generator), and journald walls nothing,
+which also covers the journal socket some bundles mount. And a key a `_wl-`
+user writes in its own home would be accepted by the host's sshd (UsePAM
+skips the locked-password check) with TCP forwarding; nologin refuses only
+the shell.
 
 Each file is only as good as the spec line that puts it where its daemon
 reads it, so the install path and the %files entry are held here too.
@@ -81,9 +81,9 @@ class TestSshdRefusesWorkloadUsers(unittest.TestCase):
     def test_no_key_is_read_from_a_workload_users_home(self):
         # A Match block holds to the end of the drop-in, so it must be the
         # file's last: anything after it would apply to workload users only.
-        # Proven on the proving host (2026-10-13): with DenyUsers removed, a
-        # key planted in a workload user's home was refused with the block
-        # and accepted without it; sshd -T for other users was unchanged.
+        # With DenyUsers removed, a key planted in a workload user's home is
+        # refused with the block and accepted without it; sshd -T for other
+        # users is unchanged.
         lines = [line.strip() for line in SSHD.read_text().splitlines()
                  if line.strip() and not line.lstrip().startswith("#")]
         matches = [i for i, line in enumerate(lines)

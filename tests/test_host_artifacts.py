@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Q6 Gap 1 — host-global artifacts a workload's setup.sh installs.
+"""Host-global artifacts a workload's setup.sh installs.
 
 `workload_run_files()` says in its own docstring that it never includes shared
 infra or anything outside the generator's output, and every diagnostic verb is

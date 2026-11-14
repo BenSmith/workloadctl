@@ -2468,7 +2468,7 @@ user = "workload"
         self.assertIn("git.local", found[0]["message"])
 
     def test_the_warning_names_the_start_failure_and_not_just_the_exemption(self):
-        """P1-7..P1-11 landed the container inspector, and that changed what
+        """The container inspector changes what
         this entry costs. workload-container-inspect's `up()` raises on a name
         it cannot resolve, it is the inspect socket's ExecStartPre with no `-`
         prefix, and the workload requires that socket -- so the workload does
@@ -2517,7 +2517,7 @@ user = "workload"
 
 
 class ValidateSingleContainerInternalReachabilityTest(unittest.TestCase):
-    """P1-15/G9: the container counterpart of the class above, sourced from
+    """The container counterpart of the class above, sourced from
     [network].internal + container_uses_inspect(). Never exercised before --
     proves the gate is routed, not merely present in the source."""
 

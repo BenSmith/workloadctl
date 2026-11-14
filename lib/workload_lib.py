@@ -15,7 +15,7 @@ import stat
 import tomllib
 from pathlib import Path
 
-# The parse layer, one rung below this module: config_parser owns the TOML
+# The parse layer, one layer below this module: config_parser owns the TOML
 # grammar both substrates read, and imports nothing of ours.
 from config_parser import parse_volume_spec, workload_root_dir
 
@@ -190,11 +190,9 @@ def workload_config_path(name: str) -> Path:
 def load_workload_config(name: str) -> dict:
     """Parse one workload's instance TOML by name.
 
-    Every boot-time helper needs this and each used to spell it itself --
-    under three different names, and six of them behind a
-    `except ModuleNotFoundError: tomllib = None` fallback that no code path
-    ever consulted, so the fallback could only ever turn a legible ImportError
-    into an AttributeError one line later.
+    Every boot-time helper needs this, so it is spelt once, with a plain
+    `import tomllib`: a fallback for a missing tomllib could only turn a
+    legible ImportError into an AttributeError one line later.
 
     Errors are NOT caught here. A helper reading a config it cannot parse has
     nothing to do but fail, and the callers that want to survive a bad config

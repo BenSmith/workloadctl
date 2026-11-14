@@ -301,7 +301,7 @@ class TestLinkAddressCommands(unittest.TestCase):
                               "dev", EGRESS_IFACE, "nodad"])
 
     def test_nodad_is_on_v6_only(self):
-        """A dummy link runs no DAD (measured 2026-08-19), so the flag
+        """A dummy link runs no DAD, so the flag
         changes nothing today; it states the intent and stays correct if the
         address moves to a link type that does run DAD."""
         v4, v6 = inspect_link_address_commands(10004)
@@ -324,7 +324,7 @@ class TestHelperArmsBothTables(unittest.TestCase):
 
     The arming is the first thing in the work that writes to the kernel; the
     properties worth pinning down are the ones a silent edit drops, so they
-    are asserted on the source the way test_vm_proxy.py does. One body serves
+    are asserted on the source. One body serves
     both substrates, so these rows are the container helper's too.
     """
 
@@ -349,7 +349,7 @@ class TestHelperArmsBothTables(unittest.TestCase):
     def test_up_never_arms_the_cgroup_elements(self):
         """An element resolves to a cgroup id at add time and systemd makes
         a fresh cgroup on every start: the add belongs to the unit that owns
-        the cgroup (T5), not to this helper, which runs as ExecStartPre while
+        the cgroup, not to this helper, which runs as ExecStartPre while
         that cgroup is not yet the one being armed."""
         up = self.up
         self.assertNotIn("inspect_cgroup_command", up)
@@ -445,7 +445,7 @@ class TestPolicyDocument(unittest.TestCase):
     """What `hosts` means to the inspector, and what `internal` does not."""
 
     def test_the_hosts_list_is_the_configured_one(self):
-        """At this rung the two enforce the same patterns by two mechanisms.
+        """The two enforce the same patterns by two mechanisms.
         Generating them from one source is what keeps a redirected connection
         and a proxied one making the same decision about the same name."""
         net = {"hosts": ["*.example.com", "git.local"]}
@@ -481,7 +481,7 @@ class TestPolicyDocument(unittest.TestCase):
 
 
 class TestPolicyComposition(unittest.TestCase):
-    """§3's composition rule, which is the thing to get right.
+    """The composition rule, which is the thing to get right.
 
     A host with any matching `policy` entry is governed by `policy` ALONE.
     Membership in `hosts` allowlists it and contributes no rules. The
@@ -582,7 +582,7 @@ class TestPolicyComposition(unittest.TestCase):
             "api.example.com", "GET", "/anything"))
 
     def test_case_sensitivity_is_per_field_and_paths_are_the_odd_one_out(self):
-        """P1-3, from reading OpenSnitch's rule engine (.reference/opensnitch).
+        """from reading OpenSnitch's rule engine (.reference/opensnitch).
 
         Its `Operator` carries an explicit per-rule `Sensitive` flag, which
         exists because operators get this wrong; ours is implicit and DIFFERS
@@ -610,7 +610,7 @@ class TestPolicyComposition(unittest.TestCase):
             "api.example.com", "GET", "/V1/models"))
 
     def test_an_absent_key_means_any_and_an_empty_one_would_mean_none(self):
-        """None and () are different answers and the difference is §3's
+        """None and () are different answers and the difference is the composition rule's
         widening trap. Collapsing them makes a single-entry host with no
         `paths` deny everything instead of permitting everything -- wrong in
         the safe direction, which is how it survives review."""
@@ -648,9 +648,8 @@ class TestRuntimeFixture(unittest.TestCase):
     allowlist that gained the apex would make the wildcard test pass for the
     wrong reason). These checks are text, and they run on every PR.
 
-    It lived in tests/test_vm_proxy.py until rung 2 deleted that module. Moved
-    here rather than dropped, because the fixture it guards outlived the proxy:
-    the names, the pair, and the apex trap were never claims about tinyproxy.
+    The names, the pair, and the apex trap are claims about `hosts`, not about
+    any proxy.
     """
 
     FIXTURE = (ROOT / "tests" / "cli_surface" / "workloads"
@@ -714,12 +713,10 @@ class TestRuntimeFixture(unittest.TestCase):
                             f"reach something real when the stub is absent")
 
     def test_the_probed_names_are_excepted_from_the_internal_guard(self):
-        """New at rung 2, and the fixture does not work without it.
+        """The fixture does not work without it.
 
         The harness stub is on 127.0.0.1 and the INSPECTOR is what dials it, so
-        its upstream leg meets the internal-destination drop. Under the proxy
-        the equivalent dial was exempted by a cgroup rule that predated the
-        guard; the inspector's is not. Without an [[vm.network.internal]] entry
+        its upstream leg meets the internal-destination drop. Without an [[vm.network.internal]] entry
         every positive probe returns 502 -- the guard working exactly as
         designed against a harness that meant it.
 

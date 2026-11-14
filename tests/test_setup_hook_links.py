@@ -2,12 +2,11 @@
 """The shipped [host].setup hooks run as root on a data/ tree the workload
 user owns, so none of them may write through a link planted there.
 
-Found by the 2026-10-11 security audit (F29): with `data/pki` linked to a
-root-owned directory, caddy's `setup.sh enable` wrote its snippet into it,
-and sunshine-streaming's wrote its leaf through `data/tls`. Each hook also
-ends in a `chmod 0644` that follows a link, which is the sharper half: a
-planted `pki/homelab-ca.caddyfile -> /etc/shadow` would have opened the
-shadow file to every user.
+With `data/pki` linked to a root-owned directory, caddy's `setup.sh enable`
+would write its snippet into it, and a hook writing a leaf through
+`data/tls` the same. A `chmod 0644` that follows a link is the sharper half:
+a planted `pki/homelab-ca.caddyfile -> /etc/shadow` would open the shadow
+file to every user.
 
 Each case plants one link at a path the hook writes and checks that what
 it points at is left alone; the control runs the same hook on a clean tree

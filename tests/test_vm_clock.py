@@ -163,7 +163,7 @@ class TestTheSkewCheck(_ClockCase):
         self.assertIn("guest-set-time", [c for c, _ in agent.sent])
 
     def test_a_guest_with_no_agent_reports_unavailable_rather_than_ok(self):
-        """The residual this rung cannot fix in code, and must not hide.
+        """The residual the keeper cannot fix in code, and must not hide.
 
         A guest whose image lacks qemu-guest-agent silently keeps the old
         behaviour: the pause lands, nothing resyncs, and past an hour every

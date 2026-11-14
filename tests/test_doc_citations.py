@@ -14,18 +14,15 @@ something tracked:
   1. a bare `*.md` reference, anywhere — prose, a comment, a workflow;
   2. a **markdown link target**, `[text](path)`, at any extension.
 
-(2) exists because Q3-9 was a `.md` → `.yml` citation, outside (1)'s net. The
-axis is link *syntax*, not file extension, and that was measured rather than
-guessed (2026-07-29): widening (1) to any path-with-an-extension matches 262
-citations of which 99 resolve to nothing, and they are illustrative rather than
-referential — systemd unit-name fragments like
+(2) catches a `.md` → `.yml` citation, outside (1)'s net. The axis is link
+*syntax*, not file extension: widening (1) to any path-with-an-extension
+matches hundreds of citations, a third of which resolve to nothing, and they
+are illustrative rather than referential — systemd unit-name fragments like
 `user@<uid>.service.d/50-workload.conf`, `~/.config/...` paths, in-container
 paths, upstream repo paths, test fixture strings, and outputs being created by
 the command on that line. Exempting all of that is a list that grows every time
-a test gains a path-shaped string. Link targets have none of that problem: 68
-in the tree, 24 of them non-`.md`, and the only three that did not resolve were
-real — the old workload guide pointing into `../workloads.d/`, the
-pre-bundle layout, which has zero tracked files. A `[text](target)` is
+a test gains a path-shaped string. Link targets have none of that problem,
+and one that does not resolve is a real broken link. A `[text](target)` is
 syntactically a promise the reader can follow it; a path in prose or in a code
 line is not.
 
@@ -231,7 +228,7 @@ class TestDocCitations(unittest.TestCase):
         self.assertTrue(self._resolves(probe, "docs/cli.md"))
 
     def test_link_targets_are_checked_at_any_extension(self):
-        """The Q3-9 class: a `.md` → non-`.md` link. The extension filter on
+        """A `.md` → non-`.md` link. The extension filter on
         CITATION means only the link rule can see these."""
         probe = GIT_ROOT / "docs" / "cli.md"
         self.assertFalse(self._link_resolves(probe, "../workloads.d/gone.toml"))
@@ -305,8 +302,8 @@ CODE_CITATION = re.compile(
     r"(?![A-Za-z0-9_])")
 
 # Citations to a module that has been DELETED, kept as history rather than as a
-# pointer ("it lived in tests/test_vm_proxy.py until rung 2 deleted that
-# module"). Naming a file in order to say it is gone is not a promise the
+# pointer ("it lived in tests/test_vm_proxy.py until that module was
+# deleted"). Naming a file in order to say it is gone is not a promise the
 # reader can open it, and rewriting the sentence to avoid the name would lose
 # the only thing that makes the move traceable.
 #
@@ -323,16 +320,11 @@ class TestCodeCitations(unittest.TestCase):
 
     WHAT THIS CATCHES is the deletion and rename class: a test module that
     moves or goes away, leaving every comment that pointed at it claiming a
-    guarantee that is no longer anywhere. Measured before it was written
-    (2026-09-01): 45 such citations across the tracked tree, of which exactly
-    one did not resolve, and that one is the retired-module sentence above.
+    guarantee that is no longer anywhere.
 
-    WHAT IT DOES NOT CATCH, said plainly because the check was written after
-    two of these and would have caught neither: a citation that resolves to the
-    WRONG tracked file. `lib/vm.py` pointed its internal-prefix pin at
-    `tests/test_cmd_egress.py` (the assertion is in `tests/test_egress.py`)
-    and its log-field pin at `tests/test_inspect_diagnose.py` (it is in
-    `tests/test_inspect_record.py`); both exist, so both pass here. A
+    WHAT IT DOES NOT CATCH: a citation that resolves to the WRONG tracked
+    file, such as a pin cited at `tests/test_cmd_egress.py` whose assertion
+    is in `tests/test_egress.py`; both exist, so it passes here. A
     reciprocity rule — require the cited module to name the definition the
     comment is attached to — was prototyped against the same 45 and rejected:
     only 14 yielded a subject at all, and two of the three it flagged were

@@ -1,7 +1,7 @@
 """
 test_runtime_vm_egress_isolation.py — the two-VM proof ADR 006 rests on.
 
-The claim under test is §8's first security property: *per-VM egress policy
+The claim under test is ADR 006's security property: *per-VM egress policy
 keyed on something the guest cannot forge*. Concretely, "one `meta skuid` rule
 blocks this workload and not its sibling."
 

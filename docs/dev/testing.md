@@ -33,8 +33,8 @@ their own, so nothing automatic runs them; see that directory's README. They
 are not a fourth rung but an admission that the rung-3 harness cannot reach
 everything: `inspect_rig.py` drives a real guest through nftables and a
 real inspector under enforcing SELinux. Write one only when a harness-owned
-VM cannot prove the property, and record when it last ran, because nothing
-else notices it rotting.
+VM cannot prove the property. Its run's result goes in the commit message
+of the change it proved.
 
 ## The deletion question
 

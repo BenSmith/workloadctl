@@ -884,9 +884,9 @@ class TestCmdHealthAdditional(unittest.TestCase):
 
 
     def test_health_disabled_workload_podman_fails(self):
-        """On the GPU host (2026-11-07) `health` on a disabled workload
-        died with a traceback: its user had no /run/user/<uid>, so
-        `podman ps` failed. It is an unhealthy container, not a crash."""
+        """A disabled workload's user has no /run/user/<uid>, so
+        `podman ps` fails. That is an unhealthy container, not a
+        traceback."""
         from podman import PodmanError
 
         def fake_run(cmd, **kw):
@@ -1370,8 +1370,8 @@ class TestCmdHealthMore(unittest.TestCase):
 
     def test_health_probes_a_bound_port_on_its_address(self):
         """A port published on one address does not answer on loopback, so
-        `192.0.2.10:2222:2222` is probed at 192.0.2.10, not localhost
-        (forgejo's SSH on the services host read as down, 2026-10-17)."""
+        `192.0.2.10:2222:2222` is probed at 192.0.2.10, not localhost,
+        or a healthy service reads as down."""
         toml = PORTS_HEALTH_TOML.replace(
             'ports = ["8080:80"]', 'ports = ["192.0.2.10:2222:2222"]')
 

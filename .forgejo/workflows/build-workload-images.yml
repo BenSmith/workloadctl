@@ -23,7 +23,7 @@ on:
         default: 'all'
         type: string
   # Weekly, every bundle: an image is otherwise rebuilt only when its bundle
-  # changes, and the packages in it go stale (audit F26).
+  # changes, and the packages in it go stale.
   schedule:
     - cron: '0 3 * * 0'
   push:

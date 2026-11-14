@@ -133,7 +133,7 @@ class InspectCheckIsWiredTests(unittest.TestCase):
         self.assertNotIn("vm_inspect", self._names("app"))
 
     def test_a_filtered_container_gets_an_inspector_line(self):
-        """G7's routing, asserted where it can actually go wrong.
+        """The substrate routing, asserted where it can actually go wrong.
 
         inspect_check() became substrate-aware in one commit and was
         hoisted out of `if config.is_vm:` in the same one. Either half alone

@@ -12,8 +12,8 @@ flags; only a live payload shows that they add up:
   back the key written to it;
 - it opens no node a real device made. Those stay `input`'s, and the payload
   holds DAC_OVERRIDE, which in its user namespace does not reach a file of
-  an unmapped owner. Opening one would read every key typed at the host
-  (audit F16);
+  an unmapped owner. Opening one would read every key typed at the
+  host;
 - no sound device comes in: the stream's audio needs none;
 - the bwrap syscalls seccomp_allow names work, and a 32-bit syscall runs,
   which the baseline kills;

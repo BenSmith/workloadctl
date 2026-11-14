@@ -1,13 +1,12 @@
 """The forge takes no sign-ups, and forgejo-runner's setup hook creates its
 runner for one user, organisation or repository, never for the whole forge.
 
-Audit L19 (2026-10-17): the services host's forge had open sign-up and its
-runner was created with POST /api/v1/admin/actions/runners, an instance
-runner (owner_id 0, repo_id 0), so anyone on the LAN could sign up, push a
-workflow and run it on the runner VM, whose jobs have sudo and reach the
-image signing key. On the proving host a runner the hook created at its
-default scope belonged to the token's user, and the same POST at /admin
-made an instance runner. Forgejo 15 asks for write:user, write:repository
+With open sign-up and an instance runner (POST
+/api/v1/admin/actions/runners: owner_id 0, repo_id 0), anyone on the LAN
+could sign up, push a workflow and run it on the runner VM, whose jobs have
+sudo and reach the image signing key. A runner the hook creates at its
+default scope belongs to the token's user; the same POST at /admin makes an
+instance runner. Forgejo 15 asks for write:user, write:repository
 or write:organization at those scopes, write:admin at the instance.
 """
 import json

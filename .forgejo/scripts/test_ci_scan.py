@@ -133,9 +133,8 @@ class Workflow(unittest.TestCase):
 
 
 class Runners(unittest.TestCase):
-    """Each runner bundle installs the scanner the workflows call. The
-    forge's runner had none on 2026-10-14, and the workload image build
-    refuses to push an image it has not scanned."""
+    """Each runner bundle installs the scanner the workflows call: the
+    workload image build refuses to push an image it has not scanned."""
 
     BUNDLES = ("forgejo-runner",)
 

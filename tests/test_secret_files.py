@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """[[secrets.files]] are copied where their container can read them.
 
-The 2026-10-11 security audit (F19): a [[secrets.files]] credential was
-bind-mounted from systemd's /run/credentials/<unit>/, labelled
-init_var_run_t, and the container got EACCES reading it (AVC container_t
-read on init_var_run_t). workload-write-env now copies each one, at every
-start, into the workload's runtime dir, and the mount relabels the copy with
+Bind-mounted from systemd's /run/credentials/<unit>/, a credential is
+labelled init_var_run_t, and the container gets EACCES reading it (AVC
+container_t read on init_var_run_t). workload-write-env copies each one, at
+every start, into the workload's runtime dir, and the mount relabels the copy with
 :Z (tests.test_generator holds the mount).
 
 The copy is written by root into a directory the workload user owns, which
-is the class of the audit's F28 and F29: every case below with a planted
+is a write-through-a-planted-link risk: every case below with a planted
 link checks that what it points at is left alone.
 """
 

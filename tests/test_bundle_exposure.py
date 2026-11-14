@@ -1,13 +1,13 @@
 """What a bundle's instance offers the LAN before anyone configures it.
 
-Audit L19 step 2b (2026-10-17) read every bundle as shipped. Apps that
-ask for no login were published on every host interface (F44: SwarmUI's
-Server tab starts backends, registry:2 takes anonymous pushes); smb-server's default share
-was guest-writable; Sunshine's web UI answered the LAN while its first
-visitor set the admin (F45; the image's origin_web_ui_allowed=wan sat in
-/etc/sunshine/sunshine.conf, which Sunshine never reads, so its default,
-lan, held); and the Pi-hole bundles set v5 variables v6 ignores,
-WEBPASSWORD and PIHOLE_DNS_ (F46).
+Every bundle as shipped. An app that asks for no login must not be
+published on every host interface (SwarmUI's Server tab starts backends,
+registry:2 takes anonymous pushes); smb-server's default share must not be
+guest-writable; Sunshine's web UI must not answer the LAN while its first
+visitor sets the admin (Sunshine reads only the user's sunshine.conf, so an
+origin_web_ui_allowed in /etc/sunshine/sunshine.conf changes nothing); and
+the Pi-hole bundles must not rely on v5 variables v6 ignores, WEBPASSWORD and
+PIHOLE_DNS_.
 """
 import re
 import tomllib
@@ -99,9 +99,9 @@ class TestFirstVisitors(unittest.TestCase):
                     self.assertNotIn("SUNSHINE_WEB_PORT", line)
 
     def test_no_image_writes_a_conf_sunshine_never_reads(self):
-        """Sunshine reads only the user's sunshine.conf: the images'
-        /etc/sunshine/sunshine.conf (output_name, capture_cursor) did
-        nothing, and was dropped (2026-10-17)."""
+        """Sunshine reads only the user's sunshine.conf, so an image's
+        /etc/sunshine/sunshine.conf (output_name, capture_cursor) would do
+        nothing."""
         for bundle, text, _ in self.sunshine_bundles():
             with self.subTest(bundle=bundle.name):
                 self.assertNotIn("/etc/sunshine/sunshine.conf", text)

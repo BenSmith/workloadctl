@@ -1,13 +1,13 @@
 """The `rro` volume option, from the bundle to the running container.
 
-The 2026-10-11 security audit (F8): alloy's `/:/host:ro` was read-only at the
-top only, so `/host/proc`, `/host/sys`, the homes and `/run/user` stayed `rw`
-inside it, and only DAC and alloy's label stood between it and a write there.
-podman 5.8.7 (and 6.1.4) refuses `rro`; crun applies it. Proven on the
-proving host 2026-10-13: the hook turned those mounts `ro` and a write under
-`/host/tmp` got EROFS where the plain `ro` bind let it through (SELinux off,
-so only the mount flag decided). Under rslave a mount the host made after the
-start arrived `rw`; under rprivate it did not arrive.
+A plain `ro` bind such as alloy's `/:/host:ro` is read-only at the top
+only, so `/host/proc`, `/host/sys`, the homes and `/run/user` stay `rw`
+inside it, and only DAC and the label stand between it and a write there.
+podman 5.8.7 (and 6.1.4) refuses `rro`; crun applies it. With the hook those
+mounts are `ro` and a write under `/host/tmp` gets EROFS where the plain
+`ro` bind lets it through (with SELinux off, so only the mount flag
+decides). Under rslave a mount the host makes after the start arrives `rw`;
+under rprivate it does not arrive.
 
 Every link here is one that, broken, leaves the bind at plain `ro` with no
 error anywhere: the generator's flags, the hook file's path and annotation

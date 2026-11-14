@@ -207,7 +207,7 @@ observed is passt failing with `Failed to add fd to epoll: Operation not
 permitted`, an unreachable guest, and an empty audit log; the denials appear
 only under `semodule -DB`.
 
-**passt runs beside QEMU, not under it** (audit F21). QEMU's native `passt`
+**passt runs beside QEMU, not under it**. QEMU's native `passt`
 netdev forked passt itself, so QEMU could not run its own `-sandbox`: passt
 inherits the filter and fails under even `-sandbox on`. `workload-vm-notify`
 now does what the netdev did — a socketpair, passt on one end with `--fd` —

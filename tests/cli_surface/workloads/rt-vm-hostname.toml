@@ -7,13 +7,8 @@
 # allowlisted name and a different one for an unlisted name. That is what this
 # workload exists for.
 #
-# WHAT CHANGED AT RUNG 2, AND WHY THE FIXTURE SURVIVED IT
-#
-# Through rung 1 this bundle described a guest configured to use a proxy: the
-# probes dialled an advertised endpoint and read tinyproxy's CONNECT status.
-# The names, the pair of them, and the apex trap are all unchanged, because
-# none of that was about the proxy — it was about what `hosts` means. What is
-# different is that the guest is now told nothing and dials the names directly.
+# The names, the pair of them, and the apex trap are about what `hosts`
+# means. The guest is told nothing and dials the names directly.
 #
 # `hosts` and no `allow`: deliberate, and valid (a filtered VM needs one or the
 # other, not both). It means every destination this guest can reach on 80 or

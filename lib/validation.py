@@ -229,8 +229,7 @@ def validate_workload_config(config: dict) -> list[str]:
 
     # Mirrors validate_vm_network(vm.get("network", {})) below the VM branch
     # above (vm_validate.validate_vm_network) -- the container schema's own hard-error checks
-    # (V1-V18 in the container egress-parity build spec), not yet run
-    # anywhere until this call.
+    # run here and nowhere else.
     # `config` as well as the table: whether `mode = "host"` is honoured is a
     # topology question (bridge mode ignores the key), and the table alone
     # cannot answer it. See container_runs_on_host_network().

@@ -370,12 +370,10 @@ test "$(%{buildroot}%{_libexecdir}/workloadctl/workloadctl --version)" = \
 systemd-tmpfiles --create workloads-dirs.conf 2>/dev/null || :
 # SELinux fcontext rules that name no workload, so they belong at install time.
 #
-# Both used to be registered from workload-ensure-user, i.e. from every
-# workload's ExecStartPre. That meant N workloads racing the same semanage read
-# lock at every boot, for install-time work — and the code logged one warning
-# and returned with no retry, so a lost race left the tree labelled var_lib_t
-# and the container denied writes to its own home, with the warning long
-# scrolled out of the journal by the time anyone connected the two.
+# Registering them from workload-ensure-user, i.e. from every workload's
+# ExecStartPre, would mean N workloads racing the same semanage read lock at
+# every boot for install-time work, and a lost race leaves the tree labelled
+# var_lib_t and the container denied writes to its own home.
 #
 #   1. The blanket rule for the workload tree: rootless podman needs
 #      container_file_t. Per-workload VM rules (svirt_image_t) are registered
@@ -389,12 +387,11 @@ systemd-tmpfiles --create workloads-dirs.conf 2>/dev/null || :
 #      enough.
 #
 # Non-fatal throughout: a host without semanage, or with SELinux disabled, must
-# still install the package. Non-fatal is not the same as silent, though, and
-# these used to be `2>/dev/null || :` — which discards the only evidence that a
-# rule did not take. That cost an outage: a host rebuild left
-# /run/workload-vm(/.*)? unregistered, the runtime dir came up var_run_t, and
-# every VM workload failed with a bare "QMP socket not ready after 60s" that
-# named nothing SELinux. The registration is also the kind of thing that only
+# still install the package. Non-fatal is not the same as silent, though:
+# `2>/dev/null || :` would discard the only evidence that a rule did not take.
+# With /run/workload-vm(/.*)? unregistered the runtime dir comes up var_run_t,
+# and every VM workload fails with a bare "QMP socket not ready after 60s"
+# that names nothing SELinux. The registration is also the kind of thing that only
 # has to be lost once — nothing re-runs %%post, and the relabel that consumes
 # the rule (workload-ensure-user) is a silent no-op without it.
 #
@@ -407,16 +404,14 @@ systemd-tmpfiles --create workloads-dirs.conf 2>/dev/null || :
 #      instead" on *stdout*. Older and non-Fedora semanage exits nonzero with
 #      "ValueError: ... already defined" on stderr. Reading a nonzero exit as
 #      "warn" would fire on nearly every transaction on those hosts.
-#   2. A zero exit is not evidence the rule landed. The host this was written
-#      for came out of a rebuild with one of these two rules registered and the
-#      other not, from a transaction that reported success — and because the
-#      old code discarded the output, which one it was and why is not
-#      recoverable. Asking the store afterwards is the only check that would
-#      have caught that, whatever the exit status had been.
+#   2. A zero exit is not evidence the rule landed: a transaction that
+#      reports success can leave one of these two rules registered and the
+#      other not. Asking the store afterwards catches that, whatever the exit
+#      status.
 #
 # So: attempt, then confirm, and warn only on a rule that is genuinely absent.
 # Capturing 2>&1 also keeps the "modifying instead" chatter out of the
-# transaction log, which is where it used to go. What is reported quotes
+# transaction log. What is reported quotes
 # semanage's own message, because the reason is not reconstructable later —
 # nothing re-runs %%post, and this is the only moment anyone will see it.
 wl_fcontext() {

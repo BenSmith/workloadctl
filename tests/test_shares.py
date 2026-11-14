@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Named shares (audit F3's second layer, and F14).
+"""Named shares.
 
 A share is a host directory some workloads use: its files carry a
 category its members hold, so no other workload reaches them; writers are
@@ -370,9 +370,9 @@ class HostSetup(unittest.TestCase):
 
 
 class Equivalences(unittest.TestCase):
-    """semanage refuses a rule under an equivalence's alias: on the proving
-    host (2026-10-14) a share at /var/mnt/audit-share got no rule, stayed
-    mnt_t, and its writer could not create a file in it."""
+    """semanage refuses a rule under an equivalence's alias: a share at
+    /var/mnt/audit-share would get no rule, stay mnt_t, and its writer could
+    not create a file in it."""
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())

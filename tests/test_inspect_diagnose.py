@@ -1,4 +1,4 @@
-"""`diagnose`'s reading of the two figures rung 4's policy work landed.
+"""`diagnose`'s reading of the inspector's two policy figures.
 
 The inspector counts a name-to-`Host` binding rejection and a host that turned
 out not to speak HTTP, and until this tier nothing printed either. A figure
@@ -265,7 +265,7 @@ class TestTheFiguresReachTheLine(unittest.TestCase):
             path = Path(tmp) / "inspect-status.json"
             path.write_text(json.dumps(
                 {"drop_reasons": {DROP_MISDIRECTED: 7}}))
-            # Patched on inspect_figures, not on diagnose_inspect: rung 5 T8
+            # Patched on inspect_figures, not on diagnose_inspect: `doctor`
             # moved the single read of this document there, because `doctor`
             # and the exporter became readers of it too and three parses with
             # three ideas of what a malformed document means is the thing that

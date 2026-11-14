@@ -1,7 +1,7 @@
 """
 cmd_egress — read back the per-request record the inspector writes.
 
-Rung 5 T2. The record itself is T1's: one JSON object per line in
+The record itself is one JSON object per line in
 `/var/log/workloadctl/egress/<name>/requests.log`, `0600` under a `0700`
 directory, written by the inspector (moat-inspect). The selection over
 it -- times, filter values, generations, grouping -- is egress_record_query;
@@ -168,7 +168,7 @@ def cmd_egress(args, manager):
     workload, _, _container = str(args.workload).partition("/")
     config = load_config_or_exit(workload, json_mode=json_mode)
 
-    # Routed through the substrate predicate (G4 in the container
+    # Routed through the substrate predicate rather than
     # egress-parity build spec): everything below keys purely on workload
     # name (inspect_record_dir/_path), nothing VM-specific, so this
     # already generalises to a container once one is actually inspected.
@@ -232,7 +232,7 @@ def cmd_egress(args, manager):
         selected = selected[-limit:]
 
     if json_mode:
-        # A WRAPPER, not a bare array, for T3's reason: a machine reader has to
+        # A WRAPPER, not a bare array, because a machine reader has to
         # be able to tell "this workload made no requests" from "nothing was
         # read", and an empty list says both.
         # `limit` AND `truncated` ARE PART OF THE WRAPPER, for the reason the

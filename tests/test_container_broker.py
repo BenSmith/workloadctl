@@ -173,7 +173,7 @@ class TestValidationRefusesWhatCannotBeBrokered(unittest.TestCase):
             errors)
 
     def test_host_mode_names_credential_among_the_conflicts(self):
-        """P2-0. Without this the key reads as accepted under host mode --
+        """Without this the key reads as accepted under host mode --
         and the whole point of the message is that it names the keys the
         bundle actually set."""
         errors = validate_container_network(
@@ -187,7 +187,7 @@ class TestValidationRefusesWhatCannotBeBrokered(unittest.TestCase):
 
 
 class TestTheCommandIsTheVmCommand(unittest.TestCase):
-    """P2-1: one builder, two callers.
+    """one builder, two callers.
 
     ContainerCredential and VmCredential are field-identical by construction,
     so the same declaration must produce the same argv. Asserted against the
@@ -218,7 +218,7 @@ class TestTheCommandIsTheVmCommand(unittest.TestCase):
         self.assertNotIn("127.0.0.1", flags["--listen"][0])
 
     def test_two_policy_entries_for_one_host_emit_one_flag(self):
-        """S6, which was a file that TOML refused: split a host's rules
+        """which was a file that TOML refused: split a host's rules
         across entries -- the ordinary way to write a method/path policy --
         and a per-entry render emitted the same table twice, so the broker
         exited at start and every brokered request 502'd on a config
@@ -235,7 +235,7 @@ class TestTheCommandIsTheVmCommand(unittest.TestCase):
                          ["api.example.test"])
 
     def test_the_providers_auth_convention_reaches_the_line(self):
-        """S5. Without these two flags the broker falls back to its own
+        """Without these two flags the broker falls back to its own
         default, and a provider wanting `Authorization: Bearer` answers 401
         on a request every layer here authorised."""
         credential = dict(CREDENTIAL, auth_header="Authorization",
@@ -266,7 +266,7 @@ class TestTheCommandIsTheVmCommand(unittest.TestCase):
 
 
 class TestTheGeneratedUnit(unittest.TestCase):
-    """P2-2/P2-3: emitted from the container branch, ordered correctly."""
+    """Emitted from the container branch, ordered correctly."""
 
     def setUp(self):
         self.config_dir = tempfile.mkdtemp()
@@ -367,7 +367,7 @@ class TestTheGeneratedUnit(unittest.TestCase):
         self.assertIn("Before=workload-capp.service", unit)
 
     def test_pod_mode_orders_it_before_the_POD_unit_not_the_umbrella(self):
-        """P2-3, and the row this class exists for. The umbrella is `After=`
+        """and the row this class exists for. The umbrella is `After=`
         its members, so `Before=workload-<name>.service` here would put the
         broker after every container has started: the first brokered request
         in that window is refused with `credential broker unreachable` while
@@ -546,7 +546,7 @@ class TestThePlaceholderSeed(unittest.TestCase):
 
 
 class TestTheRunFileEntry(unittest.TestCase):
-    """P2-4. Superset semantics: listed for every container so a workload that
+    """Superset semantics: listed for every container so a workload that
     drops its last credential has the unit unlinked rather than left behind
     holding material nothing selects -- invisible to `drift` and `disable`
     otherwise. `present=` is the same predicate the generator emits on, so
@@ -598,7 +598,7 @@ hosts = ["api.example.test"]
 
 
 class TestTheInternalCarveOut(unittest.TestCase):
-    """P2-5. The broker's own address is 127.129.x.y, inside wl_internal4, and
+    """The broker's own address is 127.129.x.y, inside wl_internal4, and
     the drop keyed on this workload sits above the `oif lo accept` -- so
     without an exemption the inspector's dial to its own broker is dropped by
     the rule that exists to stop the workload reaching the LAN.

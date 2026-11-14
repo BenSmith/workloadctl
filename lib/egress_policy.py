@@ -6,7 +6,7 @@ the predicates that decide whether a workload is inspected at all, the
 parsed `[[network.policy]]` entries, the JSON document the listener reads,
 and where the listener's documents live. The vocabulary that document is
 written IN -- the hostname rule, the TLS modes, the entry type and how a set
-of entries governs a request, the digest -- is inspect_document, one rung
+of entries governs a request, the digest -- is inspect_document, one layer
 down, and the listener imports THAT and never this: the document is the
 interface, and the listener has no reason to know the config grammar that
 produced it. The `Policy` the listener reads it back into is inspect_policy.
@@ -129,7 +129,7 @@ def container_network_mode(config: dict) -> str:
 
 
 # The HTTP methods a [[vm.network.policy]] entry may name. Registered tokens
-# only (IANA HTTP Method Registry), because §3 requires a method that is not one
+# only (IANA HTTP Method Registry), because a policy requires a method that is not one
 # to be an ERROR rather than a rule that can never match: `["FETCH"]` and
 # `["GET "]` are both far likelier to be a typo that silently denies than an
 # intent, and a denial nobody can see is the failure this layer exists to
@@ -170,14 +170,14 @@ def vm_policy_entries(net: dict) -> list[VmPolicyEntry]:
     return parse_policy_entries(net, VmPolicyEntry)
 
 
-# --- The inspector's policy document (§7.7.1, §13) ---
+# --- The inspector's policy document ---
 #
 # The listener is socket-activated and long-lived, so it reads its lists once,
 # at start, out of the workload's runtime directory — written at start rather
 # than at generate time for the reason the retired proxy's config was: /run
 # does not exist when the boot generator runs, and writing at start is what
 # makes an edited list take effect on a plain `systemctl restart` with no
-# regeneration. §13 states that recovery property, and the inspect service's
+# regeneration. That is the recovery property, and the inspect service's
 # PartOf= on the VM is what enforces it; a listener that held its lists in a
 # file written at generate time would keep enforcing the previous boot's policy.
 #
@@ -445,12 +445,12 @@ def vm_inspect_policy_text(net: dict) -> str:
 def container_inspect_policy(net: dict) -> dict:
     """The inspector's policy document for one container workload.
 
-    Same JSON shape as vm_inspect_policy (lib/egress_policy.py) -- D6: the
+    Same JSON shape as vm_inspect_policy (lib/egress_policy.py) -- the
     listener binary (moat-inspect) does not change between
     substrates, so whichever wrote the file, it reads the same keys. `tls`
     is the EFFECTIVE mode (container_effective_tls_mode),
     not the literal key, since the container schema computes it per the
-    three-rung ladder rather than defaulting it the way the VM schema does.
+    three-step ladder rather than defaulting it the way the VM schema does.
 
     NOTHING HERE SAYS WHAT SUBSTRATE THIS IS, and for one release something
     did: a `guest_agent: false` the listener read to keep its per-mint clock
@@ -513,7 +513,7 @@ def internal_hosts(net: dict) -> list[str]:
 def splice_hosts(net: dict) -> list[str]:
     """The host patterns in [[vm.network.splice]], in file order.
 
-    HLD §11's second escape hatch: one host that must not be terminated,
+    The second escape hatch: one host that must not be terminated,
     exempted on a plain restart. The third hatch -- `tls = "splice"` for the
     whole workload -- is a different key and this list is not consulted under
     it, because there everything is spliced already.

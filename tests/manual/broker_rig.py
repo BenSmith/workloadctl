@@ -6,16 +6,9 @@ Run this ON a KVM host with the workloadctl RPM installed. It boots two
 throwaway VM workloads, runs a stub provider on the host, and probes from
 inside each guest and from the host as each workload's own uid.
 
-WHAT REPLACED WHAT
+WHAT IS UNDER TEST
 
-The rig that lived here until rung 6 probed a HOST-WIDE broker at an advertised
-endpoint (192.0.2.1:8081) that every guest was told about, reached through a
-uid-keyed nft redirect. ADR 007 deleted that whole shape. Every one of its 18
-assertions was about the deleted mechanism, so it was deleted with it rather
-than patched -- see tests/manual/README.md for why patching would have been
-worse than nothing.
-
-What is under test now is the opposite arrangement: one broker instance per
+The arrangement ADR 007 decides: one broker instance per
 workload, bound to an address derived from that workload's uid, dialled by that
 workload's inspector, and named to the guest NOT AT ALL. The guest dials the
 provider's real name; the inspector recognises the host as credential-backed
@@ -165,14 +158,14 @@ DNS_ALLOW = "1.1.1.1:53"
 # variable holding a different value is what claim 4 reads.
 GUEST_ENV = "RIG_PROVIDER_KEY"
 
-# The inspector's record, for the T5 seam: `upstream` is the broker's address
+# The inspector's record, for the inspector-to-broker seam: `upstream` is the broker's address
 # on a brokered request and `credential` names the material that rode along.
 # Restated rather than imported, for the reason the addresses above are.
 RECORD_ROOT = Path("/var/log/workloadctl/egress")
 RECORD_FILE = "requests.log"
 
 AUDIT_LOG = Path("/var/log/audit/audit.log")
-# The domain the inspector runs in. T5 added its grant to connect to the
+# The domain the inspector runs in, and its grant to connect to the
 # broker's port; a denial here is silent by construction -- the dial fails, the
 # listener counts a dead broker, and the guest gets a 502 that names the broker.
 INSPECT_DOMAIN = "wlinspect_t"
@@ -478,9 +471,7 @@ def await_listener(label, port, proc, logfile):
     A listener with NO pid attached is not a stranger, it is a race: `ss -p`
     reads /proc/*/fd into a map before it dumps sockets, so a socket bound in
     between the two is printed with no `users:` column at all. That is our own
-    stub, one poll early. It was read as a foreign holder once (2026-09-20,
-    right after a preflight that had just found :443 free), which ended a run
-    with an accusation against a process that did not exist. Only a socket
+    stub, one poll early, not a foreign holder. Only a socket
     that names a DIFFERENT pid is somebody else's.
     """
     for _ in range(100):
@@ -955,7 +946,7 @@ def claim_3(addresses):
 
 
 def the_record():
-    """The T5 seam: does the inspector say the request went to the broker?
+    """The inspector-to-broker seam: does the inspector say the request went to the broker?
 
     `upstream` is honestly the broker's address on a brokered request, and
     `credential` is the name of the material that rode along -- which is what
@@ -996,7 +987,7 @@ def the_record():
 
 
 def selinux(since):
-    """T5's new grant, asserted on the audit log rather than on the outcome.
+    """The inspector's grant on the broker's port, asserted on the audit log rather than on the outcome.
 
     The dial to the broker is a new access for wlinspect_t. A denial on it is
     SILENT by construction: the connect fails, the listener counts a dead

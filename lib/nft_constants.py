@@ -47,7 +47,7 @@ NFT_SETS = (NFT_SET_FILTERED, NFT_SET_ALLOW4, NFT_SET_ALLOW6)
 # every address-bearing object here is two nftables objects. The RULES have to
 # be written twice; the Python does not, and writing it twice is how the v6
 # half goes missing. It has: the reserved-range check was v4 by construction
-# and 2001:2::/48 went unchecked for a whole rung (TestReservedRanges), and an
+# and 2001:2::/48 would go unchecked (TestReservedRanges), and an
 # element in the wrong family's set matches nothing at all -- a silent failure,
 # because a set that never matches looks exactly like a set nothing dialled.
 #
@@ -161,7 +161,7 @@ NFT_SET_EGRESS_CG = "wl_egress_cg"
 NFT_REDIRECT_SKELETON = "/usr/share/workloadctl/workload-redirect.nft"
 NFT_REDIRECT_TABLE = "inet workload_redirect"
 
-# The transparent redirect's objects (§7.1). The two maps carry one element per
+# The transparent redirect's objects. The two maps carry one element per
 # workload per redirected port, keyed uid . original port -> (listener address,
 # listener port), one map per family because `dnat ip` and `dnat ip6` are
 # different translations in the inet family; the set exempts the ONE process

@@ -23,8 +23,8 @@ The check has two layers, primary first:
     stale pause — one planted, a pasta pause escaped to a scope whose
     PrivateTmp `/tmp` is then destroyed, or the stopped workload's own, which
     the arm's `podman run` proves stale by failing pasta's sandbox mount — and
-    prove the workload still starts clean over it. In a Fedora 45 gate run
-    on 2026-11-08 the stop left one. Folded inline (no extra VM boot); if the arm can't be
+    prove the workload still starts clean over it; a stop can leave one.
+    Folded inline (no extra VM boot); if the arm can't be
     established in this environment it is logged and skipped, and the primary
     surface above carries the guarantee. It is expected to arm under gate mode
     (the real bootc image) where the shipped rootless stack is present.

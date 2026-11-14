@@ -209,7 +209,7 @@ def provision(name: str) -> int:
             ensure_common.log(f"  ERROR: Failed to seed SSH key into the home share for {name}: {e}")
             return 1
 
-        # Host keypair for SSH host-key pinning (S1) — must exist before
+        # Host keypair for SSH host-key pinning — must exist before
         # build_cloud_init_iso injects/pins it.
         try:
             generate_vm_host_keypair(pw, name)
@@ -222,9 +222,9 @@ def provision(name: str) -> int:
         # only -- an `egress = "open"` workload has no inspector to present
         # anything, so a CA would be a key with no purpose.
         #
-        # G12 in the container egress-parity build spec: VM-only by
+        # VM-only by
         # construction -- this is inside `if kind == "vm":`. Per-workload
-        # egress CA generation for containers is P1-10, in the container
+        # egress CA generation for containers is in the container
         # branch below this one.
         if vm_uses_inspect(config):
             try:
@@ -297,7 +297,7 @@ def provision(name: str) -> int:
             ensure_common.log(f"  ERROR: Failed to load {name}'s kernel modules: {e}")
             return 1
 
-        # The egress CA (P1-10, G12's container half). generate_egress_ca
+        # The egress CA. generate_egress_ca
         # and provision_egress_pki_dirs are name-keyed only -- nothing inside
         # either reads [vm.network] -- so they are called verbatim rather than
         # duplicated. Must land before the container's own

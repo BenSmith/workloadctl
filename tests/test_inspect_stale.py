@@ -9,13 +9,13 @@ enforces a document nobody can see.
 
 Both halves here are that shape.
 
-T4, the policy document. It is reachable through `diagnose`'s own printed
+The policy document. It is reachable through `diagnose`'s own printed
 remedy: every re-arm branch ends in `systemctl restart <name>-inspect.socket`,
 that socket's ExecStartPre rewrites the document, and the listener is `PartOf=`
 the VM rather than the socket -- so it is not stopped and keeps enforcing what
 it read at its own start.
 
-T7, the CA. ADR 008 decision 4 says the CA does not rotate and the minter reads
+The CA. ADR 008 decision 4 says the CA does not rotate and the minter reads
 it once, so divergence means the state tree moved under a running process --
 generational rollback being the way that happens. Every leaf then chains to an
 anchor the guest does not trust, and the failure is entirely inside the guest.
@@ -135,7 +135,7 @@ class TestTheListenerReportsWhatItLoaded(unittest.TestCase):
 
     def test_the_key_is_written_even_when_empty(self):
         """A key that appeared only when non-empty would make "no digest" and
-        "a listener from before this rung" indistinguishable, and the reader
+        "a listener older than the digest" indistinguishable, and the reader
         treats one of those as silence."""
         listener = Listener([], policy=Policy(
             tls="inspect", hosts=("example.com",)))
@@ -161,7 +161,7 @@ class TestTheStaleChecks(unittest.TestCase):
             v6_route=True, self_dials=None, status=status, filter_sets={},
             **kw)
 
-    # --- T4 ---
+    # --- the policy digest ---
 
     def test_a_matching_digest_passes(self):
         _name, ok, detail = self._line(
@@ -207,14 +207,14 @@ class TestTheStaleChecks(unittest.TestCase):
         self.assertNotIn("DIFFERENT policy", detail)
 
     def test_an_unreadable_document_says_nothing(self):
-        """T3's `drift` already reports a missing document; a second line here
+        """`drift` already reports a missing document; a second line here
         sends an operator to the same fix twice."""
         _name, ok, detail = self._line(
             status={INSPECT_DIGEST_KEY: "aaaa"}, disk_digest="")
         self.assertTrue(ok, detail)
         self.assertNotIn("DIFFERENT policy", detail)
 
-    # --- T7 ---
+    # --- the CA fingerprint ---
 
     def _ca_status(self, sha256="AA:BB", not_after=None):
         ca = {"sha256": sha256}
@@ -357,7 +357,7 @@ class TestTheDiskReadsAreDefensiveToo(unittest.TestCase):
 
     The reachable one is the CA. `_ca_fingerprint_on_disk` runs whenever the
     minter reported a fingerprint, and a CA file left truncated or garbage
-    under a running listener is precisely the state T7 was written to report --
+    under a running listener is precisely the state the CA check reports --
     so the check died of the fault it exists for.
     """
 

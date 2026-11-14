@@ -1,7 +1,7 @@
 """
 cmd_rules — what the inspector's policy document actually says about a host.
 
-Rung 5 T6. `policy_governs()`'s docstring has owed this report since rung 3,
+This is the report `policy_governs()`'s docstring calls for,
 in those words: because host patterns union among themselves, `*.example.com`
 and `api.example.com` both govern `api.example.com` and neither overrides the
 other, so the file's entries are not the effective rules and reading the file is
@@ -11,7 +11,7 @@ IT CALLS THE SHIPPED MATCHER; IT DOES NOT REIMPLEMENT ONE. `policy_governs`
 and `hostname_match` are already pure and already free of runtime state, so
 this runs on a host where the inspector is not running, and — more to the point
 — a report with its own copy of the composition rule could disagree with the
-listener while both looked right. §3's rule is that a host any policy entry
+listener while both looked right. The policy rule is that a host any policy entry
 matches is governed by THOSE ENTRIES ALONE, with `hosts` not consulted for it;
 the careless union reading silently destroys the feature, and a report that
 merged the two lists would print exactly that error on the screen an operator
@@ -37,8 +37,8 @@ how many wildcards it did not expand, so an empty literal set reads as "this
 document is all wildcards" rather than as "there are no rules".
 
 WHAT IT REPORTS IS THE DOCUMENT, NOT THE PROCESS. The listener's loaded document
-is T4's business (`policy_digest` in the status file, compared by `diagnose`);
-the difference between the document on disk and a re-render of the TOML is T3's
+is `diagnose`'s business (`policy_digest` in the status file, compared by `diagnose`);
+the difference between the document on disk and a re-render of the TOML is drift's
 (`workloadctl drift`). This reads the file, says which file it read, and points
 at those two rather than guessing at either.
 """
@@ -126,7 +126,7 @@ def unreadable_entries(doc: dict) -> int:
 
     It cannot happen through the shipped renderer, and that is exactly why it is
     counted rather than assumed away: this reader parses with `json.load` and
-    performs none of the listener's validation (decision 5), so the one state it
+    performs none of the listener's validation, so the one state it
     can be handed that the listener would refuse is a document some other writer
     produced -- and being quietly wrong about that document is worse than
     refusing to read it.
@@ -142,7 +142,7 @@ def load_document(name: str, config) -> tuple:
 
     Two origins, and the report names which one it got, because they answer
     different questions and an operator who cannot tell them apart is exactly
-    the reader this whole rung exists for:
+    the reader this report exists for:
 
       * "disk" -- /run/workload-vm/_policy/<name>/inspect.json, written by
         `workload-vm-inspect up` at the last listener start. This is what the
@@ -157,7 +157,7 @@ def load_document(name: str, config) -> tuple:
 
     Neither is "what the listener is enforcing right now". A listener started
     before an edit holds the previous document in memory with both files
-    agreeing; that door is T4's digest, and `diagnose` is where it is checked.
+    agreeing; that door is the policy digest, and `diagnose` is where it is checked.
     """
     path = Path(inspect_policy_path(name))
     try:
@@ -165,7 +165,7 @@ def load_document(name: str, config) -> tuple:
     except FileNotFoundError:
         # The "config" origin renders from the TOML, so it renders through the
         # substrate's own renderer: a container's `tls` comes from the
-        # three-rung ladder (no [[network.policy]] means "splice"), where the
+        # three-step ladder (no [[network.policy]] means "splice"), where the
         # VM default is "inspect". This origin describes a workload that has
         # not started, so nothing on disk contradicts a wrong answer here.
         if container_uses_inspect(config.config):
@@ -203,7 +203,7 @@ def explain(doc: dict, host: str) -> dict:
     """Everything the document says about one hostname.
 
     `admitted` mirrors `egress_policy.Policy.admits()` and not just the
-    allowlist: a `policy` entry allowlists its own host (§3 -- a name in
+    allowlist: a `policy` entry allowlists its own host (a name in
     `policy` need not also appear in `hosts`), so a workload whose entire
     allowlist is written as policy entries is admitted. A report that checked
     `hosts` alone would print `not allowlisted` for a host the operator's file
@@ -344,7 +344,7 @@ def render_query(view: dict, doc: dict, origin: str, path, name: str) -> list:
         lines.append(f"  allowlist  matched by: {', '.join(matched['hosts'])}")
     elif view["governing"]:
         lines.append("  allowlist  no `hosts` pattern matches — admitted by its "
-                     "policy entries alone (§3)")
+                     "policy entries alone")
     else:
         lines.append("  allowlist  no `hosts` pattern and no policy entry "
                      "matches — every connection\n             to this host is "

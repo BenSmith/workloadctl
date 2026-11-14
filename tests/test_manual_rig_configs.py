@@ -10,9 +10,8 @@ until someone carries it to a KVM host -- which for these rigs is weeks.
 That is not merely inconvenient. The failure LOOKS LIKE the thing under test:
 the config is refused, no units are generated, and the host ends up with no VM,
 no listener and no status file -- the same surface a missing SELinux grant
-produces. inspect_rig.py failed exactly this way on 2026-08-25, carrying the
-bare-string `allow` spelling that rung 2 retired, and only the generator's
-error message distinguished a stale rig from a policy gap.
+produces, and only the generator's error message distinguishes a stale rig
+from a policy gap.
 
 WHAT THIS DOES NOT DO
 
@@ -56,8 +55,8 @@ def _rigs():
         mod = _load(path)
         # ARMS is not universal. A rig that deploys ONE workload has a
         # zero-argument toml_for and no arms at all, and selecting on `ARMS =`
-        # as well silently left clock_rig.py uncovered until 2026-08-26 -- the
-        # same decay one level up again, this time in the guard against it.
+        # as well would silently leave clock_rig.py uncovered -- the same decay
+        # one level up, in the guard against it.
         # A single unnamed arm stands in, so every caller below is one loop.
         yield path.name, mod, getattr(mod, "ARMS", None) or [None]
 

@@ -216,7 +216,7 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
         "    ssh_authorized_keys:",
         f"      - {pubkey}",
     ]
-    # Host-key pinning (S1): install the host-generated SSH host key into the
+    # Host-key pinning: install the host-generated SSH host key into the
     # guest via cloud-init's ssh_keys module, so sshd presents a key the host
     # already pinned in vm_known_hosts on first boot — no trust-on-first-use.
     # The block scalar content is indented 4 spaces under `ed25519_private: |`.
@@ -232,23 +232,20 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
     # never go through PAM. dnf, curl and git all read these names from the
     # environment.
     #
-    # WHAT IS AND IS NOT IN IT, AFTER RUNG 2. Through rung 1 this block carried
-    # http_proxy/https_proxy/no_proxy and the enforcement was advisory by
-    # construction: a guest process free to ignore the variables simply did, and
-    # only the default-deny chain turned that into a failure rather than a
-    # bypass. Those variables are gone. Egress filtering is now transparent — a
+    # WHAT IS AND IS NOT IN IT. No http_proxy/https_proxy/no_proxy: proxy
+    # variables make enforcement advisory, since a guest process free to ignore
+    # them simply does. Egress filtering is transparent — a
     # uid-keyed redirect the guest is not told about and cannot opt out of — so
     # NOTHING written here affects whether the guest is filtered. What remains
     # is the CA bundle the inspector's spliced connections are presented under
     # and the credential PLACEHOLDERS a guest's client library needs in order to
-    # send a request at all: conveniences, not controls. The broker endpoint used
-    # to be here too and is not, because rung 6 stopped telling the guest where
-    # the broker is -- a guest that cannot name it cannot choose to use it.
+    # send a request at all: conveniences, not controls. The broker endpoint is
+    # not here: the guest is never told where the broker is -- a guest that
+    # cannot name it cannot choose to use it.
     #
     # That is worth stating because the block LOOKS the same and its failure
-    # mode inverted. A guest missing this block used to be a guest reaching
-    # nothing; now it is a guest that reaches everything it is allowed to and
-    # cannot verify a certificate.
+    # mode is not "reaches nothing": a guest missing this block reaches
+    # everything it is allowed to and cannot verify a certificate.
     #
     # Only the built-in cloud-config gets this. A workload supplying its own
     # user_data_file owns its guest configuration entirely, and this is
@@ -256,7 +253,7 @@ def render_default_user_data(name: str, guest_user: str, pubkey: str,
     #
     # THE CA IS SEEDED FOR EVERY FILTERED VM, WHATEVER `tls` SAYS, and it goes
     # in by TWO routes because they reach different clients. `ca_certs.trusted`
-    # below installs it into the guest's system trust store, which §5 measured
+    # below installs it into the guest's system trust store, which is measured
     # as covering almost everything; the write_files entry puts the same PEM at
     # a fixed path, which is what the five environment variables above name for
     # the runtimes that carry their own root list and never consult the system

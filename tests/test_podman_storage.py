@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""A container workload's podman store is transient (audit F18).
+"""A container workload's podman store is transient.
 
-podman wrote a `${SECRET:}` value, with the rest of the container's
+podman writes a `${SECRET:}` value, with the rest of the container's
 environment, into its database and the container's config.json under the
-graphroot (measured 2026-10-11, L10.3). With storage.conf's transient_store
-both live under the runroot.
+graphroot. With storage.conf's transient_store both live under the
+runroot.
 """
 import os
 import shutil
@@ -35,9 +35,9 @@ mountopt = "nodev,metacopy=on"
 
 class TestTheConf(unittest.TestCase):
     """What c/storage gives a rootless user from the system's file, and
-    transient_store. Measured on the proving host 2026-10-14: a copy of
-    Fedora's whole file stopped the workload starting, as its rootless
-    podman could not lock the additional image store."""
+    transient_store. A copy of Fedora's whole file stops the workload
+    starting, as its rootless podman cannot lock the additional image
+    store."""
 
     def test_it_is_what_a_rootless_podman_takes_made_transient(self):
         self.assertEqual(

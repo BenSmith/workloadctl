@@ -146,7 +146,7 @@ class Podman:
         not already root, since then becoming another user is a privilege
         *escalation* and only sudo can grant it.
 
-        Why this exists (Q6-X): sudo emits ~6 audit records per invocation
+        Why this exists: sudo emits ~6 audit records per invocation
         (measured: 10 calls -> 60 lines in audit.log; the same loop through
         this path -> 0). `workload-exporter` runs one call per health-checked
         workload every 30s as root, which put three workloads at ~21,500

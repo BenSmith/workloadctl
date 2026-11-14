@@ -150,7 +150,7 @@ def container_uses_inspect(config: dict) -> bool:
     """Whether this workload's egress is redirected into an inspector.
 
     Mirrors ``vm_uses_inspect()`` (lib/egress_policy.py) for the container
-    substrate: the single source of the predicate (D2 in the container
+    substrate: the single source of the predicate
     egress-parity build spec). ``ContainerSubstrate.uses_inspect()`` delegates here rather than
     restating the logic, and ``get_enabled_workloads()``
     (lib/exporter_collect.py) calls it directly on the raw parsed TOML --
@@ -165,7 +165,7 @@ def container_uses_inspect(config: dict) -> bool:
         # this is the belt to that
         # braces, for a config already on disk when the rule landed.
         #
-        # P0-1 measured it on hardware rather than assuming. Two findings,
+        # It is measured on hardware rather than assuming. Two findings,
         # only one of them the expected one:
         #   - the host's OWN traffic is not captured. Root and uid 1000 both
         #     matched no workload selector even with the netns shared, so
@@ -197,7 +197,7 @@ def _validate_container_host_pattern(pattern) -> list[str]:
     `internal`/`splice` entry's `host`).
 
     The container half of validate_host_pattern: it exists to state the two
-    sentences the container schema owns. There is no `egress` key here (R3), so
+    sentences the container schema owns. There is no `egress` key here, so
     an operator who wrote `*` is told to drop the table rather than to set a
     key that does not exist -- which is the one place the VM's wording would be
     actively wrong here.
@@ -221,12 +221,12 @@ def container_allow_resolve(entry: ContainerAllowEntry) -> list:
     destination and hangs, with the drop landing on a host-wide counter that
     names neither it nor the entry.
 
-    R3's "no default-deny for containers" is about the UNTRIGGERED case, and
-    reading it as "a container is never default-denied" is a mistake this
-    docstring used to make. A workload with any trigger is placed in
+    "No default-deny for containers" is about the UNTRIGGERED case, and
+    reading it as "a container is never default-denied" is a mistake. A
+    workload with any trigger is placed in
     `wl_filtered` by container_filter_elements() (lib/nft_elements.py), and
     nftables/workload-filter.nft's last output rule drops everything from a
-    `wl_filtered` uid that no earlier rule accepted. What R3 rules out is an
+    `wl_filtered` uid that no earlier rule accepted. What that rules out is an
     `egress` key that could default-deny a workload WITHOUT giving it an
     inspector; it does not exempt a triggered one from the drop.
     """
@@ -331,7 +331,7 @@ def _container_host_reason_entries(net: dict, key: str) -> list[ContainerHostRea
 
 def container_effective_tls_mode(net: dict) -> str:
     """The tls mode actually in force: the literal key if the operator wrote
-    one, else computed per the three-rung ladder -- no policy entries means
+    one, else computed per the three-step ladder -- no policy entries means
     splice, any policy entry means inspect. Meaningless on a workload with no
     trigger at all (no proxy exists for it to describe), but harmless to
     compute. Reporting code (doctor/rules/egress) must call this, not read

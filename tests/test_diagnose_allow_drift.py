@@ -8,14 +8,13 @@ element authorises, the packet falls past every accept to the default deny, and
 it lands on a drop counter shared with every other filtered workload on the
 host.
 
-WHY THIS FILE EXISTS RATHER THAN A COMMENT SAYING SO. That disposition is not
-in question and never was -- container_egress_rig.py's rotation row confirmed
-it on hardware on 2026-09-06, twice, in both directions. What that row ALSO
-measured is that no surface named it: `diagnose`, `doctor` and `validate`
-between them mentioned neither the stale address nor the entry that pinned it,
-and `egress` had nothing at all, because the inspector is not in this path and
-never sees the connection. The whole operator-visible symptom was a dial that
-used to work.
+WHY THIS FILE EXISTS RATHER THAN A COMMENT SAYING SO. The pinning itself is
+container_egress_rig.py's rotation row's to measure, in both directions.
+What has to hold here is that a surface names it: without `diagnose`'s
+check, `diagnose`, `doctor` and `validate` mention neither the stale address
+nor the entry that pinned it, and `egress` has nothing at all, because the
+inspector is not in this path and never sees the connection. The whole
+operator-visible symptom would be a dial that stops working.
 
 The failure this guards against is therefore not "the check is wrong" but "the
 check is not called", which is why the wiring cases below go through

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the lifecycle = "pet" | "cattle" feature (P2).
+"""Tests for the lifecycle = "pet" | "cattle" feature.
 
 Covers:
   1. WorkloadConfig.lifecycle accessor (default "cattle", reads "pet").
@@ -736,7 +736,7 @@ import workload_selinux
 
 
 class TestSubidLockSharedConstant(unittest.TestCase):
-    """A11/A5/R1: the subuid/subgid flock only mutexes if every participant uses
+    """The subuid/subgid flock only mutexes if every participant uses
     the identical primitive. Mutators go through workload_lib's
     remove_subid_entries(), which takes the one shared subid_lock() itself —
     a caller that hand-rolls read-filter-write reintroduces the race even when
@@ -2313,18 +2313,15 @@ class TestCmdRecreate(unittest.TestCase):
     def test_recreate_reregisters_the_fcontext_rules(self):
         """A workload that GAINED an egress trigger has no PKI fcontext rule.
 
-        FOUND ON HARDWARE 2026-09-05. `apply_vm_fcontext` is gated on `is_vm`
-        or `container_uses_inspect()`, and `recreate` never called it — so a
-        container enabled without an egress key and then given one had nothing
-        registered for `restorecon` to relabel its CA subtree TO. It stayed on
+        `apply_vm_fcontext` is gated on `is_vm` or `container_uses_inspect()`,
+        and `recreate` must call it as `enable` does — otherwise a container
+        enabled without an egress key and then given one has nothing
+        registered for `restorecon` to relabel its CA subtree TO. It stays on
         the blanket container_file_t, which `wlinspect_t` has no read on, and
-        the listener's existence check on its own CA read back False because
-        EACCES is indistinguishable from ENOENT. It then exited saying the CA
-        "is not there" about a file that was there, mode 0644, owned by the
+        the listener's existence check on its own CA reads back False because
+        EACCES is indistinguishable from ENOENT. It then exits saying the CA
+        "is not there" about a file that is there, mode 0644, owned by the
         user it runs as.
-
-        This is the same defect P1-10 fixed at `enable`, surviving at
-        `recreate` because the call was only ever added to one of the two.
         """
         with _cfg(_CONTAINER_TOML, 'test-wl'):
             with _RootBypass():
@@ -2344,8 +2341,8 @@ class TestCmdRecreate(unittest.TestCase):
     def test_recreate_reruns_the_setup_unit(self):
         """A workload that GAINS something /var-side must have it provisioned.
 
-        FOUND ON HARDWARE 2026-09-05, on the transition the schema reference
-        tells operators to use. workload-<name>-setup.service is a oneshot with
+        This is the transition the schema reference tells operators to use.
+        workload-<name>-setup.service is a oneshot with
         RemainAfterExit=yes, so after the first enable it stays `active` and
         neither daemon-reload nor the workload restart re-runs it: everything
         workload-ensure-user provisions was frozen at whatever the config said

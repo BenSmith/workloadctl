@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Contracts for the inspector's figures — the one producer, and its two renderers.
 
-Rung 5 T8/T9. Decision 9 is the property under test and it is not a property of
+One producer is the property under test and it is not a property of
 either renderer on its own: `doctor` prints these figures for a person and the
 exporter publishes them for Prometheus, and the failure this file exists to
 catch is the two of them disagreeing about what a figure MEANS. That cannot be
@@ -229,7 +229,7 @@ class RenderTest(unittest.TestCase):
 
 
 class OneProducerTest(unittest.TestCase):
-    """Decision 9, and the only test that can see it: both renderers, one
+    """One producer, and the only test that can see it: both renderers, one
     document, compared to EACH OTHER rather than to a literal."""
 
     def _exported(self):

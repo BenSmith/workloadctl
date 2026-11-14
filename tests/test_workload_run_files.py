@@ -286,12 +286,12 @@ class TestCurrentDestructiveGolden(unittest.TestCase):
                 # deliberate superset (single mode emits neither):
                 'workload-app-pod.service',
                 'workload-app-net.service',
-                # deliberate superset (no [network] trigger, P1-9):
+                # deliberate superset (no [network] trigger):
                 'workload-app-inspect.socket',
                 'workload-app-inspect.service',
                 'workload-app-resolve.socket',
                 'workload-app-resolve.service',
-                # deliberate superset (P2-4): listed for every container so a
+                # deliberate superset: listed for every container so a
                 # workload that drops its last [[network.credential]] has the
                 # unit unlinked rather than left behind holding material
                 # nothing selects. This fixture declares none.
@@ -312,12 +312,12 @@ class TestCurrentDestructiveGolden(unittest.TestCase):
                 'workload-stack-net.service',
                 'workload-stack-web.service',
                 'workload-stack-db.service',
-                # deliberate superset (no [network] trigger, P1-9):
+                # deliberate superset (no [network] trigger):
                 'workload-stack-inspect.socket',
                 'workload-stack-inspect.service',
                 'workload-stack-resolve.socket',
                 'workload-stack-resolve.service',
-                # deliberate superset (P2-4), as in test_single:
+                # deliberate superset, as in test_single:
                 'workload-stack-broker.service',
                 # deliberate superset, as in test_single:
                 'workload-stack.seccomp.json',
@@ -433,7 +433,7 @@ class TestRunFilesMembership(unittest.TestCase):
             self.assertNotIn('workload-forge-resolve.service', got)
 
     def test_a_triggered_container_emits_its_own_inspector(self):
-        """P1-15/G3: the container `else` branch's own container_inspects
+        """The container `else` branch's own container_inspects
         gate (run_files.py, sibling of the VM block above), never
         exercised here before -- a plain container fixture proves absence,
         this one proves presence."""

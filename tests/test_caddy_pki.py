@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """caddy issues from a homelab intermediate and never holds the root's key.
 
-The 2026-10-17 audit (F40) found the homelab root CA's private key mounted
-into caddy: whoever ran code as caddy could issue a certificate every
-homelab device trusts, for any name. caddy 2.10.2 was then proven on the
-proving host to issue from a supplied intermediate with the root's
+With the homelab root CA's private key mounted into caddy, whoever ran code
+as caddy could issue a certificate every homelab device trusts, for any
+name. caddy 2.10.2 issues from a supplied intermediate with the root's
 certificate only, and a nameConstraints intermediate (.local, .internal)
-made a leaf for any other name fail at the client. It also showed caddy
-never renews a supplied intermediate and serves past its expiry with no
-error, which is why setup.sh declares the certificate for doctor.
+makes a leaf for any other name fail at the client. caddy never renews a
+supplied intermediate and serves past its expiry with no error, which is
+why setup.sh declares the certificate for doctor.
 
 These run the shipped setup.sh against the shipped workload.toml, so the
 key path the toml mounts and the path the snippet names are held together.
@@ -157,9 +156,8 @@ class TestCaddyIntermediate(unittest.TestCase):
 
 
 class TestOnlyCaddyNamesTheRoot(unittest.TestCase):
-    """sunshine-streaming's setup.sh signed its web UI's leaf with the root's
-    key from caddy's data dir; the leaf went (2026-10-17) so the key could
-    leave the host. A bundle naming that path would need it back."""
+    """The root's key does not stay on the host, so no bundle but caddy may
+    name a path to it in caddy's data dir."""
 
     def test_no_other_bundle_names_the_roots_key(self):
         for path in sorted(BUNDLE.parent.rglob("*")):

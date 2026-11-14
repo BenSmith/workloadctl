@@ -384,13 +384,12 @@ class Substrate(ABC):
     def uses_inspect(self) -> bool:
         """Whether this workload's egress is redirected into an inspector.
 
-        Abstract rather than a `False` default (D2 in the container egress-
-        parity build spec): a default would let a third substrate silently
+        Abstract rather than a `False` default: a default would let a third substrate silently
         inherit "never inspected", turning "did every call site get updated"
         from a class-instantiation error into a grep. The 18 call sites this
         replaces all previously called `uses_inspect()` directly and were
         VM-gated by construction; `uses_inspect` itself is untouched
-        (R2) and VMSubstrate delegates to it here rather than restating its
+        and VMSubstrate delegates to it here rather than restating its
         logic.
         """
         ...

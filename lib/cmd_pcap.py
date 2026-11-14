@@ -256,7 +256,7 @@ def _helper_args(config, plan, args, bpf: list[str]) -> list[str]:
     """Argv for libexec/workload-pcap. The plan travels as JSON.
 
     The helper re-deriving the plan from the config would let the two disagree
-    — and the whole contract of §6.6 is that what was printed is what runs.
+    — and the whole contract is that what was printed is what runs.
     """
     payload = plan.to_json()
     payload["bpf"] = bpf

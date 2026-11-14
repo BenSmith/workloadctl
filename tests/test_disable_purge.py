@@ -452,10 +452,10 @@ class TestDisableRemovesRunFiles(unittest.TestCase):
             self.assertFalse(p.exists(), f"{p} should still be removed with user gone")
 
     def test_a_filtered_containers_inspect_units_are_removed(self):
-        """P1-14: `disable` must leave no inspect socket or service behind for a
+        """`disable` must leave no inspect socket or service behind for a
         container that had an egress trigger.
 
-        Removal is driven by the REAL workload_run_files() — the same list G3
+        Removal is driven by the REAL workload_run_files() — the same list the generator
         gates — rather than a stub, because the whole failure mode here is a
         unit the run-file list forgot to claim: it is written by the generator,
         never unlinked, and survives as a loaded socket pointing at an
@@ -524,7 +524,7 @@ class TestDisableRemovesRunFiles(unittest.TestCase):
 class PurgeRemovesTheEgressRecordTest(unittest.TestCase):
     """`--purge` must remove /var/log/workloadctl/egress/<name>.
 
-    FOUND ON HARDWARE 2026-09-05, and it is not a tidiness bug. That directory
+    It is not a tidiness rule. That directory
     is a systemd LogsDirectory= owned by the workload uid, and purge is the step
     that frees the uid for reallocation. Left behind, the next workload given
     that uid -- which need not be a re-enable of this one -- inherits a

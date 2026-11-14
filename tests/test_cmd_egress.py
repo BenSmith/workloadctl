@@ -1,4 +1,4 @@
-"""`workloadctl egress` — the reader over the per-request record. Rung 5 T2.
+"""`workloadctl egress` — the reader over the per-request record.
 
 Named test_cmd_egress rather than test_egress to stay clear of
 tests/test_egress.py, which is the uid-keyed nftables layer and has nothing
@@ -57,7 +57,7 @@ from moatery.egress_plane import PLANES, plane_for_port
 def _rec(**overrides):
     """A record with every field present, so a test overrides only what it means.
 
-    Every field on every line is T1's rule — a key that is absent and a key
+    Every field on every line follows the writer's rule — a key that is absent and a key
     that is null are different facts — so a fixture that omitted them would be
     testing a shape the listener never emits.
     """
@@ -479,7 +479,7 @@ class TestCommand(unittest.TestCase):
         self.assertIn("egress", err)
 
     def test_an_inspected_container_reaches_the_record_read(self):
-        """P1-15/G4: the sibling test above only pins the False branch. An
+        """The sibling test above only pins the False branch. An
         inspected *container* (is_vm False) must not hit the same refusal --
         the record path is name-keyed and substrate-agnostic."""
         substrate = unittest.mock.Mock()
@@ -503,7 +503,7 @@ class TestCommand(unittest.TestCase):
         self.assertEqual(json.loads(out)["generations"], [])
 
     def test_json_round_trips_a_field_this_reader_does_not_know(self):
-        """A later rung's field has to reach a machine reader with no change
+        """A newer writer's field has to reach a machine reader with no change
         here."""
         _write(self.path, [_rec(future_field="whatever")])
         _, out, _ = self._run(json=True)

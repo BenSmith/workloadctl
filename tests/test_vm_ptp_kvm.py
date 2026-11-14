@@ -137,8 +137,7 @@ class TestTheStockPoolGoes(unittest.TestCase):
     The filter drops it on the wrong-port self-dial element, which is the one
     `diagnose` reads out as "the guest expects a service it was not given" --
     eight packets per boot, one per poll interval after, on every filtered VM,
-    forever. Found on the first production inspector (2026-09-21), from that
-    line.
+    forever.
     """
 
     def test_the_block_deletes_the_pool_line(self):

@@ -66,7 +66,7 @@ TRIGGERS = re.compile(
     r"^\s*(hosts|policy|allow|internal|splice|tls|ca_delivery|egress)\s*=", re.M)
 
 # Keys that, combined with mode = "host", validate_container_network() now
-# refuses outright (P0-1): under host mode the container's sockets ARE host
+# refuses outright: under host mode the container's sockets ARE host
 # sockets, so two of three in-container uid arms leave as subuids no shipped
 # single-uid rule matches.
 HOST_MODE = re.compile(r'^\s*mode\s*=\s*"host"', re.M)

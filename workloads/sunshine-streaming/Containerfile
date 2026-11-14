@@ -513,8 +513,7 @@ PassEnvironment=CONTAINER_UID CONTAINER_GID CONTAINER_USER DESKTOP_RESOLUTION
 # -- `setpriv` for every unit launched that way here -- so no daemon's output is
 # findable by tag. +console is the belt to that braces: journald.conf.d sets
 # Storage=volatile and forwards to the host over ForwardToSocket=, and that
-# forward was observed silently delivering nothing on vncdesktop-sway
-# (2026-07-25), which cost us the only copy of a crash log. Console goes to
+# forward can silently deliver nothing, leaving no copy of a crash log. Console goes to
 # container PID1's stdout, which podman passthrough puts in the host journal
 # under `workload-<name>` -- the path proven to work. Applied to the compositor
 # and the servers only; pipewire/wireplumber/pipewire-pulse get an identifier

@@ -20,15 +20,14 @@ from unit_file import Unit
 
 def container_egress_exec(svc, name: str) -> None:
     """Element-lifecycle ExecStartPre/ExecStopPost for one container
-    workload's egress policy (P1-7 in the container egress-parity build
-    spec). Mirrors the VM hook shape at generate_vm_workload's
+    workload's egress policy. Mirrors the VM hook shape at generate_vm_workload's
     `workload-vm-filter up/down` pair -- same `+`/`-+` prefixes, same
     tolerant-on-teardown reasoning (see lib/filter_arm.py's module
     docstring).
 
     NOT gated here on the config: the caller only calls this when
-    container_uses_inspect() is true (R10 -- a workload with no [network]
-    trigger must produce byte-identical units to before this work, and
+    container_uses_inspect() is true (a workload with no [network]
+    trigger must produce byte-identical units either way, and
     conditioning inside this function rather than at the call site would
     still add these two lines to every unit).
 
@@ -37,7 +36,7 @@ def container_egress_exec(svc, name: str) -> None:
     (workload-generate:~1136,~1356), and StartLimitIntervalSec/Burst apply
     host-wide to the unit regardless. Adding a second Restart= here would
     change the units of workloads with no triggers and would double up
-    where they do (R10's neighbour in P1-7).
+    where they do.
     """
     svc.add("ExecStartPre",
             f"+/usr/libexec/workloadctl/workload-container-filter up {dq(name)}")
@@ -58,21 +57,19 @@ def _head_unit(name, user_name, uid, slice_name, header_comment, description,
     in generate_system_service). They differ only in the file header, the
     [Unit] Description=, and the podman create/rm commands.
 
-    'uses_inspect' arms the egress element-lifecycle helper (P1-7) HERE, on
+    'uses_inspect' arms the egress element-lifecycle helper HERE, on
     the one unit that pod/bridge mode orders *before* every member container.
 
-    IT USED TO LIVE ON THE UMBRELLA AND THAT WAS A HOLE. `[network]` is
-    workload-level (one uid, D1) and the umbrella is the unit that represents
-    "this uid's workload is up", so it looked like the right owner -- but the
-    umbrella carries `After=` the member services, so systemd starts every
-    container FIRST and only then runs the arming. For the whole of member
-    startup the workload had no element in `wl_filtered`, no DNAT, and no
-    listener: it ran completely unfiltered, image pull included, and then
-    became filtered mid-flight. Single mode was never affected (the arming is
-    an ExecStartPre on the container's own unit, ahead of `podman run`). What
-    hides it is a test that probes steady state -- enable, recreate, sleep,
-    probe -- because by then a late arming and a correct one look identical.
-    Assert the ordering itself.
+    NOT ON THE UMBRELLA. `[network]` is workload-level (one uid) and the
+    umbrella is the unit that represents "this uid's workload is up", so it
+    looks like the right owner -- but the umbrella carries `After=` the member
+    services, so systemd would start every container FIRST and only then run
+    the arming. For the whole of member startup the workload would have no
+    element in `wl_filtered`, no DNAT, and no listener: unfiltered, image pull
+    included, then filtered mid-flight. (Single mode arms in an ExecStartPre
+    on the container's own unit, ahead of `podman run`.) A test that probes
+    steady state -- enable, recreate, sleep, probe -- cannot tell a late
+    arming from a correct one. Assert the ordering itself.
 
     The head unit is the right owner because the ordering it needs already
     exists in both directions: members are `Requires=`/`After=`/`BindsTo=`
@@ -242,8 +239,8 @@ def generate_umbrella_service(workload_name, container_names, slice_name, mode):
     THE EGRESS ARMING IS NOT HERE, and the reason is this unit's own After=.
     It carries `After=` the member services so its active state reflects
     theirs, which means anything it runs at start runs AFTER every container
-    is already up. P1-7 originally put the arming here and that left a
-    pod/bridge workload unfiltered for the whole of member startup. It lives
+    is already up, so arming here would leave a pod/bridge workload
+    unfiltered for the whole of member startup. It lives
     on the pod/net head unit instead -- see _head_unit's docstring.
     """
     helper = "pod" if mode == "pod" else "net"

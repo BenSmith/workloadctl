@@ -589,7 +589,7 @@ class TestWorkloadCrossConfigConsistency(unittest.TestCase):
         """wg-quick needs to run as root inside the container, but that only
         requires container root — NOT the host user namespace. These workloads
         use keep-id:uid=0,gid=0 (container root in a private userns); userns=host
-        is reserved for workloads that must observe host-side UIDs (S5)."""
+        is reserved for workloads that must observe host-side UIDs."""
         for filename, config in ALL_WORKLOADS:
             name = config["workload"]["name"]
             volumes = config.get("storage", {}).get("volumes", [])
@@ -637,7 +637,7 @@ class TestWorkloadCrossConfigConsistency(unittest.TestCase):
 
     def test_host_userns_configs_carry_optin(self):
         """Any shipped workload using userns=host must acknowledge it via
-        unsafe_host_userns (S5) — otherwise it fails validation and won't
+        unsafe_host_userns — otherwise it fails validation and won't
         generate. Guards against a new host-userns config slipping in unacked."""
         from validation import uses_host_userns, host_userns_acknowledged
         for filename, config in ALL_WORKLOADS:

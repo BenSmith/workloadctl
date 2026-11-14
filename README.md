@@ -82,7 +82,8 @@ just rpm-build
 
 Scripts run against the system `python3`, and `lib/` has no third-party
 dependencies beyond moatery. [Testing](docs/dev/testing.md) describes how the
-suite is organised.
+suite is organised, and [CONTRIBUTING.md](CONTRIBUTING.md) the layout, the
+rules the code keeps and how a change is released.
 
 ## License
 

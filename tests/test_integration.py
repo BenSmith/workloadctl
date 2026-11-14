@@ -232,7 +232,7 @@ class TestPipelineCredentialConsistency(unittest.TestCase):
         # No env-file needed (no secret env vars)
         self.assertIsNone(self._extract_env_file_path(service))
         # write-env invoked, to copy the file credentials where the
-        # container can read them (audit F19), with no env-file to write
+        # container can read them, with no env-file to write
         self.assertIsNotNone(self._extract_write_env_name(service))
 
     def test_mixed_env_and_file_credentials(self):

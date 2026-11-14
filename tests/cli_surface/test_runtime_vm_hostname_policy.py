@@ -6,20 +6,14 @@ The address half of VM egress already has a runtime proof
 because nothing a unit test can reach answers the question: a booted guest, a
 real redirect, a real inspector, and whether the answer differs by name.
 
-WHAT THIS SUITE USED TO BE, AND WHY EVERY PROBE CHANGED
-
-Through rung 1 this file tested a proxy. Each probe opened a socket to an
-advertised endpoint, wrote a CONNECT line, and read tinyproxy's status. Rung 2
-deleted the proxy, the endpoint and the CONNECT, so none of those probes could
-survive — but the CLAIMS survived unchanged, which is why this is a rewrite and
-not a deletion:
+THE CLAIMS
 
     an exact `hosts` entry is reachable
     a `*.` entry covers its subdomains
     a `*.` entry does NOT cover its own apex
     a name on no entry is refused
 
-What is different is that the guest is no longer a participant. It dials the
+The guest is not a participant. It dials the
 name on port 80 like any other host, a uid-keyed DNAT lands it on its own
 inspector, and the inspector reads the Host header. There is nothing in the
 guest to configure and nothing it could unset to escape.
@@ -444,9 +438,9 @@ def test_a_wildcard_entry_does_not_cover_its_own_apex(target):
     """The trap: `*.example.com` does not match `example.com`.
 
     fnmatch, not a DNS suffix match — the wildcard needs something to match
-    before the dot. This behaviour was tinyproxy's, and rung 2 PRESERVED it
-    rather than fixing it: widening it would silently have granted every
-    existing config a destination its operator never wrote down. That is
+    before the dot. It is kept rather than widened: widening it would
+    silently grant every existing config a destination its operator never
+    wrote down. That is
     exactly why it is pinned here — it is invisible in every unit test of our
     policy generation, the refusal is a 403 identical to a genuine policy
     denial, and an operator who allowlists a vendor as `*.vendor.com` gets a
@@ -493,10 +487,8 @@ def test_the_guest_is_told_nothing_and_is_filtered_anyway(target):
 
     Three claims, and they only mean anything together.
 
-    The guest's login environment carries no proxy variable — which under rung 1
-    was the thing that made policy apply at all, and the test that used to live
-    here asserted its presence. Its absence now is the property: nothing the
-    guest can read tells it it is filtered.
+    The guest's login environment carries no proxy variable. Its absence is
+    the property: nothing the guest can read tells it it is filtered.
 
     A guest that sets the retired variable anyway reaches nothing. An operator
     upgrading a workload whose image bakes in the old export, or whose seed was
@@ -523,8 +515,8 @@ def test_the_guest_is_told_nothing_and_is_filtered_anyway(target):
         for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
                     "no_proxy", "NO_PROXY"):
             assert f"{var}=" not in env, (
-                f"the guest's login environment still sets {var}, which rung 2 "
-                f"stopped writing. A client honouring it dials an address "
+                f"the guest's login environment sets {var}, which workloadctl "
+                f"does not write. A client honouring it dials an address "
                 f"where nothing listens, so the seed or the image is one "
                 f"design behind")
 
@@ -541,8 +533,8 @@ def test_the_guest_is_told_nothing_and_is_filtered_anyway(target):
             sudo=True, check=False, timeout=PROBE_TIMEOUT + 60)
         assert "CLOSED" in (dial.stdout or ""), (
             f"something answered at {RETIRED_PROXY_ADDR}:{RETIRED_PROXY_PORT} "
-            f"inside the guest. That is the retired proxy endpoint: rung 2 "
-            f"removed the map element and the listener, so an open socket "
+            f"inside the guest. That is the retired proxy endpoint, which has "
+            f"no map element and no listener, so an open socket "
             f"means a stale nft element or an old workloadctl on this host")
 
         # ...and policy still applies to the guest that just failed to find it.
@@ -557,17 +549,14 @@ def test_the_guest_is_told_nothing_and_is_filtered_anyway(target):
 def test_every_name_resolves_to_the_inspector_and_unlisted_ones_are_counted(target):
     """The DNS half. NOT a second refusal — the responder refuses nothing.
 
-    WHAT THIS TEST USED TO ASSERT, AND WHY IT WAS WRONG
+    AN UNLISTED NAME RESOLVES
 
-    It asserted that an unlisted name does not resolve. It does resolve, and it
-    is supposed to: synthesis is unconditional. Every name the guest asks about
+    It is supposed to: synthesis is unconditional. Every name the guest asks about
     that is not in the `allow`-derived static map is answered with the
     inspector's own address, so `hosts` changes no answer this responder gives
     (lib/gen_vm.py resolve_command states it; moatery's resolve_policy
-    Policy.answers is where it happens). The old assertion described a design
-    the project considered and rejected, and it had never run: dev mode skips
-    the VM modules and the VM half had never run in gate mode, so it failed the
-    first time anything executed it, on 2026-08-27.
+    Policy.answers is where it happens). A refusal at the resolver is a
+    design the project considered and rejected.
 
     THE PROPERTY THAT IS ACTUALLY LOAD-BEARING
 

@@ -220,7 +220,7 @@ def _vm_ssh_probe_argv(name: str, guest_user: str, address: str, port: int,
                        command: str) -> list[str]:
     """ssh argv for a non-interactive probe of the guest.
 
-    Same host-key pinning as the CLI's exec path (S1): the per-workload
+    Same host-key pinning as the CLI's exec path: the per-workload
     known_hosts written at provisioning time, keyed by HostKeyAlias so the
     loopback management addresses can't collide. BatchMode/IdentitiesOnly keep
     a probe from ever blocking on a prompt or trying an agent identity.

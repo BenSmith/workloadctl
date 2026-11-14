@@ -313,7 +313,7 @@ def _not_http_fragments(status) -> list[str]:
 def _uses_inspect(config) -> bool:
     """Is this workload's egress redirected into an inspector, either substrate?
 
-    D2 makes `Substrate.vm_uses_inspect()` the primitive, but the checks here are
+    `Substrate.vm_uses_inspect()` is the primitive, but the checks here are
     pure functions of a config and take no manager, and get_substrate() needs
     one. This dispatches on `config.is_vm` -- which is the ONLY thing
     get_substrate() itself dispatches on -- so the two cannot disagree, and
@@ -331,7 +331,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     """Report whether a workload's egress is really redirected to its inspector.
 
     Returns None for workloads the redirect does not apply to (bridged, or
-    unfiltered egress), so no line is emitted. NOT gated on is_vm: G7 hoisted
+    unfiltered egress), so no line is emitted. NOT gated on is_vm: it is hoisted
     the call out of the VM block because a filtered container gets the same
     inspect socket from the same generator and the same two uid-keyed maps.
 
@@ -362,7 +362,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     # generate_inspect_socket(), the maps are the same two shared maps
     # keyed by the same uid, and the remedy is byte-for-byte the same unit
     # name. A justification that expires is worse than none, because nothing
-    # re-reads it -- and the cost of leaving it stood is in the §7 table: a
+    # re-reads it -- and the cost of leaving it stood is this: a
     # container whose inspect socket is down gets NO line here, and its
     # symptom (DNS and everything else fine, HTTP and HTTPS dead) reads as a
     # broken workload rather than a broken host.
@@ -373,7 +373,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     except Exception:
         return None                      # no user yet; check 1 reports it
 
-    # Substrate-aware nouns (G7). Every check below is the same check on both
+    # Substrate-aware nouns. Every check below is the same check on both
     # substrates -- same two shared maps, same accept sets, same socket unit,
     # same remedy -- so only the noun differs, and it has to: a container
     # operator told to go look at "this guest" is being sent after a VM.
@@ -464,7 +464,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
                 f"host address where nothing accepts, while its DNS and SSH "
                 f"keep working. Start it: {restart}")
 
-    # THE LISTENER'S LOADED POLICY vs. THE ONE ON DISK -- rung 5 T4.
+    # THE LISTENER'S LOADED POLICY vs. THE ONE ON DISK.
     #
     # A different question from `workloadctl drift`, which compares the
     # document on disk against a re-render from the TOML. That is disk vs.
@@ -481,7 +481,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     #
     # Silence, not a warning, in all three unknown cases: no status file (a
     # socket-activated inspector a guest has never dialled), no digest key (a
-    # listener from before this rung), or an unreadable document (T3's report,
+    # listener older than the digest), or an unreadable document (drift's report,
     # not this one). A diagnostic must not manufacture a failure out of a
     # missing diagnostic.
     if status is PROBE:
@@ -509,7 +509,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
                     f"Restart the {noun}: "
                     f"systemctl restart workload-{config.name}.service")
 
-    # THE CA THE LISTENER MINTS WITH vs. THE ONE ON DISK -- rung 5 T7, and the
+    # THE CA THE LISTENER MINTS WITH vs. THE ONE ON DISK -- and the
     # same memory-vs-disk shape as the policy comparison above.
     #
     # ADR 008 decision 4 says the CA does not rotate, and Minter.ca_identity
@@ -606,7 +606,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
                  f"expects a service there, it needs a [{section}].allow "
                  f"entry for the real address, not the listener's")
 
-    # The two figures rung 4's policy work landed (the name-to-Host binding
+    # The two policy figures (the name-to-Host binding
     # rejections, and the hosts that turned out not to speak HTTP), read out of
     # the inspector's own status document.
     #
@@ -652,7 +652,7 @@ def inspect_check(config, *, elements4=PROBE, elements6=PROBE,
     # a container with no `tls` key splices unless it has policy entries, per
     # container_effective_tls_mode(). Reading the key directly with the VM
     # default would tell a container operator their plaintext is being held
-    # when it is not -- the exact misreport G5 and G8 stayed VM-only to avoid,
+    # when it is not -- the exact misreport a VM-only `rules` or `drift` would make,
     # and the reason this line calls the container helper instead.
     if config.is_vm:
         tls_mode = net.get("tls", TLS_DEFAULT)
@@ -696,7 +696,7 @@ def _inspect_map_elements(map_name):
 
 
 # The four objects inspect_element_commands arms in the FILTER table, which
-# nothing here read until rung 5. The two DNAT maps above are only half of the
+# nothing else reads. The two DNAT maps above are only half of the
 # six: the accept sets hold the DNAT-rewritten tuple the filter chain sees, and
 # without one the redirect still happens and the redirected connection is then
 # dropped by the default deny. inspect_element_commands' own docstring names
@@ -921,7 +921,7 @@ def _policy_digest_on_disk(name: str) -> str | None:
     """The digest of the policy document as it currently sits on disk.
 
     None when the document cannot be read, and the caller treats that as
-    silence rather than as drift: an absent document is already T3's report
+    silence rather than as drift: an absent document is already drift's report
     (`workloadctl drift`), and a second line about it here would send an
     operator to the same fix twice.
 

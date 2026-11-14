@@ -387,11 +387,11 @@ FIXTURES = {
         """),
     ],
 
-    # Container egress, rung 2 (P1-14). `hosts` alone is a trigger, so this
+    # Container egress, spliced. `hosts` alone is a trigger, so this
     # emits the inspect socket/service pair for a CONTAINER — the units the VM
     # fixtures below cover only for a guest. No policy entries, so the
     # effective tls is "splice" and no ca_delivery is required or emitted;
-    # that asymmetry with the rung-3 fixture is the point of having both.
+    # that asymmetry with the terminating fixture is the point of having both.
     "container-egress-splice": [
         ("cegsplice", """\
             [workload]
@@ -410,8 +410,8 @@ FIXTURES = {
         """),
     ],
 
-    # Container egress, rung 3 (P1-14). A policy entry moves the workload to
-    # inspect, which is what makes ca_delivery required (V16) and what puts the
+    # Container egress, terminating. A policy entry moves the workload to
+    # inspect, which is what makes ca_delivery required and what puts the
     # CA environment onto the container. Here for systemd-analyze verify above
     # all: this is the only container fixture emitting an inspect unit pair
     # with a policy file written at ExecStartPre.

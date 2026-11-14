@@ -9,9 +9,9 @@ can still be handed a certificate it will accept.
 
 WHY THIS RIG EXISTS
 
-Rung 3 mints short-lived leaf certificates for the guest to validate, which
-puts the guest's clock on the critical path for all of its traffic. Two
-measurements already exist (detail doc §6, §16 item 5):
+The inspector mints short-lived leaf certificates for the guest to validate,
+which puts the guest's clock on the critical path for all of its traffic. Two
+measurements frame it:
 
   drift    ~10 ppm -- 3.7 s over 4 days 10 hours. Four orders of magnitude
            inside a 30-day leaf's window, and the 1-hour notBefore backdate
@@ -30,7 +30,7 @@ clocksource to be the TSC, since that is the only case in which KVM answers the
 clock-pairing hypercall; on a host running hpet or acpi_pm the module refuses to
 load in every guest and measurement 3 skips, saying so.
 
-The host-side one is the mint-path check, and it exists because the guest-side
+The host-side one is the clock keeper, and it exists because the guest-side
 one is not guaranteed to be there: a custom [vm.cloud_init].user_data_file
 replaces the built-in seed outright, so a guest seeded from one carries no
 ptp_kvm wiring unless its author copied it. Measurements 4 to 7 are about THAT
@@ -39,7 +39,7 @@ than by contriving a second workload.
 
 Past the backdate every freshly-minted leaf has a notBefore in the guest's
 future, so validation fails on EVERY request to a new name while `diagnose`
-reports a healthy VM -- §6's rotation trap arriving through the clock.
+reports a healthy VM.
 
 **And one of the two paths that reaches it is ours.** `workloadctl backup
 --consistency crash` issues QMP `stop`, copies the qcow2, and `cont`s in a
@@ -49,12 +49,9 @@ any check. The other path needs no feature of ours: a host that suspends.
 
 WHAT THIS RIG DECIDES
 
-§16 item 5 says in as many words that rung 3 has to choose a remedy, and names
-`guest-set-time` as the obvious one while recording that it is UNPROVEN here:
-the no-argument form was issued once and did not return, and the
-explicit-nanoseconds form is untested. Those two are measurements 5 and 6
-below, and they are the whole reason this rig is not just a re-run of the
-pause.
+Which form of `guest-set-time` works: the no-argument form and the
+explicit-nanoseconds form are measurements 5 and 6 below, and they are the
+whole reason this rig is not just a re-run of the pause.
 
 Measurement 7 is the one that closes the loop, and it measures the FAILURE:
 everything above measures a clock, and 7 measures what the clock is on the
@@ -64,8 +61,7 @@ validate a fresh leaf by accident -- dials a name it has never dialled, and
 the handshake fails with `certificate is not yet valid` while the inspector
 mints the leaf and reports itself healthy. The corroboration is that the mint
 happened (`mints` moves), that the clock is still out afterwards (nothing on
-the mint path touched it -- it used to, for one rung, and this is the row
-that says it no longer does), and that `workloadctl diagnose` names the
+the mint path touches it), and that `workloadctl diagnose` names the
 offset on its `vm_guest_clock` line. Without the failure measured first, the
 same green in 8 is produced by a backdate quietly widened to cover two hours.
 
@@ -76,15 +72,14 @@ the timer on the guest 7 left skewed and waits. The offset comes back, the
 tick is caught running -- a oneshot that lives about a second, read out of
 /proc at 20 Hz -- with `wlclock_t` in its label, the leaf that failed in 7 now
 validates on a cache hit, and `diagnose` goes green. Not from the journal:
-measured 2026-09-20, the `_SELINUX_CONTEXT` on a `_TRANSPORT=stdout` line is
+the `_SELINUX_CONTEXT` on a `_TRANSPORT=stdout` line is
 the STREAM SOCKET's peer label, taken when systemd's pre-exec child connected
 it, and reads init_t for every service that transitions on exec while `_COMM`
-and `_EXE` on the same line are post-exec. A rig row that read the journal
-failed a working domain. The same child is visible in /proc too: measured
-2026-09-21, systemd 259 renames its pre-exec child `(workload-vm-clock)` --
-the full basename in parentheses, one argv entry -- and that process is
-init_t for the ~10 ms before execve. A scan matching the bare name caught it
-there once in three runs; the catch skips a cmdline that starts with `(`.
+and `_EXE` on the same line are post-exec, so a row reading the journal
+fails a working domain. The same child is visible in /proc too: systemd
+renames its pre-exec child `(workload-vm-clock)` -- the full basename in
+parentheses, one argv entry -- and that process is init_t for the ~10 ms
+before execve, so the catch skips a cmdline that starts with `(`.
 
 WHAT ONLY A REAL BOOT CAN SHOW
 
@@ -255,8 +250,8 @@ def ga(command, arguments=None, timeout=GA_TIMEOUT):
         s.close()
 
 
-# CHRONYC CANNOT WRITE TO AN SSH EXEC CHANNEL, AND SELINUX IS WHY. Measured
-# 2026-08-27 in the guest, with the audit log naming it:
+# CHRONYC CANNOT WRITE TO AN SSH EXEC CHANNEL, AND SELINUX IS WHY. The
+# guest's audit log names it:
 #
 #   avc: denied { write } for comm="chronyc" path="pipe:[12398]" dev="pipefs"
 #     scontext=unconfined_u:unconfined_r:chronyc_t:s0-s0:c0.c1023
@@ -277,11 +272,10 @@ def ga(command, arguments=None, timeout=GA_TIMEOUT):
 #
 # WHY THIS MATTERS MORE THAN THE WORKAROUND: a rig that reads chronyc directly
 # does not fail, it reads EMPTY -- which parses as "no sources", "no refclock",
-# and any other absence the caller happens to be looking for. Both readings
-# below were making claims about output that never arrived (2026-08-27): the
-# refclock assertion failed on a guest whose refclock was live and selected,
-# and the NTP-path assertion passed by counting zero of the two server sources
-# the guest actually had.
+# and any other absence the caller happens to be looking for: a refclock
+# assertion fails on a guest whose refclock is live and selected, and an
+# NTP-path assertion passes by counting zero of the server sources the guest
+# actually has.
 
 def chronyc(argv):
     """Read chronyc through a pipe, because reading it directly reads nothing."""
@@ -322,7 +316,7 @@ def offset(label, samples=3):
     for lo, hi in got:
         say(f"    {label}: offset in [{lo:+.3f}, {hi:+.3f}]  (width {hi - lo:.3f})")
     # The UPPER bound is the stable one -- the lower tracks the round-trip --
-    # so the true offset sits near max(hi). Same reading the §6 measurement made.
+    # so the true offset sits near max(hi).
     return max(hi for _, hi in got)
 
 
@@ -386,10 +380,9 @@ def catch_keeper(deadline):
 
     NOT systemd's pre-exec child. Between fork and execve the executor
     renames itself `(workload-vm-clock)` -- parenthesised, the whole cmdline
-    -- and is still init_t, because the transition is execve's. Matching the
-    bare name returned that label once (2026-09-21, measured with a 500 Hz
-    scan: `(workload-vm-clock)` in init_t at t, `/usr/bin/python3
-    /usr/libexec/.../workload-vm-clock` in wlclock_t at t+10ms, same pid).
+    -- and is still init_t, because the transition is execve's: at 500 Hz
+    one pid reads `(workload-vm-clock)` in init_t at t, then `/usr/bin/python3
+    /usr/libexec/.../workload-vm-clock` in wlclock_t at t+10ms.
     The post-exec cmdline is NUL-separated argv and never starts with `(`.
     """
     proc = Path("/proc")
@@ -416,9 +409,8 @@ def mint_counts_after(before):
     The status file is rewritten on a timer, not on an event. Reading it
     straight after the request under test returns the tick that was already
     there, so both snapshots come from ONE write and every counter difference is
-    zero -- which reads exactly like a counter that does not work. Measured
-    2026-08-26: this is what failed the last assertion of an otherwise green
-    run, and the remedy it seemed to indict was working perfectly.
+    zero -- which reads exactly like a counter that does not work, and
+    indicts a remedy that is working perfectly.
     """
     if before is None:
         return None
@@ -534,11 +526,10 @@ def measure():
     say("== 1. is the NTP *network* path actually dead in there ==")
     # ZERO SOURCES IS THE ANSWER, NOT A BROKEN READING. In a filtered guest the
     # `pool` line never resolves, so chrony ends up with no sources at all --
-    # and chronyc then prints NOTHING, not even the column headers. An earlier
-    # version of this measurement required at least one `^` line before it would
-    # believe the reading, and failed every run for it (2026-08-26), indicting a
-    # filter that was doing exactly its job. No server source at all is the
-    # strongest form of the claim, so it passes.
+    # and chronyc then prints NOTHING, not even the column headers. Requiring
+    # at least one `^` line would fail every run, indicting a filter that is
+    # doing exactly its job. No server source at all is the strongest form of
+    # the claim, so it passes.
     #
     # The sentinel is what keeps that from being a free pass: it proves chronyc
     # ran and said nothing, rather than chronyc being absent.
@@ -574,10 +565,9 @@ def measure():
     # KVM_HC_CLOCK_PAIRING, and KVM answers EOPNOTSUPP unless the HOST's own
     # clocksource is the TSC -- so on a host running hpet or acpi_pm the module
     # refuses to load in every guest, with `modprobe: ERROR: could not insert
-    # 'ptp_kvm': Operation not supported` and nothing else to go on. Measured
-    # 2026-08-26 on a development host whose available_clocksource is
-    # `hpet acpi_pm` with no tsc at all: every piece of the seed was correct and
-    # the device still never appeared.
+    # 'ptp_kvm': Operation not supported` and nothing else to go on. On a host
+    # whose available_clocksource is `hpet acpi_pm` with no tsc, every piece of
+    # the seed is correct and the device still never appears.
     #
     # So this is a SKIP, not a failure: the seed's chrony edit is guarded on the
     # device existing precisely so such a host keeps its stock time
@@ -668,7 +658,7 @@ def measure():
         # sudo: `workloadctl exec` logs in as the guest user, not root. The
         # seed gives that account NOPASSWD sudo; without it this reads
         # "Access denied" and the rig proceeds against a guest it believes it
-        # disabled -- measured 2026-08-26.
+        # disabled.
         r = guest("sudo systemctl stop chronyd 2>&1; "
                   "systemctl is-active chronyd 2>&1 || true")
         record("the guest-side remedy can be turned off",
@@ -707,9 +697,8 @@ def measure():
     record("nothing puts it back on its own", abs(step) > 1.0,
            f"still {after:+.3f}s behind after resume")
 
-    # 5. The unknown: does the no-argument form return? Recorded either way --
-    #    §16 says it was issued once and did not return, and one observation is
-    #    not a result.
+    # 5. Does the no-argument form return? Recorded either way: one
+    #    observation is not a result.
     say("== 5. guest-set-time, NO ARGUMENT (reads the host RTC) ==")
     ping, err = ga("guest-sync", {"id": 1})
     if err:
@@ -719,7 +708,7 @@ def measure():
         return
     record("the guest agent answers at all", True, "guest-sync returned")
 
-    # MEASURED 2026-08-26, twice on one host: the no-argument form FAILS, with
+    # The no-argument form FAILS, with
     # `child process has failed to set hardware clock to system time: hwclock:
     # select() to /dev/rtc0 to wait for clock tick timed out`. That is now the
     # expectation rather than an open question, and it is why the remedy uses
@@ -732,11 +721,11 @@ def measure():
     if err:
         say(f"  [obs] guest-set-time (no argument): {err}")
     elif "error" in reply:
-        say(f"  [obs] guest-set-time (no argument) errored, as expected since "
-            f"2026-08-26: {reply['error'].get('desc', reply['error'])}")
+        say(f"  [obs] guest-set-time (no argument) errored, as expected: "
+            f"{reply['error'].get('desc', reply['error'])}")
     else:
         say(f"  [obs] guest-set-time (no argument) RETURNED: {reply!r} -- this "
-            f"host disagrees with the 2026-08-26 measurement; the explicit form "
+            f"host disagrees with the expected failure; the explicit form "
             f"below is still what the code uses")
         noarg = offset("after no-arg set-time")
         if noarg is not None:

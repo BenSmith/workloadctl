@@ -1,11 +1,11 @@
 #!/usr/bin/python3
-"""Two rung-1 measurements the unit tests structurally cannot make.
+"""Two measurements the unit tests structurally cannot make.
 
 Both concern packets that must cross a real kernel hook, so nothing in
 `just test` can reach them: one asks whether a rule drops traffic that has
 never been sent, and the other counts what a capture actually contains.
 
-  1. THE INPUT CHAIN'S OFF-BOX DROP (design doc item 0a, ss7.2.6)
+  1. THE INPUT CHAIN'S OFF-BOX DROP
 
      `iif != lo ... daddr <listener plane> counter drop` has two halves and the
      tests pin neither. The loopback half is proven in passing by any green
@@ -16,7 +16,7 @@ never been sent, and the other counts what a capture actually contains.
      interface, the drop is a rule believed correct because the traffic it
      exists to stop has never been sent.
 
-  2. THE CAPTURE DOUBLING (design doc item 0b, ss11.2)
+  2. THE CAPTURE DOUBLING
 
      `pcap_output_rule` and `pcap_input_rule` log to the SAME nflog group. A
      host-local packet crosses both hooks, so one packet is handed to nflog
@@ -30,8 +30,7 @@ dependency, so this runs anywhere `unshare`/`ip netns` and `tcpdump` do.
 
     sudo python3 tests/manual/input_chain_rig.py
 
-Last green 2026-08-22 on a bare-metal Fedora 44 host, against the installed
-RPM's /usr/share/workloadctl/workload-filter.nft.
+It reads the installed RPM's /usr/share/workloadctl/workload-filter.nft.
 """
 
 import json
@@ -179,7 +178,7 @@ def teardown(*names):
 
 def measure_off_box():
     """Item 0a: the loopback leg passes, the off-box leg is dropped and counted."""
-    print("\n1. the input chain's off-box drop (item 0a, ss7.2.6)")
+    print("\n1. the input chain's off-box drop")
     NS, PEER = "wlinsp", "wlinsp-peer"
     teardown(NS, PEER)
     try:
@@ -236,7 +235,7 @@ def measure_off_box():
 
 def measure_doubling():
     """Item 0b: how many copies of one host-local request land in one file."""
-    print("\n2. the capture doubling (item 0b, ss11.2)")
+    print("\n2. the capture doubling")
     NS = "wlpcap"
     cap = "/tmp/workloadctl-doubling.pcap"
     teardown(NS)
@@ -317,10 +316,10 @@ def measure_doubling():
         record("the file holds what BOTH rules handed to nflog",
                in_file == out_c + in_c,
                f"output {out_c} + input {in_c} = {out_c + in_c}, file {in_file}")
-        # The number ss11.2 wanted. Its "roughly four copies" counts two legs;
-        # rung 1's listener only logs and closes, so there is one leg and the
-        # ceiling is 2x. The 4x arrives with rung 2's re-origination.
-        record("the inflation is 2x, not the 4x ss11.2 predicts",
+        # "Roughly four copies" counts two legs; a listener that only logs and
+        # closes has one leg, so the ceiling is 2x. The 4x arrives when the
+        # inspector re-originates.
+        record("the inflation is 2x, not 4x",
                distinct < in_file <= distinct * 2,
                f"{in_file}/{distinct} = {in_file / distinct:.1f}x")
     finally:

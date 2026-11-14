@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Under --json a child's stdout goes to stderr.
 
-On the proving host (2026-11-07) `enable --json` printed four lines of
-workload-ensure-user progress ("Ensuring user setup for workload: …" to
+Otherwise `enable --json` prints workload-ensure-user progress ("Ensuring user setup for workload: …" to
 "User setup complete …") ahead of the result object, so `| jq` failed.
 The helper and a bundle's setup script write to the inherited fd 1, which
 cli_log's suppression never sees.

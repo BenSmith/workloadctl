@@ -1,5 +1,5 @@
 """
-test_runtime_vm_hostkey.py — S1 runtime proof: the VM SSH host-key pin is
+test_runtime_vm_hostkey.py — runtime proof: the VM SSH host-key pin is
 load-bearing (a swapped guest host key is *refused*, no TOFU).
 
 Unit tests already prove the CLI builds the SSH command with
@@ -9,7 +9,7 @@ prove is the end-to-end security property on a real boot: that when the guest
 presents a *different* host key than the one pinned, `workloadctl exec` actually
 refuses to connect instead of silently trusting it.
 
-This is the swap-key-refuses proof the S1 DoD deferred to the runtime harness:
+This is the swap-key-refuses proof, which only the runtime harness can make:
 
   1. Positive — after boot, `workloadctl exec` succeeds. Because the CLI uses
      StrictHostKeyChecking=yes, a success means the guest presented exactly the

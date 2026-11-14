@@ -88,8 +88,8 @@ class TestMarkerPersistence(unittest.TestCase):
     def test_a_link_at_the_temp_name_is_replaced_not_written_through(self):
         # Root writes the marker into the workload user's state dir (at mint,
         # and from diagnose); a link left at the temp's name must not carry
-        # the write to another file. The 2026-10-11 audit's V5 probe planted
-        # the wrong temp name and read this as held.
+        # the write to another file. The planted link must be at the temp's
+        # real name, or the test reads as held for the wrong reason.
         canary = self.tmp / "canary"
         canary.write_text("canary\n")
         state = self.tmp / "state"

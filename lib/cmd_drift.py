@@ -185,7 +185,7 @@ def _rendered_policy(name: str) -> str:
         # all-clear for the one workload most likely to have drifted.
         raise RuntimeError(f"could not read {path}: {e}") from None
     # Each substrate renders through its own renderer. A container's `tls` is
-    # computed from the three-rung ladder (no [[network.policy]] means
+    # computed from the three-step ladder (no [[network.policy]] means
     # "splice"); the VM renderer defaults it to TLS_DEFAULT. Since drift is
     # a byte comparison, rendering a container through the VM one would report
     # every inspected container as drifted, permanently.
@@ -216,7 +216,7 @@ def collect_policy_drift(workload_name=None) -> list:
     that is not drift -- it is the ordinary state of a stopped VM, and
     reporting it would mark every stopped workload as drifted forever. What a
     present document means is that some listener start rendered it, so a
-    difference against a re-render is the actionable condition detail §7.7
+    difference against a re-render is the actionable condition the design
     names: an inspector still enforcing the policy the previous start read.
     The remedy is a restart, not a regenerate, which is why cmd_drift prints a
     different remedy for these.

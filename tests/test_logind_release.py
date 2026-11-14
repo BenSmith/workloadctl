@@ -1,11 +1,11 @@
 """workload_uid.wait_logind_release: purge and cleanup wait on it before
 userdel frees a uid.
 
-Found 2026-11-10 by the image-fetch rig on the proving host: each arm purged
-its workload and the next got the same uid about 4 s later. logind still held
-the old record (UserStopDelaySec, 10 s), filed the new user under the old
-name, saw no linger for it and stopped its manager at the next clean-up, so
-every restart failed with /run/user/<uid> missing (226/NAMESPACE).
+A workload purged and another created a few seconds later get the same
+uid. If logind still holds the old record (UserStopDelaySec, 10 s), it files
+the new user under the old name, sees no linger for it and stops its manager
+at the next clean-up, so every restart fails with /run/user/<uid> missing
+(226/NAMESPACE).
 """
 import unittest
 from types import SimpleNamespace

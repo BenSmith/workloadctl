@@ -119,7 +119,7 @@ def container_filter_elements(uid: int, allow: list, resolved=None) -> dict:
     than VmAllowEntry. Reuses the shared set names and the reserved-range
     check (nft_constants.NFT_SET_FILTERED/ALLOW4/ALLOW6,
     workload_addr.allow_reserved_reason): both substrates share the one
-    filter table (D3), so a container's would-be element in another workload's
+    filter table, so a container's would-be element in another workload's
     listener range is refused by the identical rule a VM's is.
     """
     if resolved is None:
@@ -142,7 +142,7 @@ def container_filter_elements(uid: int, allow: list, resolved=None) -> dict:
     return elements
 
 
-# --- The transparent redirect's per-workload elements (§7.1, §7.2) ---
+# --- The transparent redirect's per-workload elements ---
 #
 # Six objects, two per family, are what makes a redirected guest connection
 # actually reach a working listener and nothing else: the two DNAT map elements
@@ -175,7 +175,7 @@ def inspect_dst_elements(uid: int) -> dict[str, list[str]]:
 
     Same shape as the maps but keyed on the destination the filter chain sees,
     which is the DNAT-rewritten one: an element naming the original 80/443 would
-    match nothing (measured; §7.2) and the redirected connection would fall
+    match nothing (measured) and the redirected connection would fall
     through to the default drop.
     """
     return both_families(NFT_PAIR_INSPECT_DST, inspect_address(uid), lambda a: [

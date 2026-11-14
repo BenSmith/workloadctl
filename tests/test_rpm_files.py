@@ -11,9 +11,9 @@ helper's *name*, which builds cleanly whenever both names appear somewhere in
 the file, and ships a package where the unit's ExecStartPre runs the wrong
 script.
 
-Caught for real on 2026-08-10: adding workload-vm-netdev cloned the
-workload-vm-notify install line, leaving netdev holding notify's content and
-netdev missing from %files entirely.
+A cloned install line, say workload-vm-notify's copied for a new
+workload-vm-netdev, leaves netdev holding notify's content and missing from
+%files entirely.
 
 `generators/` is checked on the same terms as `libexec/`, and the asymmetry
 that makes it worth stating: `lib/*.py` is installed by a GLOB, so a new
@@ -125,8 +125,8 @@ class TestBundleShebangsSurviveTheBuild(unittest.TestCase):
     """Fedora's build rewrites #!/bin/bash to #!/usr/bin/bash in every
     executable it packages. The bundles' scripts are copied into their
     images, and the Alpine ones (pihole-vpn, proxy-stack) have no
-    /usr/bin/bash: found on 2026-10-16, when both failed to start from an
-    installed package with catatonit's "failed to exec pid1"."""
+    /usr/bin/bash, so a bash shebang fails to start from an installed
+    package with catatonit's "failed to exec pid1"."""
 
     def exclusion(self):
         m = re.search(

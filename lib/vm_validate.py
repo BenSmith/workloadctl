@@ -32,7 +32,7 @@ def _registration_domain_parent(pattern: str) -> str | None:
     Only a leading `*.` counts. `*.github.io` lets the GUEST pick the label, so
     the allowlist authorises a name it never saw and the inspector's own
     upstream lookup carries it to a nameserver somebody else controls — which
-    is both the exfiltration channel §9's synthesis removes and the route by
+    is both the exfiltration channel the responder's synthesis removes and the route by
     which an allowlisted name points inside the LAN. `pages.github.io` names one
     site and is fine.
     """
@@ -166,10 +166,10 @@ def validate_vm_network(net: dict) -> list[str]:
 
     if "broker" in net:
         # A HARD ERROR, AND NOT A DEPRECATION (ADR 007 decision 11, premise 3).
-        # The key used to mean "add this workload's uid to a redirect map so the
-        # guest can dial one host-wide broker at an advertised literal". Every
-        # object in that sentence is gone: the map, the table, the literal and
-        # the single listener. Accepting the key and ignoring it would leave an
+        # The key meant "add this workload's uid to a redirect map so the
+        # guest can dial one host-wide broker at an advertised literal", and
+        # none of those exists: the map, the table, the literal or the single
+        # listener. Accepting the key and ignoring it would leave an
         # operator believing a credential boundary exists where there is none,
         # which is the same failure the old .bridge check above was written to
         # prevent -- so it fails, by name, and names the replacement.

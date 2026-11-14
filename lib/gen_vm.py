@@ -586,11 +586,10 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
     # redundant: Before= orders the socket ahead of the VM, and this After=
     # is what makes the VM's own start wait for it — a later reader who
     # deletes either side leaves only the other direction's ordering.
-    # G1 in the container egress-parity build spec: VM-only by construction,
-    # not by this predicate -- this whole function (generate_vm_workload)
-    # only runs for kind == "vm". The container path's own inspect-socket
-    # prerequisite wiring is P1-7/P1-9, in the container branch below the
-    # `kind == "vm"` dispatch.
+    # VM-only by construction, not by this predicate -- this whole function
+    # (generate_vm_workload) only runs for kind == "vm". The container path's
+    # own inspect-socket prerequisite wiring is in the container branch below
+    # the `kind == "vm"` dispatch.
     if vm_uses_inspect(config):
         prereqs.append(f"workload-{name}-inspect.socket")
     # And the responder, on the same terms for the same reason: the guest has
@@ -753,8 +752,7 @@ def generate_vm_service(config, user_name: str, uid: int, vfs_tags=None) -> str:
         # it takes the guest's address and gateway from the host's, and the
         # netdev prestart reads the default route to derive the DNS options.
         # network.target is not enough — it only means "network management has
-        # started". This ordering used to arrive transitively, via
-        # workload-bridge.service's After=network.target; that unit is gone.
+        # started".
         u.set("Wants", "network-online.target")
         u.set("After", f"{prereqs_str} network-online.target")
     # The clock keeper, Wants= and not Requires=: it runs on the VM's behalf
@@ -958,9 +956,9 @@ def generate_vm_workload(config, user_name: str, uid: int):
     # (not bridged). The socket binds and arms the redirect before the VM can
     # start; the service is socket-activated and owns the inspector process and
     # its cgroup exemptions.
-    # G2 in the container egress-parity build spec: VM-only by construction
-    # (generate_vm_workload only runs for kind == "vm"), same as G1 above.
-    # Container inspect-unit emission is P1-7/P1-9.
+    # VM-only by construction (generate_vm_workload only runs for
+    # kind == "vm"), same as above. Container inspect units are emitted by
+    # the container generator.
     inspects = vm_uses_inspect(config)
     if inspects:
         socket_dests = paths.get(("unit", "inspect-socket"), [])

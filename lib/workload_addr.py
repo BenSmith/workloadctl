@@ -44,7 +44,7 @@ UID_MAX = 52948
 # optional. "Plane" is deliberately NOT the word for any of this: in this
 # codebase a plane is which port a record arrived on (moatery.egress_plane,
 # and the user-visible `--plane tls`), and one word for two unrelated things
-# is how a v6 range went unchecked for a whole rung.
+# is how a v6 range goes unchecked.
 #
 # ROWS, BECAUSE THE RESERVATION IS THE PART THAT GOES WRONG. `ports` may name
 # any bind address, and an address no range covers is not checked at all --
@@ -362,7 +362,7 @@ def broker_listen_address(uid: int) -> str:
 BROKER_INSTANCE_PORT = 8081
 
 
-# --- §9: the synthesising responder ---
+# --- the synthesising responder ---
 #
 # The guest's only nameserver. Every A, for any name, is answered with this
 # workload's inspector address; everything else, AAAA included, is NODATA.
@@ -550,8 +550,7 @@ def allow_reserved_reason(
     else's allowlist, and is re-originated as someone else's uid.
 
     It takes an operator to write one, which makes this a foot-gun rather than
-    a hole -- and a refusal is what lets the chain keep `allow` at the front
-    (HLD detail §3, §7.2.5).
+    a hole -- and a refusal is what lets the chain keep `allow` at the front.
 
     Both families, because the ranges are derived from one number: refusing the
     v4 and not the v6 refuses half of every address, and the half that survives

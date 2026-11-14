@@ -119,7 +119,7 @@ class DoctorReportTest(unittest.TestCase):
         return code, out.getvalue()
 
     def test_a_stale_inspector_policy_is_a_problem(self):
-        """Rung 5 T3. The unit tree is in sync, the units are active, nothing
+        """The unit tree is in sync, the units are active, nothing
         else in doctor can see this — the inspector's policy document has a
         different producer and a different root, so the unit-tree scan does not
         reach it. Without this the operator's only symptom is a guest being
@@ -270,7 +270,7 @@ class DoctorReportTest(unittest.TestCase):
         self.assertTrue(data["overall"]["healthy"])
 
     def test_egress_block_gated_on_substrate_uses_inspect(self):
-        """P1-15/G6: the default `mock.Mock()` substrate used by every other
+        """The default `mock.Mock()` substrate used by every other
         test in this class is truthy on `.uses_inspect()`, so those tests
         would pass identically whether or not the report is actually routed
         through the predicate. Pin both directions explicitly."""
@@ -324,7 +324,7 @@ class UnloadableConfigTest(unittest.TestCase):
     unloadable-config case is squarely inside its job. Before this was fixed,
     `WorkloadConfig` raising (name/directory mismatch, malformed TOML, missing
     file) escaped to the CLI's top-level handler, which printed a traceback and
-    "This looks like a workloadctl bug" — found by the rung-3 doctor/broken
+    "This looks like a workloadctl bug" — found by the runtime doctor/broken
     cell against a real host. validate/diagnose already routed the same failure
     through `load_config_or_exit`; doctor now does too.
     """

@@ -399,7 +399,7 @@ class TestDryRun(PcapTestCase):
         self.assertIn("Nothing was changed", self.stdout)
 
     def test_the_dry_run_plan_is_the_plan(self):
-        """§6.6's contract: what was printed is what runs. A renderer of its
+        """The contract: what was printed is what runs. A renderer of its
         own would let the two drift with nothing failing."""
         config = vm_config()
         args = _args("--dry-run", "--json", "-w", "/tmp/fj.pcapng", "fj")

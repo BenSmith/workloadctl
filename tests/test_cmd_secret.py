@@ -517,7 +517,7 @@ class ExportImportFlowTest(SecretTestBase):
 
 
 class ScopedCredentialNameTest(SecretTestBase):
-    """`broker/<workload>/<name>` (ADR 007, rung 6 T3).
+    """`broker/<workload>/<name>` (ADR 007).
 
     A NAME FORM and not a flag, which is why this class checks that every verb
     honours it: every verb already takes a name, so the scoped form reaches all

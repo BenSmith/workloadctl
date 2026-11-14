@@ -280,7 +280,7 @@ def seed_vm_home_share_ssh_key(pw, config):
 
 
 def generate_vm_host_keypair(pw, name: str):
-    """Generate the VM's SSH *host* keypair if absent (S1 host-key pinning).
+    """Generate the VM's SSH *host* keypair if absent (host-key pinning).
 
     Symmetric to generate_ssh_keypair (the client key): the private half is
     injected into the guest as /etc/ssh/ssh_host_ed25519_key via cloud-init, and

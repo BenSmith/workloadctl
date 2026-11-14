@@ -110,9 +110,9 @@ def collapse_disabled_consequences(checks: list[dict], name: str) -> list[dict]:
     Only ever called for a workload whose enable marker is gone. Returns a new
     list with the folded entries replaced, in place, by a single passing
     `workload_disabled` check — passing because a workload that is off is a
-    state, not a fault, and the eight failures it used to print made the one
-    finding that *was* real (a drifted subid range, say) the ninth item in a
-    list of eight non-problems.
+    state, not a fault, and eight absence failures would make the one finding
+    that *is* real (a drifted subid range, say) the ninth item in a list of
+    eight non-problems.
 
     Only absences fold. An entry in the list that *passed* is residue — linger
     still on, a unit still loaded after disable — which is a genuine anomaly and

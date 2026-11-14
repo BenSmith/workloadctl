@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Container egress parity, measured on a real host (P1-16).
+"""Container egress parity, measured on a real host.
 
 Every assertion here needs a packet to cross a real kernel hook, a real DNAT,
 and a real SELinux domain transition, so none of them is reachable from
@@ -9,11 +9,12 @@ this workload's inspector rather than leaving the host.
 
 WHAT IT MEASURES, and the failure each row exists to catch:
 
-  1. THE THREE-RUNG LADDER on ONE image, in order. Rung 1 (no [network] keys)
-     gets no proxy at all; rung 2 (`hosts` only) gets a spliced proxy and needs
-     NO CA; rung 3 (a policy entry) is REFUSED until `ca_delivery` is stated
-     and then terminates. Rung 2 is the rung a 443-only habit skips, and the
-     rung-2-to-rung-3 transition is where a silent CA requirement would hide.
+  1. THE THREE-STEP LADDER on ONE image, in order. Untriggered (no
+     [network] keys) gets no inspector at all; spliced (`hosts` only) needs NO
+     CA; terminating (a policy entry) is REFUSED until `ca_delivery` is stated
+     and then terminates. Splicing is the step a 443-only habit skips, and the
+     spliced-to-terminating transition is where a silent CA requirement would
+     hide.
 
   2. BOTH REDIRECTED PLANES. 443 must reach the inspector with a readable SNI
      and 80 must reach it with a readable Host header. A 443-only pass is the
@@ -62,7 +63,7 @@ WHAT IT MEASURES, and the failure each row exists to catch:
          so the obvious Node example proves the opposite of the row, and Go
          reads SSL_CERT_FILE. A JVM reads none of them.
 
- 10. S11: A FILTERED CONTAINER ASKS ITS OWN RESPONDER (check_container_
+ 10. A FILTERED CONTAINER ASKS ITS OWN RESPONDER (check_container_
      responder, and rows in the pod and bridge sections). moat-resolve on
      127.130.x.y through pasta's --dns-host: the first lookup at start, the
      synthesised and static answers, AAAA withheld, the count, and a
@@ -93,27 +94,19 @@ target fails identically to a working internal-destination drop.
 
     sudo CEG_LAN_HOST=<lan-host-ip> python3 tests/manual/container_egress_rig.py
 
-Last green 2026-09-26, 170/170 on a bare-metal Fedora 44 host under
-enforcing; see tests/manual/README.md for the earlier history.
-Getting there took seven product fixes and eight rig fixes, and the split is
-worth knowing before reading a failure here.
+Product defects on the `recreate` path -- the one the schema reference tells
+operators to use -- present as a HANG or as a misreport rather than as an
+error. Some rows here guard LEGIBILITY rather than enforcement: a stale
+`[[network.allow]]` address refused correctly and named by nothing, or a
+client that refuses the minted leaf told to apply a remedy it does not have,
+is invisible to a test that asks whether the right thing happened -- only one
+that asks what an operator would be told sees it.
 
-The five product defects of the first pass were all on the `recreate` path --
-the one the schema reference tells operators to use -- and every one of them
-presented as a HANG or as a misreport rather than as an error. The two the
-three rows in (9) added are a different kind: both are LEGIBILITY defects, and
-every functional assertion around each of them was green. A stale
-`[[network.allow]]` address was refused correctly and named by nothing; a
-client that refused the minted leaf was refused correctly and told to apply a
-remedy it does not have. Neither is visible to a test that asks whether the
-right thing happened -- only to one that asks what an operator would be told.
-
-The rig defects were all in how a probe's result was READ: wget's exit status
-taken from the wrong end of a pipe, a timeout raised instead of recorded, a
-capture verb invoked in its blocking form, an origin on a dummy link that every
-`oif lo` accept admitted regardless of policy, a probe that measured a DNS
-cache and reported it as an arm-time pin, and an address with a `g` in it that
-`ip` rejected and this rig reported as "nothing could bind". Both classes look
+A rig defect is usually in how a probe's result is READ: an exit status taken
+from the wrong end of a pipe, a timeout raised instead of recorded, a capture
+verb invoked in its blocking form, an origin on a dummy link that every
+`oif lo` accept admits regardless of policy, a probe that measures a DNS cache
+as an arm-time pin, a fixture address `ip` rejects. Both classes look
 identical in the output. When a row here fails, check what the probe measured
 before believing what it says.
 """
@@ -136,12 +129,12 @@ sys.dont_write_bytecode = True
 # chasing that is chasing a package manager rather than an egress path.
 IMAGE = "docker.io/library/alpine:latest"
 
-FILTERED = "ceg-plain"      # the workload under test; walks all three rungs
+FILTERED = "ceg-plain"      # the workload under test; walks all three levels
 OPEN = "ceg-open"           # no [network] table at all; opted into nothing
 BRIDGE = "ceg-bridge"       # bridge topology: each container in its OWN netns
 # Pod topology, and the ONLY multi-member workload here with more than one
 # container. Two members, because the defect this workload exists to catch
-# (S9) is an ordering one: with a single member there is less window between
+# is an ordering one: with a single member there is less window between
 # the head unit and the last member, and the point of the row is that the
 # arming precedes ALL of them. Pod mode had never run on a host at all --
 # `check_bridge_mode` covered the other multi-container topology, and the two
@@ -233,7 +226,7 @@ HOSTS_FILE = Path("/etc/hosts")
 # with.
 HOSTS_TAG = "# ceg-rig"
 
-# The embedded-root-store workload (R9). A JDK, because the five CA variables
+# The embedded-root-store workload. A JDK, because the five CA variables
 # workloadctl delivers (CA_ENV_VARS, lib/guest_ca.py) are read by OpenSSL, Node,
 # python-requests, git and pip -- and NODE_EXTRA_CA_CERTS is one of them, so the
 # obvious "Node ignores SSL_CERT_FILE" example is exactly wrong here. A JVM
@@ -243,12 +236,12 @@ HOSTS_TAG = "# ceg-rig"
 NODE_WL = "ceg-jvm"
 NODE_IMAGE = "docker.io/library/eclipse-temurin:21-jdk-alpine"
 # A second allowlisted name so the workload can KEEP a policy entry -- and
-# therefore stay rung 3, with `ca_delivery` still required -- while the host
+# therefore stay terminating, with `ca_delivery` still required -- while the host
 # under test is exempted from inspection. Splicing the only policy host would
-# drop the workload to rung 2 and prove the remedy by removing the feature.
+# drop the workload to splicing and prove the remedy by removing the feature.
 NODE_OTHER = "example.org"
 
-# --- S11: a filtered container's synthesising responder ----------------------
+# --- a filtered container's synthesising responder ----------------------
 
 STATIC_HOST = "ceg-static.test"   # an allow entry by name; in the static map
 STATIC_ADDR = "10.99.98.41"       # its /etc/hosts answer; never bound
@@ -295,7 +288,7 @@ def _resolve_status(name):
 
 
 def check_container_responder():
-    """S11: does a filtered container ask its own responder, and only it?
+    """does a filtered container ask its own responder, and only it?
 
     A triggered single-mode container on pasta gets moat-resolve on
     127.130.x.y, and `--dns-host` on its `--network=` points pasta's
@@ -311,7 +304,7 @@ def check_container_responder():
     proves an unfiltered container reaches it and gets that answer, so the
     filtered row's failure to is the drop and not a dead fixture.
     """
-    say("\n== a filtered container's responder (S11) ==")
+    say("\n== a filtered container's responder ==")
     uid = workload_uid(FILTERED)
     if uid is None:
         record("responder: the filtered workload has a uid", False)
@@ -490,14 +483,14 @@ def check_container_responder():
            "absent" if "container_resolver" not in checks else "present")
 
 
-# --- the credential broker arm (P2) ------------------------------------------
+# --- the credential broker arm ------------------------------------------
 #
-# One workload, deliberately POD topology. The broker's ordering defect (P2-3)
+# One workload, deliberately POD topology. The broker's ordering defect
 # is invisible in single mode: `container_broker_before` returns the umbrella
 # there and the umbrella is the right answer, so a single-mode row would pass
 # whichever way the code went. In pod mode the umbrella is `After=` its
 # members, so a broker ordered before it starts after every container -- the
-# same shape as S9, one unit over.
+# same shape as the arming order, one unit over.
 CRED_WL = "ceg-cred"
 CRED_NAME = "ceg-key"
 CRED_PLACEHOLDER = "PLACEHOLDER-CEG"
@@ -556,7 +549,7 @@ RECORD_ROOT = Path("/var/log/workloadctl/egress")
 LOG_ID_FIELD = "id"          # egress_record.LOG_ID_FIELD
 AUDIT_LOG = Path("/var/log/audit/audit.log")
 
-# S1's bound. A missing cgroup exemption in either table does not error: the
+# The re-dial's bound. A missing cgroup exemption in either table does not error: the
 # re-dial is filtered or redirected into the listener itself, and the symptom
 # is a request that eventually times out. Anything that completes well inside
 # this took the exempt path. Generous on purpose -- first-time leaf minting is
@@ -575,16 +568,16 @@ INSPECT_V4_BASE = (198, 18, 1, 0)
 @dataclass(frozen=True)
 class Arm:
     name: str
-    rung: int          # 1 = no keys, 2 = hosts only, 3 = + a policy entry
+    level: int          # 1 = no keys, 2 = hosts only, 3 = + a policy entry
     internal: bool = False
     # "single" = one [container]; "bridge" = workload.mode = "bridge" with
     # [[containers]], which puts each container in its OWN netns reached
-    # through an auto-created workload-<name>-net rather than pasta (P1-9);
+    # through an auto-created workload-<name>-net rather than pasta;
     # "pod" = workload.mode = "pod", members sharing one netns behind a
-    # workload-<name>-pod.service head unit (S9).
+    # workload-<name>-pod.service head unit.
     topology: str = "single"
     # The three host-fixture rows, each of which needs a [network] shape the
-    # rung/topology axes cannot express. Dispatched in toml_for, so every one
+    # level/topology axes cannot express. Dispatched in toml_for, so every one
     # of them stays on the path tests/test_manual_rig_configs.py validates --
     # these are the shapes MOST likely to rot, because they are the ones a
     # normal run on a normal host never writes.
@@ -596,7 +589,7 @@ class Arm:
 # appears three times because the ladder section rewrites its file in place and
 # each rewrite is a config a schema change can break independently.
 #
-# The rung-3-without-ca_delivery shape is deliberately NOT here: it must FAIL
+# The terminating-without-ca_delivery shape is deliberately NOT here: it must FAIL
 # validation, which is the assertion, and the gate asserts every arm validates.
 # It is built by `_toml_missing_ca_delivery` below, whose name keeps it out of
 # the gate's `def toml_for(` selector.
@@ -613,10 +606,10 @@ ARMS = (
     Arm(FILTERED, 2, variant="v6"),
     Arm(FILTERED, 2, variant="rotate"),
     Arm(FILTERED, 2, variant="resolve"),
-    Arm(NODE_WL, 1, variant="node-rung1"),
+    Arm(NODE_WL, 1, variant="node-untriggered"),
     Arm(NODE_WL, 3, variant="node"),
     Arm(NODE_WL, 3, variant="node-spliced"),
-    Arm(CRED_WL, 1, topology="pod", variant="cred-rung1"),
+    Arm(CRED_WL, 1, topology="pod", variant="cred-untriggered"),
     Arm(CRED_WL, 3, topology="pod", variant="cred"),
 )
 
@@ -748,7 +741,7 @@ def fetch(name, url, timeout=60, extra=""):
     separate files so the status is not inferred from prose that varies by
     wget build.
 
-    The elapsed time is returned because S1's failure mode is a hang rather
+    The elapsed time is returned because the re-dial's failure mode is a hang rather
     than an error, and a timeout arrives here as ok=False with the marker
     `run()` substitutes rather than as an exception.
     """
@@ -806,16 +799,16 @@ def toml_for(arm):
         "[network]",
         'mode = "pasta"',
     ]
-    if arm.rung == 1:
-        # Rung 1 is the absence of every key below, and the [network] table
+    if arm.level == 1:
+        # Level 1 is the absence of every key below, and the [network] table
         # here carries `mode` alone -- which is NOT a trigger. This arm exists
         # to prove that a container sharing a host with a filtered one is
         # untouched by it.
         return "\n".join(lines) + "\n"
 
     lines.append(f'hosts = ["{ALLOWED}"]')
-    if arm.rung >= 3:
-        # V16's interlock. The policy entry below is what makes the effective
+    if arm.level >= 3:
+        # The tls/ca_delivery interlock. The policy entry below is what makes the effective
         # tls mode "inspect", and an inspecting workload needs a trust-delivery
         # route stated. Alpine's busybox wget reads SSL_CERT_FILE, so "env" is
         # the honest value here; "image" would be an assertion this rig cannot
@@ -831,7 +824,7 @@ def toml_for(arm):
         idx = lines.index(f'hosts = ["{ALLOWED}"]')
         lines[idx] = f'hosts = ["{ALLOWED}", "{LAN_HOST_IN_CONFIG}"]'
 
-    if arm.rung >= 3:
+    if arm.level >= 3:
         lines += [
             "",
             "[[network.policy]]",
@@ -850,7 +843,7 @@ def toml_for(arm):
 
 
 def _bridge_toml(arm):
-    """A bridge-topology workload with an inspected [network] (P1-9).
+    """A bridge-topology workload with an inspected [network].
 
     REACHED THROUGH toml_for, not called directly, and that is deliberate.
     tests/test_manual_rig_configs.py selects this FILE on the text
@@ -882,7 +875,7 @@ def _bridge_toml(arm):
         f'image = "{IMAGE}"',
         'command = ["sleep", "infinity"]',
     ]
-    if arm.rung == 1:
+    if arm.level == 1:
         # No [network] table at all: this arm exists so the image pull happens
         # UNFILTERED. See deploy() -- the pull is the workload's own traffic.
         return "\n".join(lines) + "\n"
@@ -903,7 +896,7 @@ def _bridge_toml(arm):
 
 
 def _pod_toml(arm):
-    """A pod-topology workload with an inspected [network] (S9).
+    """A pod-topology workload with an inspected [network].
 
     Reached through toml_for for _bridge_toml's reason -- a second top-level
     generator would be the one shape in this file no gate validates.
@@ -944,7 +937,7 @@ def _pod_toml(arm):
         f'image = "{IMAGE}"',
         'command = ["sleep", "infinity"]',
     ]
-    if arm.rung == 1:
+    if arm.level == 1:
         # No [network] table: the image pull happens UNFILTERED, per deploy().
         return "\n".join(lines) + "\n"
 
@@ -964,7 +957,7 @@ def _pod_toml(arm):
 
 
 def _cred_toml(arm):
-    """The credential-broker workload (P2), in POD topology.
+    """The credential-broker workload, in POD topology.
 
     Reached through toml_for, like every other generator in this file, so
     tests/test_manual_rig_configs.py validates it -- see _bridge_toml. That
@@ -982,11 +975,11 @@ def _cred_toml(arm):
     ordinary way to vary methods by path. On the VM side that shape rendered
     the host's broker table TWICE; TOML refuses a table declared twice, so the
     broker exited at start and every brokered request 502'd on a config
-    `validate` had just called clean. P2-1 renders both substrates through one
+    `validate` had just called clean. The broker renders both substrates through one
     function, and this is the config that says so on a host.
     """
     lines = [
-        f"# {CRED_WL} -- generated by container_egress_rig.py (P2 broker arm).",
+        f"# {CRED_WL} -- generated by container_egress_rig.py (broker arm).",
         "# Throwaway; safe to purge.",
         "[workload]",
         f'name = "{CRED_WL}"',
@@ -1009,7 +1002,7 @@ def _cred_toml(arm):
         f'image = "{IMAGE}"',
         'command = ["sleep", "infinity"]',
     ]
-    if arm.variant == "cred-rung1":
+    if arm.variant == "cred-untriggered":
         # No [network] table: the image pull is the WORKLOAD'S OWN TRAFFIC
         # (see deploy()), and this workload's store is its own -- the other
         # arms' pulls do not fill it.
@@ -1075,7 +1068,7 @@ def _variant_toml(arm):
     ]
 
     if arm.variant == "v6":
-        # Rung 2 deliberately: `hosts` alone splices, so this row needs no CA
+        # Spliced deliberately: `hosts` alone splices, so this row needs no CA
         # and no trust store in the container, and what it measures -- whether
         # a v6 dial to 80/443 is TRANSLATED -- is unaffected by which of the two
         # tls postures the inspector then takes. Adding a policy entry would
@@ -1112,12 +1105,12 @@ def _variant_toml(arm):
             "[[network.allow]]",
             f'host   = "{ROT_HOST}"',
             f"port   = {ROT_PORT}",
-            'reason = "rig target for the D7 arm-time-pinning row: this '
+            'reason = "rig target for the arm-time-pinning row: this '
             'address is resolved ONCE, when the element is armed"',
         ]) + "\n"
 
     if arm.variant == "resolve":
-        # Rung 2 with an allow entry BY NAME, which is what puts a name in the
+        # Spliced, with an allow entry BY NAME, which is what puts a name in the
         # responder's static map. The command makes the container's FIRST
         # action a lookup, written where a later exec can read it: that is
         # the window row, the one query a responder bound late would miss.
@@ -1133,11 +1126,11 @@ def _variant_toml(arm):
             "[[network.allow]]",
             f'host   = "{STATIC_HOST}"',
             f"port   = {STATIC_PORT}",
-            'reason = "rig target for S11: a name the responder answers from '
+            'reason = "rig target for the responder rows: a name the responder answers from '
             'its static map rather than with the inspector address"',
         ]) + "\n"
 
-    if arm.variant == "node-rung1":
+    if arm.variant == "node-untriggered":
         # No [network] table at all. The JDK image is ~180MB and the pull is
         # the WORKLOAD'S OWN TRAFFIC (see deploy()), so it has to happen before
         # anything is armed or it is dialled at 443, lands on this workload's
@@ -1155,9 +1148,9 @@ def _variant_toml(arm):
             "",
             "[[network.policy]]",
             # The policy entry moves to the OTHER host in the spliced arm, so
-            # the workload stays rung 3 -- still inspecting, still owing
+            # the workload stays terminating -- still inspecting, still owing
             # `ca_delivery` -- while the host under test is exempted. Splicing
-            # the only policy host would drop it to rung 2 and "prove" the
+            # the only policy host would drop it to splicing and "prove" the
             # remedy by deleting the feature.
             f'host    = "{policy_host}"',
             'methods = ["GET"]',
@@ -1178,7 +1171,7 @@ def _variant_toml(arm):
 
 
 def _toml_missing_ca_delivery():
-    """A rung-3 config with `ca_delivery` omitted. Must be REFUSED.
+    """A terminating config with `ca_delivery` omitted. Must be REFUSED.
 
     Named with a leading underscore so tests/test_manual_rig_configs.py's
     `def toml_for(` selector does not discover it: that gate asserts every
@@ -1417,7 +1410,7 @@ def self_signed(directory):
     """A throwaway certificate for the v6 TLS origin.
 
     Self-signed on purpose and it is enough: the row measures whether a v6 dial
-    to 443 is TRANSLATED, and rung 2 SPLICES -- the origin's own certificate
+    to 443 is TRANSLATED, and a hosts-only workload SPLICES -- the origin's own certificate
     reaches the client untouched, so the client is run with verification off
     and the evidence is the inspector's record rather than the chain.
     """
@@ -1473,84 +1466,84 @@ def allow_elements(uid):
 # --- sections ----------------------------------------------------------------
 
 def check_rung_ladder():
-    """The ladder, walked in order on one image, with a recreate between rungs.
+    """The ladder, walked in order on one image, with a recreate between steps.
 
     Deliberately one workload rather than three: the thing under test is the
     TRANSITION -- what changes when a policy entry is added -- and three
     separately-enabled workloads would each prove their own end state while
     saying nothing about moving between them.
     """
-    say("\n== the three-rung ladder ==")
+    say("\n== the three-step ladder ==")
 
-    # Rung 1 was deployed as OPEN. Prove no proxy exists for it.
+    # The untriggered step was deployed as OPEN. Prove no proxy exists for it.
     uid_open = workload_uid(OPEN)
-    record("rung 1: an untriggered container has no inspect units",
+    record("untriggered: an untriggered container has no inspect units",
            not Path(f"/run/systemd/system/workload-{OPEN}-inspect.socket").exists(),
            f"uid {uid_open}")
     proxy = nft_dump("workload_redirect")
-    record("rung 1: it is in no redirect map",
+    record("untriggered: it is in no redirect map",
            uid_open is not None and f"{uid_open} ." not in proxy)
     p = cli("egress", OPEN)
-    record("rung 1: `egress` refuses it, naming the trigger",
+    record("untriggered: `egress` refuses it, naming the trigger",
            p.returncode != 0 and "no inspected egress" in (p.stdout + p.stderr),
            (p.stdout + p.stderr).strip()[:90])
 
-    # Rung 2: deployed as FILTERED. `hosts` only, and NO ca_delivery anywhere.
+    # Spliced: deployed as FILTERED. `hosts` only, and NO ca_delivery anywhere.
     text = (WORKLOAD_DIR / FILTERED / "workload.toml").read_text()
-    record("rung 2: the file states no ca_delivery",
+    record("spliced: the file states no ca_delivery",
            "ca_delivery" not in text)
     p = cli("validate", FILTERED)
-    record("rung 2: it validates with no CA route stated",
+    record("spliced: it validates with no CA route stated",
            p.returncode == 0, (p.stdout + p.stderr).strip()[:90])
     elapsed, ok, out = fetch(FILTERED, f"https://{ALLOWED}/")
-    record("rung 2: HTTPS to an allowlisted host round-trips",
+    record("spliced: HTTPS to an allowlisted host round-trips",
            ok, f"{elapsed:.1f}s  {out}")
     rec = latest_for(FILTERED, ALLOWED)
-    record("rung 2: the record says the connection was SPLICED",
+    record("spliced: the record says the connection was SPLICED",
            bool(rec) and rec.get("mode") == "splice",
            json.dumps({k: rec.get(k) for k in ("plane", "mode", "decision")})
            if rec else "no record")
 
-    # Rung 3, first half: the refusal. Written to disk and validated WITHOUT
+    # Terminating, first half: the refusal. Written to disk and validated WITHOUT
     # being enabled, so a refusal here cannot be confused with a start failure.
     write_config(FILTERED, _toml_missing_ca_delivery())
     p = cli("validate", FILTERED)
     text = (p.stdout + p.stderr)
-    record("rung 3: adding a policy entry is REFUSED without ca_delivery",
+    record("terminating: adding a policy entry is REFUSED without ca_delivery",
            p.returncode != 0, f"rc={p.returncode}")
-    record("rung 3: the refusal names the missing key",
+    record("terminating: the refusal names the missing key",
            "ca_delivery" in text, text.strip().splitlines()[-1][:100] if text.strip() else "")
 
-    # Rung 3, second half: state the key and apply. `recreate`, never
+    # Terminating, second half: state the key and apply. `recreate`, never
     # `restart`: the units themselves change shape here (the CA volume and the
     # five environment variables are added to the podman argv), and `restart`
     # regenerates nothing.
     write_config(FILTERED, toml_for(Arm(FILTERED, 3)))
     p = cli("validate", FILTERED)
-    record("rung 3: with ca_delivery stated it validates",
+    record("terminating: with ca_delivery stated it validates",
            p.returncode == 0, (p.stdout + p.stderr).strip()[:90])
     p = cli("recreate", FILTERED, timeout=600)
-    record("rung 3: recreate applies it", p.returncode == 0,
+    record("terminating: recreate applies it", p.returncode == 0,
            (p.stdout + p.stderr).strip()[-90:])
     time.sleep(5)
     elapsed, ok, out = fetch(FILTERED, f"https://{ALLOWED}/")
-    record("rung 3: HTTPS still round-trips after the transition",
+    record("terminating: HTTPS still round-trips after the transition",
            ok, f"{elapsed:.1f}s  {out}")
     rec = latest_for(FILTERED, ALLOWED)
     # The mode name on the wire is the terminating one; `splice` here would
     # mean the transition changed the file and not the running inspector.
-    record("rung 3: the connection is now TERMINATED, not spliced",
+    record("terminating: the connection is now TERMINATED, not spliced",
            bool(rec) and rec.get("mode") != "splice",
            json.dumps({k: rec.get(k) for k in ("plane", "mode", "decision")})
            if rec else "no record")
-    record("rung 3: the request inside the session is visible",
+    record("terminating: the request inside the session is visible",
            bool(rec) and rec.get("method") is not None,
            json.dumps({k: rec.get(k) for k in ("method", "path", "status")})
            if rec else "no record")
 
 
 def check_both_planes():
-    """R5. 443 with a readable SNI, and 80 with a readable Host header.
+    """443 with a readable SNI, and 80 with a readable Host header.
 
     The cleartext half is the one that gets skipped, and skipping it leaves
     plaintext HTTP unfiltered in a workload every report calls filtered. The
@@ -1581,7 +1574,7 @@ def check_both_planes():
 
 
 def check_redial_exemption():
-    """S1, the most repeated bug in the whole egress project.
+    """the most repeated bug in the whole egress project.
 
     The inspector's own upstream connection must be exempt in BOTH tables:
     `wl_inspect_cg` in workload_redirect (or its re-dial is redirected back into
@@ -1590,7 +1583,7 @@ def check_redial_exemption():
     and one hangs -- so this checks the elements are present AND that a request
     that used them completed inside a wall-clock bound.
     """
-    say("\n== the inspector's own re-dial (S1) ==")
+    say("\n== the inspector's own re-dial ==")
     unit = f"workloads.slice/workload-{FILTERED}-inspect.service"
     proxy, filt = nft_dump("workload_redirect"), nft_dump("workload_filter")
     record("the inspector's cgroup is exempt in workload_redirect",
@@ -1630,7 +1623,7 @@ def check_denial():
 
 
 def check_internal():
-    """G9, in BOTH directions.
+    """in BOTH directions.
 
     Present-only would pass against an inspector with no internal-destination
     guard at all, which is the guard that stops an allowlisted PUBLIC name from
@@ -1697,7 +1690,7 @@ def check_reporting():
     DESIGN, because that half is what a stale premise gets wrong.
 
     ALL SEVEN ARE ROUTED NOW. `egress`, `doctor`, the exporter and `diagnose`
-    (G7) went first; `rules` (G5), `drift` (G8) and `pcap` (G10) followed once
+    went first; `rules`, `drift` and `pcap` followed once
     the container renderer was wired to them. The three late ones were measured
     gaps here for exactly as long as they were unrouted, which is why this
     section reads as it does: a gap row records what an operator meets without
@@ -1741,7 +1734,7 @@ def check_reporting():
            f'workload="{FILTERED}"' in text and "inspect" in text,
            "no drop file" if not text else f"{len(text.splitlines())} lines")
 
-    # --- G5: `rules` renders a container's policy document ---
+    # --- `rules` renders a container's policy document ---
     #
     # HISTORY, because this row has been wrong twice and green both times.
     # First it pinned "no inspected egress" -- the sentence an UNINSPECTED
@@ -1761,9 +1754,9 @@ def check_reporting():
     # refused -- but it has to be asked of the branch that actually changed.
     #
     # WHAT THIS ROW GOT WRONG FIRST: it read ceg-plain's own document and
-    # expected tls "splice", on the premise that the workload is at rung 2
+    # expected tls "splice", on the premise that the workload is spliced
     # here. It is not -- check_internal runs immediately before this section
-    # and rewrites it at rung 3 -- so the answer was "inspect", which is what
+    # and rewrites it terminating -- so the answer was "inspect", which is what
     # the container ladder correctly says for a workload WITH a
     # [[network.policy]] entry. The row failed against a correct product.
     #
@@ -1771,7 +1764,7 @@ def check_reporting():
     # prefers the document ON DISK, which the inspector wrote; no renderer in
     # the CLI is involved. The renderer split only decides the "config" origin
     # -- a workload that has not started -- so that is what this deploys: a
-    # config-only workload, hosts and nothing else, never enabled. Rung 2 by
+    # config-only workload, hosts and nothing else, never enabled. Spliced by
     # construction, so the ladder says "splice" and the VM renderer's default
     # would say "inspect".
     probe = f"{FILTERED}-cfg"
@@ -1811,7 +1804,7 @@ def check_reporting():
            p.returncode != 0 and "no inspected egress" in out,
            f"rc={p.returncode} " + " ".join(out.split())[:70])
 
-    # --- G8: `drift` compares the container's document ---
+    # --- `drift` compares the container's document ---
     #
     # A GREEN "no drift" IS THE INERT READING. It is what the command printed
     # for every inspected container while the renderer returned None and the
@@ -1859,7 +1852,7 @@ def check_reporting():
             except OSError:
                 pass
 
-    # --- G10: `pcap -D` says the host vantage shows a redirect ---
+    # --- `pcap -D` says the host vantage shows a redirect ---
     #
     # -D BEFORE the workload, and that ordering is the whole of a rig bug this
     # row inherited. `pcap`'s trailing FILTER positional is argparse.REMAINDER,
@@ -1891,10 +1884,10 @@ def check_reporting():
            and "as it leaves this machine" in out,
            f"rc={p.returncode} " + out[:90])
 
-    # `diagnose` stays a gap ON PURPOSE. It is routed (G7) but it is a general
+    # `diagnose` stays a gap ON PURPOSE. It is routed but it is a general
     # workload check, so what it prints about egress is one line among many and
     # pinning a substring here would be pinning the layout of a different
-    # command. The G7 row that owns it lives with the diagnose rows.
+    # command. The row that owns it lives with the diagnose rows.
     p = cli("diagnose", FILTERED, timeout=90)
     text = " ".join((p.stdout + p.stderr).split())
     record_gap("`diagnose` on an inspected container",
@@ -1902,9 +1895,9 @@ def check_reporting():
 
 
 def check_bridge_mode():
-    """P1-9: does the redirect still fire when the netns is a podman bridge?
+    """does the redirect still fire when the netns is a podman bridge?
 
-    THE OPEN HALF OF P1-9. The uid half is answered -- uid_attribution_rig.py
+    THE OPEN HALF OF THE BRIDGE QUESTION. The uid half is answered -- uid_attribution_rig.py
     measured `exact-uid` on all three of its in-container-uid arms under
     bridge mode, so `meta skuid` selects this traffic exactly as it does under
     pasta. What that does NOT answer is the redirect: bridge mode gives each
@@ -1923,11 +1916,11 @@ def check_bridge_mode():
     it distinguishes those two, and they are otherwise identical from inside
     the container.
     """
-    say("\n== bridge topology (P1-9) ==")
-    # RUNG 1 FIRST, for deploy()'s reason: the image pull is the workload's own
+    say("\n== bridge topology ==")
+    # UNTRIGGERED FIRST, for deploy()'s reason: the image pull is the workload's own
     # traffic, and a filtered workload whose image is not already in its store
     # dials the registry at 443, lands on its own inspector and is refused.
-    # Enabling straight at rung 3 would measure image supply and report it as
+    # Enabling straight terminating would measure image supply and report it as
     # an egress failure -- the rig bug that looks exactly like a product bug.
     write_config(BRIDGE, toml_for(Arm(BRIDGE, 1, topology="bridge")))
     p = cli("enable", BRIDGE, timeout=900)
@@ -1950,7 +1943,7 @@ def check_bridge_mode():
         return
     record("bridge: the container answers exec", True)
 
-    # Now move it to rung 3, with the image already local.
+    # Now move it to termination, with the image already local.
     write_config(BRIDGE, toml_for(Arm(BRIDGE, 3, topology="bridge")))
     if cli("recreate", BRIDGE, timeout=600).returncode != 0:
         record("bridge: recreate onto an inspected config", False)
@@ -1981,14 +1974,14 @@ def check_bridge_mode():
     record("bridge: a non-allowlisted host is refused",
            not ok_denied, out_denied[:80])
 
-    # S9's other half. Bridge mode HAD run here, but only ever in steady state
+    # The arming order's other half. Bridge mode HAD run here, but only ever in steady state
     # -- enable, recreate, sleep 5, probe -- which is blind to an arming that
     # lands after the members are already up. The ordering is what 91c8fd4
     # changed, and this is the topology it changed it for.
     check_head_unit_ordering(BRIDGE, f"workload-{BRIDGE}-net.service",
                              [f"workload-{BRIDGE}-app.service"])
 
-    # S11's exception: aardvark-dns answers a bridge-mode container, and pasta
+    # The responder's exception: aardvark-dns answers a bridge-mode container, and pasta
     # is not in front of it to point anywhere, so no responder is generated.
     # HTTPS to a name above round-tripped, so aardvark resolved it.
     load = _show(f"workload-{BRIDGE}-resolve.socket", "LoadState")
@@ -2010,7 +2003,7 @@ def _show(unit, prop):
 
 
 def check_head_unit_ordering(name, head, members):
-    """S9: is the egress arming ordered AHEAD of the member containers?
+    """is the egress arming ordered AHEAD of the member containers?
 
     THE DEFECT THIS MEASURES SHIPPED, AND NOTHING SAW IT. The arming lived on
     the umbrella (`workload-<name>.service`) because `[network]` is
@@ -2034,7 +2027,7 @@ def check_head_unit_ordering(name, head, members):
     change made the umbrella start first, moving the arming would have been
     pointless rather than a fix. This pins the premise, not just the remedy.
     """
-    say(f"\n== {name}: the arming is ordered before the members (S9) ==")
+    say(f"\n== {name}: the arming is ordered before the members ==")
     arm = f"workload-container-filter up {name}"
 
     head_pre = _show(head, "ExecStartPre")
@@ -2091,20 +2084,20 @@ def check_head_unit_ordering(name, head, members):
 
 
 def check_pod_mode():
-    """S9's other topology: does pod mode filter, and did it ever run?
+    """The arming order's other topology: does pod mode filter, and did it ever run?
 
     IT HAD NOT. `check_bridge_mode` covered one multi-container topology and
     this rig deployed nothing in the other, so pod mode reached a release
     having been exercised by unit tests alone -- on the substrate where the
     ordering hole above lived.
 
-    Same ladder shape as bridge, and for the same reason: rung 1 first so the
+    Same ladder shape as bridge, and for the same reason: untriggered first so the
     image pull is the workload's own UNFILTERED traffic. A filtered workload
     whose image is not already in its store dials the registry on 443, lands
     on its own inspector, is refused, and the row reports an egress failure
     when what it measured was image supply.
     """
-    say("\n== pod topology (S9) ==")
+    say("\n== pod topology ==")
     write_config(POD, toml_for(Arm(POD, 1, topology="pod")))
     p = cli("enable", POD, timeout=900)
     if p.returncode != 0:
@@ -2168,7 +2161,7 @@ def check_pod_mode():
         POD, f"workload-{POD}-pod.service",
         [f"workload-{POD}-app.service", f"workload-{POD}-side.service"])
 
-    # S11 for pod mode: the responder is pulled in by the head unit, the one
+    # The responder in pod mode: the responder is pulled in by the head unit, the one
     # ordered before every member, and both members ask it. The pod's pasta
     # is the pod's, so a member that did not share it would resolve through
     # something else.
@@ -2272,7 +2265,7 @@ def check_cross_workload_gap():
 
 
 def check_ipv6():
-    """R5's v6 half: a dial to 80/443 over IPv6 must be TRANSLATED.
+    """The v6 half of both planes: a dial to 80/443 over IPv6 must be TRANSLATED.
 
     The failure this row exists to catch is not a wrong decision, it is the
     absence of one: `redirect_dnat` has a v6 rule of its own (`dnat ip6 to ...
@@ -2297,7 +2290,7 @@ def check_ipv6():
     in `hosts`, so a refusal for it can only have come from the inspector
     reading the name -- which is the whole claim.
     """
-    say("\n== IPv6 (R5), on a ULA behind a veth ==")
+    say("\n== IPv6, on a ULA behind a veth ==")
     if not _fixtures_up:
         skip("the IPv6 redirect", "the fixture namespace could not be built")
         return
@@ -2314,8 +2307,8 @@ def check_ipv6():
     hosts_write([(V6_ADDR, V6_HOST), (V6_ADDR, V6_DENIED)])
 
     # THE CONTAINER HAS NO IPv6 UNLESS THE HOST LOOKS LIKE IT HAS IPv6.
-    # Measured 2026-09-06: with the origin routable from the host and the
-    # redirect map correctly armed for this uid, every v6 probe still came back
+    # With the origin routable from the host and the redirect map correctly
+    # armed for this uid, every v6 probe would still come back
     # `Network unreachable` -- from the CONTAINER'S own stack, before pasta,
     # before nftables, before anything this row is about. pasta configures the
     # guest from the host's own template interface, and a host with no v6
@@ -2380,7 +2373,7 @@ def _check_ipv6_body():
            json.dumps({k: rec.get(k) for k in ("plane", "mode", "decision")})
            if rec else "NO RECORD -- the v6 dial went around the inspector")
 
-    # Verification off, deliberately: rung 2 splices, so the certificate that
+    # Verification off, deliberately: a hosts-only workload splices, so the certificate that
     # reaches the client is the throwaway origin's own. The chain is not what
     # this row measures and checking it would fail the row for the rig's cert.
     elapsed, ok, out = fetch(FILTERED, f"https://{V6_HOST}/",
@@ -2406,12 +2399,12 @@ def _check_ipv6_body():
 
 
 def check_allow_rotation():
-    """D7: an `[[network.allow]]` address is pinned at ARM TIME.
+    """an `[[network.allow]]` address is pinned at ARM TIME.
 
     `container_allow_resolve` runs once, in `workload-container-filter up`, and
     what it produces is an nft element naming a literal address. Nothing
     re-resolves it afterwards -- there is no per-workload DNS responder for
-    containers (D7), so unlike a VM there is nothing keeping the address the
+    containers, so unlike a VM there is nothing keeping the address the
     container DIALS and the address that got ARMED in agreement. When they
     diverge the packet is not accepted by the allow rule, falls through to the
     default deny, and is dropped on a counter shared with every other filtered
@@ -2427,7 +2420,7 @@ def check_allow_rotation():
     moved. Which address answered is the entire question, and a single origin
     would make "the pin held" and "the rotation never took" the same reading.
     """
-    say("\n== [[network.allow]] address rotation (D7) ==")
+    say("\n== [[network.allow]] address rotation ==")
     if not _fixtures_up:
         skip("the allow-rotation row", "the fixture namespace could not be built")
         return
@@ -2455,13 +2448,12 @@ def check_allow_rotation():
     armed = allow_elements(uid)
     record("the allow element is armed with the address the name had THEN",
            any(ROT_A in e for e in armed), "; ".join(armed) or "no element")
-    # THE DIALS ARE LITERAL ADDRESSES, NOT THE NAME, and that is the fix for a
-    # confound the first two hardware runs had. What the pin governs is which
-    # ADDRESS is authorised; involving the container's resolver in the probe
-    # adds a second variable that can disagree with the host's, and on
-    # 2026-09-06 it did -- the host resolved the rotated name and the container
-    # was still answered with the old address, so the "does not reach origin B"
-    # row reached origin A and read as a pass while measuring a DNS cache.
+    # THE DIALS ARE LITERAL ADDRESSES, NOT THE NAME. What the pin governs is
+    # which ADDRESS is authorised; involving the container's resolver in the
+    # probe adds a second variable that can disagree with the host's -- the
+    # host resolves the rotated name while the container is still answered
+    # with the old address, so the "does not reach origin B" row reaches
+    # origin A and reads as a pass while measuring a DNS cache.
     # Dialling the literal removes DNS from the probe path entirely. The
     # arm-time resolution is still exercised, on the host, where it happens:
     # the element assertion above IS that measurement.
@@ -2506,7 +2498,7 @@ def check_allow_rotation():
            f"silent drop on a shared counter and nothing points at the "
            f"[[network.allow]] entry that caused it")
 
-    # D7's stated remedy, confirmed rather than assumed: a re-arm is the
+    # The stated remedy for a moved address, confirmed rather than assumed: a re-arm is the
     # refresh, and there is no other one.
     if cli("recreate", FILTERED, timeout=600).returncode != 0:
         record("a re-arm refreshes the pinned address", False, "recreate failed")
@@ -2555,9 +2547,9 @@ def java_fetch(url, timeout=90):
 
 
 def check_embedded_root_store():
-    """R9: `ca_delivery = "env"` against an image that carries its own store.
+    """`ca_delivery = "env"` against an image that carries its own store.
 
-    R9 says workloadctl may not claim `ca_delivery` verifies anything -- it is
+    workloadctl may not claim `ca_delivery` verifies anything -- it is
     an operator ASSERTION, and it catches an unstated CA route, never a wrong
     one. This is the row where that abstraction meets an image: the operator
     states `env`, workloadctl delivers all five variables, every check on the
@@ -2574,16 +2566,16 @@ def check_embedded_root_store():
     THREE PROBES, and the middle one is the row:
       1. UNFILTERED baseline. Without it a failure below is equally well
          explained by the image, the network, or the probe.
-      2. Rung 3, inspecting. Must fail, and must fail as a TRUST failure --
+      2. Terminating, inspecting. Must fail, and must fail as a TRUST failure --
          a timeout here would mean the redirect broke, which is a different
          defect wearing this one's clothes.
       3. The remedy. `[[network.splice]]` for that host, with the policy entry
-         moved to a second allowlisted name so the workload STAYS rung 3.
+         moved to a second allowlisted name so the workload STAYS terminating.
          Splicing the only policy host would demonstrate the remedy by
          deleting the feature.
     """
-    say("\n== an image with its own trust store (R9) ==")
-    write_config(NODE_WL, toml_for(Arm(NODE_WL, 1, variant="node-rung1")))
+    say("\n== an image with its own trust store ==")
+    write_config(NODE_WL, toml_for(Arm(NODE_WL, 1, variant="node-untriggered")))
     p = cli("enable", NODE_WL, timeout=1800)
     if p.returncode != 0:
         record("the JVM workload enables (pull is ~180MB, unfiltered)", False,
@@ -2599,7 +2591,7 @@ def check_embedded_root_store():
         record("baseline: unfiltered, the JVM completes an HTTPS request",
                ok, text)
         if not ok:
-            record("the R9 row is measurable on this image", False,
+            record("the embedded-store row is measurable on this image", False,
                    "the baseline failed, so a failure under inspection below "
                    "would not be attributable to trust")
             return
@@ -2648,10 +2640,10 @@ def check_embedded_root_store():
                if rec else "no record")
         # NOT "it must not mention re-seeding". A VM instance seeded before
         # the workload had a CA really does need re-seeding, and that sentence
-        # is right for it. The defect measured on 2026-09-06 was that
-        # re-seeding was the ONLY remedy named -- so an operator whose client
-        # has an embedded trust store was sent to repair a CA route that
-        # cannot be made to work, for a guest that does not exist.
+        # is right for it. What must not happen is re-seeding as the ONLY
+        # remedy named, which sends an operator whose client has an embedded
+        # trust store to repair a CA route that cannot be made to work, for a
+        # guest that does not exist.
         names_remedy = "splice" in blob.lower()
         record("the explanation names the remedy an embedded trust store "
                "actually has",
@@ -2668,7 +2660,7 @@ def check_embedded_root_store():
         if not wait_up(NODE_WL, "the JVM container is back up, spliced",
                        seconds=300):
             return
-        # Still rung 3: the policy entry moved to the second allowlisted name
+        # Still terminating: the policy entry moved to the second allowlisted name
         # rather than being deleted, so `ca_delivery` is still required and the
         # workload is still inspecting -- for every host but this one.
         q = cli("validate", NODE_WL)
@@ -2741,7 +2733,7 @@ def _probe_53(uid, proto, timeout=6):
 
 
 def check_container_resolver():
-    """S10: does the default deny take a filtered container's DNS?
+    """does the default deny take a filtered container's DNS?
 
     NEVER MEASURED ANYWHERE, on any host, until this row. The claim was read
     straight off `nftables/workload-filter.nft` and it is a claim about the
@@ -2765,7 +2757,7 @@ def check_container_resolver():
     lo` accepts a filtered uid's traffic to it unconditionally, and the row
     would pass having measured the exemption instead of the drop.
     """
-    say("\n== a filtered container's DNS (S10) ==")
+    say("\n== a filtered container's DNS ==")
     uid, open_uid = workload_uid(FILTERED), workload_uid(OPEN)
     if uid is None or open_uid is None:
         record("resolver: both workloads have uids", False,
@@ -2817,7 +2809,7 @@ def check_container_resolver():
             "\n[[network.allow]]\n"
             f'address = "{DNS_ADDR}"\n'
             f"port    = {DNS_PORT}\n"
-            'reason  = "rig: the resolver S10 says a filtered container loses"\n'
+            'reason  = "rig: the resolver the default deny says a filtered container loses"\n'
         ))
         if cli("recreate", FILTERED, timeout=600).returncode != 0:
             record("resolver: recreate with an allow entry on 53", False)
@@ -2854,7 +2846,7 @@ def check_container_resolver():
              "dev", VETH_NS], check=False)
 
 
-# --- the credential broker arm (P2) ------------------------------------------
+# --- the credential broker arm ------------------------------------------
 
 def provider_cert():
     """A throwaway CA-and-leaf-in-one for the stub provider.
@@ -3028,7 +3020,7 @@ def dial_broker(addr, host, as_uid=None, as_gid=None, path="/v1/models"):
 
 
 def check_broker_invariants():
-    """P2: the container credential broker, on a host, with real packets.
+    """the container credential broker, on a host, with real packets.
 
     THE INVARIANT, in the plan's words: the container must not be able to name
     the broker, choose to use it, or be pointed at another workload's. For a VM
@@ -3048,7 +3040,7 @@ def check_broker_invariants():
     umbrella in single mode and the umbrella is the correct answer there, so a
     single-mode workload cannot distinguish the fix from the defect.
     """
-    say("\n== the credential broker (P2) ==")
+    say("\n== the credential broker ==")
 
     if not _fixtures_up:
         skip("credential broker", "the rig namespace is not up")
@@ -3075,13 +3067,13 @@ def check_broker_invariants():
         skip("credential broker", f"could not seal the credential: {detail}")
         return
 
-    # Rung 1 first, unfiltered, so the image pull is not this workload's own
+    # Untriggered first, unfiltered, so the image pull is not this workload's own
     # filtered traffic. See deploy(): the pull runs as the workload uid AFTER
     # the redirect is armed, and this workload's podman store is its own -- the
     # other arms' pulls do not fill it.
     say(f"  enabling {CRED_WL} unfiltered so the pull can happen ...")
     write_config(CRED_WL, toml_for(Arm(CRED_WL, 1, topology="pod",
-                                       variant="cred-rung1")))
+                                       variant="cred-untriggered")))
     p = cli("enable", CRED_WL, timeout=900)
     if p.returncode != 0:
         record("the credential workload enables", False,
@@ -3204,7 +3196,7 @@ def check_broker_invariants():
            not ok2 and CRED_SECRET not in detail2,
            f"ok={ok2} body={detail2[:110]!r}")
 
-    # --- P2-5: the internal carve-out ---------------------------------------
+    # --- the internal carve-out ---------------------------------------
     #
     # 127.129.x.y is inside wl_internal4 and the cgroup-keyed drop sits ABOVE
     # the `oif lo` accept, so without an element here the inspector's dial to
@@ -3212,15 +3204,15 @@ def check_broker_invariants():
     # is why the control row above cannot substitute for reading the set.
     ok_dump = run(["nft", "list", "set", "inet", "workload_filter",
                    "wl_internal_ok4"], check=False).stdout
-    record("the broker's address is exempted from the internal drop (P2-5)",
+    record("the broker's address is exempted from the internal drop",
            addr in ok_dump,
            f"wl_internal_ok4 {'names' if addr in ok_dump else 'does NOT name'} "
            f"{addr}")
 
-    # --- P2-3: the ordering, measured on the clock --------------------------
+    # --- the ordering, measured on the clock --------------------------
     head = f"workload-{CRED_WL}-pod.service"
     before = _show(unit, "Before")
-    record("the broker is ordered before the POD unit, not the umbrella (P2-3)",
+    record("the broker is ordered before the POD unit, not the umbrella",
            head in before,
            f"Before={before!r} -- the umbrella is After= its members, so "
            f"ordering the broker ahead of IT puts it after every container")
@@ -3244,17 +3236,17 @@ def check_broker_invariants():
                "  ".join(f"{m.split('-')[-1]}:+{(v - t_broker) / 1e6:.2f}s"
                          for m, v in t_members.items()))
 
-    # --- P2-6: the cgroup depth, and the bound that is actually load-bearing -
+    # --- the cgroup depth, and the bound that is actually load-bearing -
     #
     # The inspector's own exemptions match `socket cgroupv2 level 2` EXACTLY,
-    # and S1's tail is that a wrong depth fails open with no error. The broker
+    # and the re-dial's tail is that a wrong depth fails open with no error. The broker
     # is believed to need no cgroup-matched rule at all -- its DynamicUser sits
     # at 61184+, disjoint from the workload range, so it is not in wl_filtered
     # and the default-deny never applies to it. That belief is what the two
-    # rows below check; the depth itself is recorded either way, per P2-6.
+    # rows below check; the depth itself is recorded either way.
     cg = _show(unit, "ControlGroup")
     depth = len([c for c in cg.split("/") if c])
-    record_gap("the broker unit's cgroup depth (P2-6)",
+    record_gap("the broker unit's cgroup depth",
                f"{cg!r} -> level {depth} "
                f"(the inspector's exemptions match level 2 exactly)")
 
@@ -3280,7 +3272,7 @@ def check_broker_invariants():
                not in_filtered,
                f"uid={dyn_uid} {'IS' if in_filtered else 'is not'} in "
                f"wl_filtered -- if it ever is, the default-deny applies and "
-               f"S1's cgroup depth stops being moot")
+               f"the cgroup depth stops being moot")
 
     allow = _show(unit, "IPAddressAllow")
     record("that bound names the provider and nothing wider",
@@ -3324,7 +3316,7 @@ def check_broker_invariants():
                f"row={ {k: refused.get(k) for k in ('path', 'decision', 'credential')} if refused else None}")
 
 
-# --- the per-request record's readers (P3) -----------------------------------
+# --- the per-request record's readers -----------------------------------
 
 def _record_hosts(name):
     """Every distinct `host` in one workload's record, as read by the CLI."""
@@ -3341,7 +3333,7 @@ def _egress_text(*args, timeout=120):
 
 
 def check_record_reader():
-    """P3-2: the reader's surfaces, none of which had ever run for a container.
+    """the reader's surfaces, none of which had ever run for a container.
 
     Everything this rig read before this section came back through ONE
     invocation -- `egress <name> --json -n 0`, as root, over the live file, on
@@ -3350,7 +3342,7 @@ def check_record_reader():
     time filters, the negative-count refusal, the non-root branch, and the
     "no record at all" branch.
 
-    S11 GOVERNS EVERY ROW HERE. A reader that returned an empty list
+    A POSITIVE ROW GOVERNS EVERY NEGATIVE ONE HERE. A reader that returned an empty list
     unconditionally would answer `No records matched.`, `--since selected
     nothing`, `--reason selected nothing` and `--host selected nothing`
     identically and correctly-looking, and would score full marks on any set of
@@ -3471,7 +3463,7 @@ def check_record_reader():
                 live.unlink()
             aside.rename(live)
 
-    # P3-7: the counters and the record are two halves of one decision, written
+    # The counters and the record are two halves of one decision, written
     # by the same process at the same moment. They are never summed and never
     # cross-checked anywhere in the product -- so a counter that stopped being
     # written reads as zero and a record that stopped reads as silence, and
@@ -3492,7 +3484,7 @@ def check_record_reader():
 
 
 def check_record_rotation():
-    """P3-3/S12: rotation is the only moment the record file is created by the
+    """Rotation is the only moment the record file is created by the
     LISTENER rather than by systemd, so it is the only moment the owner, the
     mode and the SELinux label come from a different actor.
 
@@ -3585,7 +3577,7 @@ def _peer_addresses(addr, seconds=8.0):
 
 
 def check_client_attribution():
-    """P3-0, THE SPIKE. Measured, never scored: its output decides a design.
+    """THE SPIKE. Measured, never scored: its output decides a design.
 
     The question: can a container's record attribute a request to the
     CONTAINER that made it, or only to the workload? A VM is one guest, so the
@@ -3599,7 +3591,7 @@ def check_client_attribution():
     through pasta as host sockets owned by the workload uid, and whether the
     container's own address survives that is a property of pasta, not of this
     tree. Reason about it instead of measuring and you write a field that is
-    constant in every topology and reads as attribution (S13).
+    constant in every topology and reads as attribution.
 
     WHY THIS IS A GAP AND NOT AN ASSERTION. There is no correct answer to pin.
     A single address here means "no attribution is available, write the
@@ -3608,10 +3600,10 @@ def check_client_attribution():
     lib/cmd_egress.py's docstring and docs/schema-reference.toml is owed, and
     NOTHING is added to the record until the two-member reading exists.
     """
-    say("\n== P3-0: what the listener sees as the near end ==")
+    say("\n== what the listener sees as the near end ==")
     uid = workload_uid(FILTERED)
     if uid is None:
-        record_gap("P3-0", f"no uid for _wl-{FILTERED}")
+        record_gap("near-end addresses", f"no uid for _wl-{FILTERED}")
         return
     addr = inspector_v4(uid)
     # A BURST, sampled concurrently. One request is a window measured in
@@ -3628,14 +3620,14 @@ def check_client_attribution():
         burst.wait(timeout=60)
     except subprocess.TimeoutExpired:
         burst.kill()
-    record_gap("P3-0: near-end addresses seen by the inspector",
+    record_gap("near-end addresses seen by the inspector",
                f"listener {addr}: {sorted(peers) or 'NOTHING SAMPLED -- the '
                'burst never overlapped a sample, so this reading is empty '
                'rather than negative'}")
 
 
 def check_purge_frees_uid():
-    """P3-4: `disable --purge` removes the record tree, which is what frees the
+    """`disable --purge` removes the record tree, which is what frees the
     uid for reallocation.
 
     NOT TIDINESS. The directory is a systemd LogsDirectory= owned by the
@@ -3646,9 +3638,8 @@ def check_purge_frees_uid():
     redirect armed in front of a listener that is not running: it hangs on 80
     and 443 and on nothing else, the error text belongs to whatever it was
     dialling, and the one unit that explains it is a different unit's journal.
-    Measured on a VM host 2026-09-05; the code is in lib/cmd_disable.py and had
-    never executed for a container, because this rig ran bare `disable` and
-    left the purge to cleanup(), where nothing reads the result.
+    The code is in lib/cmd_disable.py; a purge left to cleanup(), where
+    nothing reads the result, never measures it.
 
     The pre-purge rows ARE the control: without them "the directory is gone"
     is satisfied by a directory that was never there, which is precisely the
@@ -3755,8 +3746,7 @@ def preflight():
             sys.exit(f"{WORKLOAD_DIR / name} already exists -- purge it first "
                      f"(`workloadctl disable {name} --purge`) so this rig is "
                      f"not measuring a previous run's state")
-        # The egress record outlived `disable --purge` until 2026-09-05, and a
-        # leftover one is worse than untidy in BOTH directions: `latest_for()`
+        # A leftover egress record is worse than untidy in BOTH directions: `latest_for()`
         # would match a record from a previous run, and the directory is a
         # LogsDirectory= owned by whoever held the uid last, so systemd refuses
         # to set it up and the inspect service fails 240/LOGS_DIRECTORY --
@@ -3780,7 +3770,7 @@ def preflight():
 
 
 def deploy():
-    """Enable BOTH workloads at rung 1, then move the filtered one to rung 2.
+    """Enable BOTH workloads untriggered, then move the filtered one to splicing.
 
     Not the obvious order, and the reason is a constraint worth knowing before
     you write a filtered container workload of your own: THE IMAGE PULL IS THE
@@ -3794,8 +3784,8 @@ def deploy():
     deliberately left to its own pull policy.
 
     So a rig that enabled the filtered arm directly would measure image supply
-    and report it as an egress failure. Enabling at rung 1 lets the pull happen
-    unfiltered, and the recreate to rung 2 then exercises the rung-1-to-rung-2
+    and report it as an egress failure. Enabling untriggered lets the pull happen
+    unfiltered, and the recreate to splicing then exercises the untriggered-to-spliced
     transition as a bonus -- which the ladder section otherwise skips.
     """
     say("== deploying ==")
@@ -3830,11 +3820,11 @@ def deploy():
 
     # Both images are now in their own stores, so the filtered arm can be
     # filtered without needing the registry. See this function's docstring.
-    say(f"  moving {FILTERED} to rung 2 ...")
+    say(f"  moving {FILTERED} to splicing ...")
     write_config(FILTERED, toml_for(Arm(FILTERED, 2)))
     p = cli("recreate", FILTERED, timeout=600)
     if p.returncode != 0:
-        sys.exit(f"recreate {FILTERED} to rung 2 failed:\n{p.stdout}\n{p.stderr}")
+        sys.exit(f"recreate {FILTERED} to splicing failed:\n{p.stdout}\n{p.stderr}")
     deadline = time.time() + 180
     while time.time() < deadline:
         r = inside(FILTERED, "echo UP", timeout=30)
@@ -3846,7 +3836,7 @@ def deploy():
                     "-n", "30", "--no-pager"])
     subprocess.run(["journalctl", "-u", f"workload-{FILTERED}-inspect.service",
                     "-n", "20", "--no-pager"])
-    sys.exit(f"{FILTERED} did not come back after moving to rung 2")
+    sys.exit(f"{FILTERED} did not come back after moving to splicing")
 
 
 def cleanup():

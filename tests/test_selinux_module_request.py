@@ -2,9 +2,9 @@
 
 A socket() for a family the kernel has not loaded runs modprobe for it, and
 Fedora's domain_kernel_load_modules lets every domain ask. Each workload
-domain's module takes `system module_request` away with a deny, which on the
-proving host (2026-10-16) removed the boolean's rule for these domains and
-left udev_t and unconfined_service_t theirs.
+domain's module takes `system module_request` away with a deny, which removes
+the boolean's rule for these domains and leaves udev_t and
+unconfined_service_t theirs.
 """
 import re
 import unittest

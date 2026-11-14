@@ -161,9 +161,8 @@ def _read_secret_value(name: str, *, action: str) -> bytes:
 
     if not sys.stdin.isatty():
         value = sys.stdin.buffer.read()
-        # A trailing newline is almost always `echo` without -n, and it is the
-        # same defect the interactive path used to produce: it survives into the
-        # credential and only fails later, at unit start, where the error names
+        # A trailing newline is almost always `echo` without -n. It survives
+        # into the credential and only fails later, at unit start, where the error names
         # newlines but not the command that introduced them. Warn rather than
         # strip — a binary payload or a value that deliberately ends in \n is
         # legitimate, and silently altering a credential is worse than a noisy
@@ -197,11 +196,11 @@ def _strip_trailing_newline(text: str) -> str:
 def iter_credentials(cred_dir: Path):
     """(display name, path) for every credential, scoped ones included.
 
-    Scoped material used to be invisible here, because `list` read one
-    directory and kept only files -- so a subtree looked like nothing at all,
-    and an operator checking whether a workload's key was present got "no
-    credentials found" for a key that was sitting right there. Sorted by
-    display name so the scoped entries group under their scope.
+    Recursive, because reading one directory and keeping only files would
+    make a scoped subtree look like nothing at all: an operator checking
+    whether a workload's key is present would get "no credentials found" for
+    a key that is sitting right there. Sorted by display name so the scoped
+    entries group under their scope.
     """
     if not cred_dir.exists():
         return []
@@ -294,11 +293,9 @@ def cmd_secret(args, manager: WorkloadManager):
                 print("No credentials found (directory does not exist)")
             return
 
-        # Scoped material included, under its full name. This used to read one
-        # directory and keep only files, so a whole subtree was invisible: an
-        # operator checking whether a workload's broker key was present got "no
-        # credentials found" for material sitting right there, and the natural
-        # next step is to seal it again.
+        # Scoped material included, under its full name: an operator told "no
+        # credentials found" for a broker key that is present would naturally
+        # seal it again.
         creds = iter_credentials(cred_dir)
 
         if args.json:

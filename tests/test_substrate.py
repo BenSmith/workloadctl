@@ -105,7 +105,7 @@ class _WorkloadDir:
         shutil.rmtree(self._tmp, ignore_errors=True)
 
 
-# ── vm_ssh_command host-key pinning (S1) ────────────────────────────────────
+# ── vm_ssh_command host-key pinning ────────────────────────────────────
 
 class TestVmSshCommandPinning(unittest.TestCase):
     def test_pins_host_key_no_permissive_options(self):
@@ -127,7 +127,7 @@ class TestVmSshCommandPinning(unittest.TestCase):
         ssh joins its trailing arguments with spaces and feeds them to the
         guest's login shell, so an argv passed through raw loses a level of
         quoting: `sh -c 'mkfs -F /dev/vdb'` arrived as `sh -c mkfs -F /dev/vdb`
-        and mkfs ran argument-less. Found by the rung-3 VM restore test, whose
+        and mkfs ran argument-less. Found by the runtime VM restore test, whose
         sentinel write failed with a usage message.
         """
         config = _make_vm_config()
@@ -1554,8 +1554,7 @@ ports = ["8080:80"]
 # ── uses_inspect() ────────────────────────────────────────────────────────────
 
 class TestUsesInspect(unittest.TestCase):
-    """Substrate.uses_inspect() is abstract (D2 in the container egress-parity
-    build spec) precisely so a third substrate can't silently inherit "never
+    """Substrate.uses_inspect() is abstract precisely so a third substrate can't silently inherit "never
     inspected" -- these lock what each real implementation answers."""
 
     def test_vm_default_egress_open_is_false(self):
@@ -1614,7 +1613,7 @@ reason = "ssh to nas"
 
     def test_container_policy_alone_is_true(self):
         # Not "policy alone doesn't count" -- a policy entry allowlists its
-        # own host (D4's third trigger), so it must trip this on its own too.
+        # own host (the third trigger), so it must trip this on its own too.
         toml = """\
 [workload]
 name = "test-policy"
@@ -1628,7 +1627,7 @@ host = "api.example.com"
         substrate = ContainerSubstrate(_make_config(toml, 'test-policy'), MagicMock())
         self.assertTrue(substrate.uses_inspect())
 
-    def test_container_host_mode_is_false_pending_p0_1(self):
+    def test_container_host_mode_is_false(self):
         toml = """\
 [workload]
 name = "test-hostmode"
@@ -2599,10 +2598,10 @@ pull = "never"
         return [c.args[0] for c in mock_warn.call_args_list]
 
     def test_root_copy_supplying_a_registry_image_is_said(self):
-        """A root-store copy left from an old local build kept the services
-        host's smb-server on it while `update` said "Already up to date"
-        (2026-10-17): the registry is never asked, so say whose copy it is,
-        how old, and how to let the registry supply it."""
+        """A root-store copy left from an old local build keeps a workload
+        on it while `update` says "Already up to date": the registry is never
+        asked, so say whose copy it is, how old, and how to let the registry
+        supply it."""
         said = self._warnings(self.BUILDABLE_TOML, handled=True)
         self.assertEqual(len(said), 1)
         self.assertIn("root's image store (built 2026-08-06)", said[0])

@@ -1,9 +1,9 @@
-"""Rung 5 T6 — the effective-rules report.
+"""The effective-rules report.
 
 WHAT THESE PIN, and why each one is here rather than being obvious:
 
 The report exists because reading the file is NOT the same as knowing what
-applies. `policy_governs()`'s docstring has said so since rung 3: host
+applies. `policy_governs()`'s docstring says so: host
 patterns union among themselves, so `*.example.com` and `api.example.com` both
 govern `api.example.com` and neither overrides the other. Every test below is
 either that composition rule as an operator would see it rendered, or one of the
@@ -42,7 +42,7 @@ def entry(host, methods=None, paths=None):
 
 
 class CompositionRuleTest(unittest.TestCase):
-    """§3: a host any policy entry matches is governed by THOSE ENTRIES ALONE."""
+    """A host any policy entry matches is governed by THOSE ENTRIES ALONE."""
 
     def test_a_governed_host_does_not_report_the_allowlist_as_permitting_it(self):
         """The union reading, which is the failure this report exists to make
@@ -339,18 +339,15 @@ class CommandTest(unittest.TestCase):
     def test_an_unfiltered_workload_is_refused_with_a_nonzero_code(self):
         """And the code has to be RETURNED nonzero, because `rules` reports
         failure the way `egress` does -- main() exits with what a handler
-        returns, and a handler that printed a diagnostic and returned 0 was the
-        rung 5 defect found on hardware."""
+        returns, and a handler that prints a diagnostic and returns 0 reports
+        success."""
         code, _ = self._run(self._args(), uses_inspect=False)
         self.assertEqual(code, 1)
 
     def test_an_inspected_container_is_rendered_not_refused(self):
-        """G5 routed. It used to be told `rules` had no renderer for it.
-
-        The refusal was accurate while it stood -- the container HAS a
-        [network] trigger and a real document on disk, so the plain
-        not-inspected text would have been false in both halves -- but the
-        renderer exists now and the honest answer is the document.
+        """The container HAS a [network] trigger and a real document on
+        disk, so the plain not-inspected text would be false in both halves;
+        the honest answer is the document.
         """
         buf = io.StringIO()
         cfg = mock.Mock()
@@ -370,7 +367,7 @@ class CommandTest(unittest.TestCase):
     def test_a_container_renders_through_the_CONTAINER_renderer(self):
         """The reason the gate could not be routed on its own.
 
-        A hosts-only container is "splice" by the three-rung ladder; the VM
+        A hosts-only container is "splice" by the three-step ladder; the VM
         renderer would default the same TOML to "inspect". Both produce a
         document and both look right, so nothing but this assertion tells
         them apart -- and the wrong one claims every admitted connection is

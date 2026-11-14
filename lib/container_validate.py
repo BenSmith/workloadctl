@@ -88,10 +88,9 @@ def validate_publish_ports(ports, where: str) -> list[str]:
 
 def validate_container_network(net: dict, config: dict | None = None) -> list[str]:
     """Validate [network] on a container workload. Returns a list of error
-    strings. Implements every numbered rule in the container egress-parity
-    build spec's validation section, V13 being the refusal of a
-    [[network.http2]] array, plus the mode="host" delta (§6 delta 2),
-    settled by the P0-1 hardware spike -- see the module note above.
+    strings. Covers the egress keys, the refusal of a [[network.http2]]
+    array, and the mode="host" refusal measured on hardware -- see the
+    module note above.
 
     `config` is the whole parsed TOML, and it is optional only so that the
     hundreds of tests exercising one [network] table need not build one. It is
@@ -111,7 +110,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
     # any mode, even one that ignores ports.)
     errors.extend(validate_publish_ports(net.get("ports"), "[network].ports"))
 
-    # V13. Refused by name, as [[vm.network.http2]] is: the table is not
+    # Refused by name, as [[vm.network.http2]] is: the table is not
     # read, and one accepted without a word reads as h2 kept for the host.
     if "http2" in net:
         errors.append(
@@ -121,7 +120,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
             "reason, to [[network.splice]], and it is not decrypted. Drop "
             "the entry if the host takes HTTP/1.1.")
 
-    # --- The mode = "host" delta (build spec §6 delta 2) ---
+    # --- mode = "host" ---
     # First, and on its own: every other rule below describes how to spell an
     # egress policy, and under host mode none of them can be honoured. Naming
     # the keys the workload actually set keeps the message actionable when a
@@ -160,7 +159,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                           for e in _validate_container_host_pattern(pattern))
     hosts = [h.strip() for h in raw_hosts if isinstance(h, str) and h.strip()]
 
-    # --- [[network.allow]] -- shape + reason (V14) ---
+    # --- [[network.allow]] -- shape + reason ---
     raw_allow = net.get("allow", [])
     if not isinstance(raw_allow, list):
         errors.append(
@@ -193,7 +192,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                 f"[network].allow: {label!r} `port` must be an integer "
                 f"1-65535, got {port!r}")
         elif port in (80, 443):
-            # R5/§5: 80 and 443 are redirected into the inspector before this
+            # 80 and 443 are redirected into the inspector before this
             # allowlist is ever consulted -- an element here for either would
             # be armed and never matched, reporting a destination as exempt
             # from inspection that is inspected regardless.
@@ -203,12 +202,12 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                 f"[[network.allow]] is for non-80/443 destinations only "
                 f"(use .hosts or [[network.policy]] for HTTP/HTTPS)")
         if not isinstance(item.get("reason"), str) or not item["reason"].strip():
-            errors.append(  # V14
+            errors.append(
                 f"[network].allow: {label!r} has no `reason`; it is a "
                 f"bypass of the internal-destination drop and carries one "
                 f"like [[network.internal]] does")
 
-    # --- [[network.internal]] / [[network.splice]] -- shape + reason (V14) ---
+    # --- [[network.internal]] / [[network.splice]] -- shape + reason ---
     def _validate_host_reason_array(key: str, bypass_clause: str) -> list[str]:
         out_hosts: list[str] = []
         out_errors: list[str] = []
@@ -232,7 +231,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
             host = item["host"].strip()
             out_hosts.append(host)
             if not isinstance(item.get("reason"), str) or not item["reason"].strip():
-                out_errors.append(  # V14
+                out_errors.append(
                     f"[network].{key}: {host!r} has no `reason`; {bypass_clause}")
         return out_hosts, out_errors
 
@@ -248,8 +247,8 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
         "[[network.allow]] does")
     errors.extend(splice_errors)
     for host in splice_hosts:
-        # V12: dead-entry check. Splice only excepts from the allowlist -- a
-        # policy entry already allowlists its own host (V1), so unlike
+        # Dead-entry check. Splice only excepts from the allowlist -- a
+        # policy entry already allowlists its own host, so unlike
         # `internal` below this does not also check policy_hosts: exempting a
         # host from inspection that a policy entry intends to inspect is a
         # contradiction, not redundancy, and is refused with the policy
@@ -261,7 +260,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                 f"the workload is refused before the exemption is reached. "
                 f"Add it to .hosts, or drop this entry")
 
-    # --- [[network.credential]] -- shape (feeds V7/V10) ---
+    # --- [[network.credential]] -- shape ---
     #
     # The same blocks the VM schema carries, validated by the same function.
     # This was a port of it and was missing five of its rules; the two
@@ -272,7 +271,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
     errors.extend(credential_errors)
     credential_names = {c.name for c in credentials}
 
-    # --- [[network.policy]] -- shape + V1-V11 ---
+    # --- [[network.policy]] -- shape and rules ---
     raw_policy = net.get("policy", [])
     vm_policy_entries: list[ContainerPolicyEntry] = []
     if not isinstance(raw_policy, list):
@@ -323,13 +322,13 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                             f"token")
                         continue
                     name = token.upper()
-                    if name in POLICY_METHODS_REFUSED:  # V5
+                    if name in POLICY_METHODS_REFUSED:
                         errors.append(
                             f"[network].policy: {host!r} names the method "
                             f"{token!r}, which this inspector never sees -- "
                             f"{POLICY_METHODS_REFUSED[name]}")
                         continue
-                    if name not in POLICY_METHODS:  # V5
+                    if name not in POLICY_METHODS:
                         errors.append(
                             f"[network].policy: {host!r} names {token!r}, "
                             f"which is not a registered HTTP method")
@@ -361,7 +360,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                                       f"got {pattern!r}")
                         continue
                     if not pattern.startswith("/") or "?" in pattern or "#" in pattern:
-                        errors.append(  # V6
+                        errors.append(
                             f"[network].policy: {host!r} path {pattern!r} "
                             f"must start with '/' and carry no query or "
                             f"fragment -- `paths` matches the path alone")
@@ -383,12 +382,12 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                               f"block, got {value!r}")
             else:
                 credential = value.strip()
-                if credential not in credential_names:  # V7
+                if credential not in credential_names:
                     errors.append(
                         f"[network].policy: {host!r} selects credential "
                         f"{credential!r}, which no [[network.credential]] "
                         f"block declares")
-                if credential and "*" in host:  # V8
+                if credential and "*" in host:
                     errors.append(
                         f"[network].policy: {host!r} selects credential "
                         f"{credential!r}, but a credential is attached per "
@@ -411,8 +410,8 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
     policy_hosts = [e.host for e in vm_policy_entries]
 
     for host in internal_hosts:
-        # V12, deferred until policy_hosts exists: a name in `policy` need
-        # not also appear in `hosts` (V1), so an `internal` entry for such a
+        # The dead-entry check, deferred until policy_hosts exists: a name in `policy` need
+        # not also appear in `hosts`, so an `internal` entry for such a
         # name is live even though `hosts` alone does not cover it.
         if not any(patterns_overlap(host, pattern) for pattern in hosts) \
                 and not any(patterns_overlap(host, pattern) for pattern in policy_hosts):
@@ -424,7 +423,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                 f"entry")
 
     if vm_policy_entries:
-        # V9: tls = "splice" plus any policy entry.
+        # tls = "splice" plus any policy entry.
         explicit_tls = container_tls_mode(net)
         if explicit_tls == "splice":
             errors.append(
@@ -452,7 +451,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                         f"and let the host be inspected")
                     break
 
-        # V3: where more than one entry matches a host by pattern, every one
+        # Where more than one entry matches a host by pattern, every one
         # of those entries must state both `methods` and `paths`.
         for i, entry in enumerate(vm_policy_entries):
             siblings = [o for j, o in enumerate(vm_policy_entries)
@@ -469,7 +468,7 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                     f"entries overlap, an omitted key means ANY -- state "
                     f"both keys on every overlapping entry")
 
-        # V4: apex trap. A wildcard entry beneath an allowlisted apex leaves
+        # The apex trap. A wildcard entry beneath an allowlisted apex leaves
         # the apex allowlisted and inspected with no rules applied.
         for apex in hosts:
             wildcard = f"*.{apex}"
@@ -494,8 +493,8 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
     # the one nothing constrained. An unrecognised literal is the worse of the
     # two. It is not merely accepted: container_effective_tls_mode() returns it
     # verbatim, so `tls = "inspct"` is an effective mode of "inspct", which is
-    # neither "inspect" (so V16 never asks for ca_delivery) nor "splice" (so
-    # V18 never fires), and the workload validates clean, starts clean, and
+    # neither "inspect" (so nothing asks for ca_delivery) nor "splice" (so
+    # the redundant-splice check never fires), and the workload validates clean, starts clean, and
     # runs with a policy naming a mode the inspector does not implement.
     explicit_tls = container_tls_mode(net)
     if explicit_tls is not None and explicit_tls not in ("inspect", "splice"):
@@ -523,13 +522,13 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
             "explicitly -- a reason recording a bypass that was never chosen "
             "sends a reviewer looking for an exposure that is not there")
 
-    # V16/V18: the interlock between the computed tls mode and ca_delivery.
+    # The interlock between the computed tls mode and ca_delivery.
     effective_tls = container_effective_tls_mode(net)
     ca_delivery = container_ca_delivery(net)
     ca_mount_path = container_ca_mount_path(net)
     is_triggered = bool(hosts or vm_policy_entries or net.get("allow"))
     if is_triggered and effective_tls == "inspect":
-        if ca_delivery is None:  # V16
+        if ca_delivery is None:
             errors.append(
                 "[network]: this workload's effective tls mode is 'inspect' "
                 "(a policy entry is present, or tls = 'inspect' was written "
@@ -546,9 +545,9 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
                 "the in-container path the CA bundle is mounted at")
         # ca_delivery = "image" asserts the image was built trusting this
         # workload's CA, which can only be true of a bundle with its own
-        # Containerfile (R9) -- but this function sees only [network], not
+        # Containerfile -- but this function sees only [network], not
         # the bundle directory, so that check belongs to whichever caller
-        # loads the whole workload (a TODO for P1-2's caller, not a gap in
+        # loads the whole workload (a TODO for that caller, not a gap in
         # this function's contract).
     if ca_mount_path and ca_delivery != "mount":
         errors.append(
@@ -557,16 +556,16 @@ def validate_container_network(net: dict, config: dict | None = None) -> list[st
             "the one bind-mounting the bundle")
 
     for host in splice_hosts:
-        # V18: a per-host splice entry when the whole workload is already on
-        # rung 2 (splice) exempts nothing, and V14 just made the operator
-        # write a `reason` for a hole they did not open.
+        # A per-host splice entry when the whole workload is already spliced
+        # exempts nothing, and the operator was made to write a `reason` for
+        # a hole they did not open.
         if effective_tls == "splice":
             errors.append(
                 f"[network].splice: {host!r} is redundant -- this "
                 f"workload's effective tls mode is already 'splice', so "
                 f"every host is spliced and this entry exempts nothing. "
                 f"Drop it, or add a [[network.policy]] entry to move the "
-                f"workload to rung 3 first")
+                f"workload to termination first")
 
     return errors
 

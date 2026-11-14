@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """The inspector's and responder's inputs live in a root-owned directory.
 
-The 2026-10-11 security audit (F20): inspect.json and resolve-static.json
-were in /run/workload-vm/<name>/, which is the workload uid's, and as the
-VM's uid under QEMU's label a file was created there and inspect.json moved
-aside and back. They now live in /run/workload-vm/_policy/<name>/, root's.
+/run/workload-vm/<name>/ is the workload uid's, and as the VM's uid under
+QEMU's label a file can be created there and inspect.json moved aside and
+back. So inspect.json and resolve-static.json live in
+/run/workload-vm/_policy/<name>/, root's.
 
 workload-ensure-user makes that directory, but in the setup service, which
 does not run again when a workload is restarted; on a host whose workloadctl
-was upgraded without a reboot the writers reached a directory that was not
-there and the inspect socket failed its start (measured on the proving
-host). So each writer makes it too, and that is what this holds.
+was upgraded without a reboot the writers would reach a directory that is
+not there and the inspect socket would fail its start. So each writer makes
+it too, and that is what this holds.
 """
 
 import os

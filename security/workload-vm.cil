@@ -118,8 +118,8 @@
 ; `workloadctl diagnose` therefore reports both halves: whether the module is
 ; loaded, and whether the loaded copy still matches the .cil this build ships
 ; (semodule keeps the source verbatim under <store>/active/modules/<prio>/, so
-; the comparison is exact). A module that is present but stale used to pass
-; every check. The fix is `semodule -i /usr/share/workloadctl/workload-vm.cil`
+; the comparison is exact), since a module that is present but stale would
+; otherwise pass every check. The fix is `semodule -i /usr/share/workloadctl/workload-vm.cil`
 ; — /usr is replaced wholesale, so the shipped file is always current.
 
 ; ---------------------------------------------------------------------------

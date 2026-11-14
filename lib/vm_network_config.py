@@ -28,7 +28,7 @@ from workload_addr import allow_reserved_reason
 # The target is `<addr>:<port>` (`[<v6addr>]:<port>` for IPv6) **or a name with
 # a port** (`git.local:2222`), resolved host-side once at start. A name is safe
 # here only because the guest's own resolver is a static map we serve (the
-# inspector design, §9), so the host-side answer and the guest-side answer come
+# synthesising responder), so the host-side answer and the guest-side answer come
 # from the same place; without that, a record that moved would leave the
 # element silently wrong for the life of the VM.
 VM_ALLOW_ADDR_RE = re.compile(
@@ -216,7 +216,7 @@ def vm_allow_resolved(allow):
     """Parse and resolve every `allow` entry once. [(VmAllowEntry, [addr...])].
 
     The single resolution the whole allow path gets, host-side and once at
-    start (§9). Every address a name answers with is kept, not just the first:
+    start. Every address a name answers with is kept, not just the first:
     a dual-stack forge answers with both families, and taking half of it is the
     "works until it doesn't" failure the both-families-or-neither rule exists to
     stop.

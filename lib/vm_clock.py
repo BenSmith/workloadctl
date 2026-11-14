@@ -37,14 +37,11 @@ resume. A guest resumed between ticks spends up to a minute skewed, and a
 handshake in that minute fails once and works on retry; that window is the
 period, and the period is the design.
 
-THE INSPECTOR USED TO ASK TOO, AND NO LONGER DOES. For one rung the minter
-ran a launcher-supplied "remedy" on every cache miss -- this check, on a
-VM -- to close the keeper's window at the moment it was about to matter. It
-closed it only for a mint miss (a cached leaf never reached it), for one
-retryable handshake, and it cost the inspector a seam whose only
-implementation dialled QEMU's agent socket from the domain that parses what
-the internet sends. The keeper covers every VM; the inspector mints and
-knows nothing about guests. `diagnose` is where a guest with no agent is
+THE INSPECTOR DOES NOT ASK. A per-mint check would close the keeper's
+window only for a mint miss (a cached leaf never reaches it), for one
+retryable handshake, and would cost the inspector a seam that dials QEMU's
+agent socket from the domain that parses what the internet sends. The keeper
+covers every VM; the inspector mints and knows nothing about guests. `diagnose` is where a guest with no agent is
 reported (lib/diagnose_vm_clock.py), since the keeper is silent about it by
 design.
 

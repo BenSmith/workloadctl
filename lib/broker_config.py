@@ -8,22 +8,18 @@ moatery's. A writer and a reader that each spell the flags drift, and a flag
 emitted here and not taken there is a broker that refuses to start, so
 tests/test_moatery_seam.py pins the command against the program's parser.
 
-IT WAS A DOCUMENT. broker_command replaces render_broker_config, which
-rendered a broker.toml that write_instance_config -- the unit's ExecStartPre,
-as its DynamicUser, into its RuntimeDirectory -- wrote at every start. Every
-value in that file was a pure function of the workload TOML and the uid,
-which is exactly what this module holds when the unit is generated, so the
-file was a second rendering of facts the ExecStart= line carries itself.
-What it cost: a TOML reader in the broker, a key vocabulary at each level
-for the two to agree on, a writer, a helper binary, an ExecStartPre and a
-RuntimeDirectory=. What it bought, it did not: "never serving a previous
-boot's credential set" is LoadCredentialEncrypted='s property, and the
-file held no material.
+FLAGS, NOT A CONFIG FILE. Every value the broker needs is a pure function
+of the workload TOML and the uid, which is exactly what this module holds
+when the unit is generated, so the ExecStart= line carries all of it. A
+config file would be a second rendering of the same facts, and would cost a
+TOML reader in the broker, a key vocabulary for the two to agree on, a
+writer, an ExecStartPre and a RuntimeDirectory=. "Never serving a previous
+boot's credential set" is LoadCredentialEncrypted='s property, not a file's.
 
 `VmCredential` and its parse live here rather than with the rest of
 `[vm.network]` because every field on a credential decides something about the
 broker instance and nothing else. `validate_vm_network` reads them from the
-rung above, which is the direction that works.
+layer above, which is the direction that works.
 
 Installed to /usr/libexec/workloadctl/broker_config.py.
 """
@@ -57,8 +53,8 @@ BROKER_BIN = "/usr/libexec/moatery/moat-broker"
 # because a credential is a property of the broker instance and of nothing else:
 # every field on it decides what material that instance loads, what the guest is
 # seeded with instead, and how the header is spelled. `validate_vm_network`
-# reads them from a rung above, which is the right direction; the renderer
-# reading them from a rung above would have been the cycle.
+# reads them from a layer above, which is the right direction; the renderer
+# reading them from a layer above would be the cycle.
 
 class VmCredential(NamedTuple):
     """One [[vm.network.credential]] block, normalised.
@@ -82,14 +78,11 @@ class VmCredential(NamedTuple):
     convention -- so a workload that says nothing gets exactly what it got
     before these keys existed.
 
-    THEY EXIST BECAUSE THE GENERATOR DROPPED THEM. ADR 007 names the profile as
-    `(upstream, credential, auth_header, auth_format)` and lists "one profile
-    per sandbox" as the limit this rung removes; the first render emitted the
-    first two and defaulted the rest, so every workload got `x-api-key` and any
-    provider wanting `Authorization: Bearer` answered 401 on a request this
-    layer considered fully authorised. The hand-written host-wide config could
-    express it and the generated one could not, which made the new shape a
-    regression for a whole class of provider with no key to fix it with.
+    THE WHOLE PROFILE. ADR 007 names it as `(upstream, credential, auth_header,
+    auth_format)`. A render that emitted the first two and defaulted the rest
+    would give every workload `x-api-key`, and any provider wanting
+    `Authorization: Bearer` would answer 401 on a request this layer considers
+    fully authorised, with no key to fix it with.
 
     NOTHING HERE TRAVELS ON THE WIRE AS A SELECTOR. The inspector sends no name
     and no credential hint; the broker's whole dispatch key is (uid, Host), per
@@ -276,7 +269,7 @@ def broker_command(name: str, uid: int, hosts, credentials) -> list[str]:
     ]
     # ONE FLAG PER HOST, not per policy entry. Splitting a host's rules
     # across entries -- `/v1/*` for GET, `/v2/*` for POST, one credential --
-    # is the ordinary way to write §3, and it validates: the only per-host
+    # is the ordinary way to write a policy, and it validates: the only per-host
     # credential rule refuses entries that disagree about WHICH credential.
     # Rendered per entry, the old document held one host's table twice,
     # which TOML refused outright, so the broker exited at start and every
@@ -412,7 +405,7 @@ def inspect_link_address_commands(uid: int) -> tuple[list[str], list[str]]:
     """The `ip addr` argvs putting this workload's inspector addresses on the
     shared dummy link, (v4, v6).
 
-    Both families or neither: the redirect is dual-stack from the first rung,
+    Both families or neither: the redirect is dual-stack,
     and the address is on a dummy link and therefore local, so neither add
     touches a route or a sysctl.
 

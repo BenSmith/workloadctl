@@ -7,7 +7,7 @@ throwaway VM workloads and probes them from inside.
 
 WHY TWO GUESTS
 
-The rung's claim has two halves that fail independently, and a single guest
+The claim has two halves that fail independently, and a single guest
 proves neither on its own:
 
   plain  filtered, no `hosts`   nothing is allowlisted, so every dial to 80/443
@@ -23,16 +23,6 @@ proves neither on its own:
 
 The two differ in exactly one config line, which is what makes a failure
 attributable.
-
-WHAT THIS RIG LOOKED LIKE BEFORE RUNG 2, AND WHY THAT MATTERS TO A READER
-
-Its second arm was called `proxy` and carried a real tinyproxy. Its job was the
-wl_inspect_cg exemption: the proxy's upstream CONNECT leg was tcp dport 443 from
-the workload's own uid, so without that element it was redirected into the
-listener it was dialling past. Rung 2 deleted the proxy, so that member of the
-set is gone and the arm's purpose changed underneath its name. Every "last
-green" figure recorded against the older shape describes a different rig; see
-tests/manual/README.md.
 
 WHAT ONLY A REAL BOOT CAN SHOW
 
@@ -88,7 +78,7 @@ DNS_ALLOW = "1.1.1.1:53"
 ALLOWED_HOST = "example.com"
 
 # The endpoint the retired proxy advertised. Dialled from inside a guest to
-# prove nothing answers there any more -- the negative this rung owes, and the
+# prove nothing answers there any more -- the negative this rig owes, and the
 # one that catches a host still carrying a stale nft element or an older
 # workloadctl beside this one.
 RETIRED_PROXY_ADDR = "192.0.2.1"
@@ -281,16 +271,10 @@ def toml_for(arm):
     # Only the second arm gets `hosts`, and it is not a naming accident: it is
     # the single line the two arms differ by, so a difference in what they can
     # reach has one available explanation.
-    #
-    # Under rung 1 this line did more than that. `hosts` was what vm_uses_proxy()
-    # keyed on, so setting it on the plain arm did not give that arm an
-    # allowlist -- it gave it a tinyproxy and six proxy variables, and stopped it
-    # being the plain arm at all. Measured, by doing it: the forwards returned
-    # 200 through the proxy and the inspector never activated. That trap is gone
-    # with the predicate, and both arms are inspected either way now.
+
     if arm.hosts:
         lines.append(f'hosts = ["{ALLOWED_HOST}"]')
-    # The table form, not the bare string rung 2 retired. A rig carrying a
+    # The table form, not a bare string. A rig carrying a
     # retired spelling fails at enable with no VM ever booted, which looks
     # nothing like the thing under test.
     lines += [
@@ -390,12 +374,7 @@ def exemptions():
 
     WHY THIS IS NOT IN guards()
 
-    It was, through rung 1, and it passed there -- because the member it was
-    really watching was the workload's tinyproxy, an ordinary long-running
-    service that came up with the VM. By the time guards() ran, its element was
-    installed.
-
-    The inspector is not that. It is socket-activated, and the elements are
+    The inspector is socket-activated, and the elements are
     armed by the SERVICE's ExecStartPre, not the socket's -- a cgroup element
     resolves to an id at add time, and at the moment the socket is bound the
     service has no cgroup for one to resolve to. So before the first guest dial
@@ -488,7 +467,7 @@ def probes():
     record(f"{plain}: inspect service activated by the connection",
            st == "active", st)
 
-    # THE NEGATIVE THIS RUNG OWES, and the only place it can be asked honestly:
+    # THE NEGATIVE THIS RIG OWES, and the only place it can be asked honestly:
     # inside a booted guest, on a host running the real thing.
     #
     # An operator upgrading a workload whose image bakes in the old export, or
@@ -515,19 +494,15 @@ def probes():
     record(f"{plain}: a guest setting the old https_proxy fails",
            r.returncode != 0 or " rc=0" not in r.stdout, parse_probe(r))
 
-    # THE ALLOWED PATH, and until it was written nothing had ever walked it.
-    # Every event this rig produced was a drop -- {"dropped": 5, "forwarded": 0,
-    # "spliced": 0} on a 31/31 run under the rung-1 shape -- because the plain
-    # arm's allowlist is empty by construction and the old proxy arm's traffic
-    # was exempted by wl_inspect_cg before the inspector ever saw it. So the
-    # inspector's forward and splice legs had never executed under SELinux, and
-    # the module grants those sockets neither `create` nor `connect` nor
-    # name_connect on any port.
+    # THE ALLOWED PATH. The plain arm's allowlist is empty by construction, so
+    # without this arm every event is a drop and the inspector's forward and
+    # splice legs never execute under SELinux -- the module's `create`,
+    # `connect` and name_connect grants on those sockets go unmeasured.
     #
-    # This arm is now the ordinary case rather than an adversarial one: a guest
+    # This arm is the ordinary case rather than an adversarial one: a guest
     # with an allowlist, dialling an allowlisted host, with nothing to bypass
-    # because nothing was ever offered to it. That is the change rung 2 made, and
-    # these two probes are what say the change is real rather than only intended.
+    # because nothing was ever offered to it. These two probes are what say that
+    # is real rather than only intended.
     p = "wlri-hosts"
     r = guest(p, "env | grep -i -E '^(https?|no)_proxy=' | wc -l")
     record(f"{p}: guest has no proxy variables either",
@@ -571,7 +546,7 @@ def egress(name, *flags, as_uid=None, timeout=60):
 
 
 def records():
-    """THE SEAM T1 AND T2 ONLY HAVE TOGETHER — rung 5.
+    """THE SEAM THE RECORD'S WRITER AND READER ONLY HAVE TOGETHER.
 
     A live guest makes a request, and an operator reads it back. Nothing in the
     unit suite reaches this: the record's writer is exercised against a fake
@@ -724,9 +699,8 @@ def _concat_of(elem):
     renders the bare {"concat": [...]}. wl_inspect_self/self6 carry counters
     (deliberately: see workload-filter.nft) and wl_inspect_dst/dst6 do not, so
     a reader that knows only the bare shape passes on the maps and fails on the
-    sets, reporting a set that is armed as unarmed. Measured that way on a KVM
-    host 2026-08-31: the elements printed in the failure detail plainly
-    contained the uid the assertion said was missing.
+    sets, reporting a set that is armed as unarmed while the elements printed
+    in the failure detail plainly contain the uid it says is missing.
 
     Returns None for anything that is neither shape, so an nft output this does
     not understand reads as "no match" rather than raising inside the loop.
@@ -741,13 +715,13 @@ def _concat_of(elem):
 
 
 def staleness():
-    """THE SEAMS T4, T5 AND T7 ONLY HAVE ON A LIVE HOST — rung 5.
+    """THREE SEAMS THAT EXIST ONLY ON A LIVE HOST.
 
     All three are cross-process comparisons between a value a RUNNING process
     holds and a value on disk, and every one of them is green in the unit suite
     against injected observations. What the unit suite cannot reach:
 
-      T4  the digest has to survive the trip. The listener computes it at its
+      the policy digest has to survive the trip. The listener computes it at its
           own start and writes it into a status file in a RuntimeDirectory a
           confined domain may not be able to write -- and that write is
           guaranteed never to raise, so a denial produces a missing key, which
@@ -755,11 +729,11 @@ def staleness():
           policy comparison that never runs and a policy comparison that always
           agrees are the same green line.
 
-      T5  the four filter-table sets have to be readable by name from the CLI's
+      the filter sets: the four filter-table sets have to be readable by name from the CLI's
           own domain. A drifted name, a set that moved tables, or an `nft`
           the CLI may not exec all produce "unreadable", which is also silence.
 
-      T7  the fingerprint the minter reports has to equal the one computed off
+      the CA: the fingerprint the minter reports has to equal the one computed off
           the file. Both come from egress_mint.pem_fingerprint, but only here do
           they come from two different PROCESSES reading two different copies
           -- the listener's remembered value against a fresh read.
@@ -768,12 +742,12 @@ def staleness():
     asserted rather than assumed: a rig that breaks the product and dies leaves
     the next run measuring the break. See tests/manual/README.md.
     """
-    say("== staleness (T4/T5/T7) ==")
+    say("== staleness ==")
     name = "wlri-hosts"
     uid = uid_of(name)
     policy = str(Path(VM_RUN_DIR) / "_policy" / name / INSPECT_POLICY)
 
-    # --- T4: the digest reaches the status file, and it is the RIGHT one ---
+    # --- the digest reaches the status file, and it is the RIGHT one ---
     doc, detail = read_status(name, INSPECT_STATUS)
     running = (doc or {}).get(DIGEST_KEY)
     record("the listener reports a policy digest",
@@ -796,7 +770,7 @@ def staleness():
            "DIFFERENT policy" not in clean.stdout,
            clean.stdout[-400:] if "DIFFERENT policy" in clean.stdout else "quiet")
 
-    # --- T4: make the disk copy differ, and require diagnose to say so ---
+    # --- make the disk copy differ, and require diagnose to say so ---
     saved = None
     try:
         saved = Path(policy).read_bytes()
@@ -825,7 +799,7 @@ def staleness():
     record("the document was restored",
            "DIFFERENT policy" not in after.stdout, after.stdout[-400:])
 
-    # --- T5: the four filter-table sets, read by the names diagnose uses ---
+    # --- the four filter-table sets, read by the names diagnose uses ---
     for set_name in ("wl_inspect_dst", "wl_inspect_dst6",
                      "wl_inspect_self", "wl_inspect_self6"):
         # "workload_filter", not "inet workload_filter": set_elements matches
@@ -842,7 +816,7 @@ def staleness():
         record(f"{set_name} carries uid {uid}", armed,
                f"elements={elems!r}"[:200])
 
-    # --- T7: the minter's CA fingerprint equals a fresh read of the file ---
+    # --- the minter's CA fingerprint equals a fresh read of the file ---
     ca = ((doc or {}).get("mint") or {}).get("ca") or {}
     reported = ca.get("sha256") if isinstance(ca, dict) else None
     cert = Path(EGRESS_PKI) / name / CA_REL
@@ -907,15 +881,12 @@ def audit_denials(mark, needles):
     empty list as "nothing in the audited set", and do the -DB pass by hand
     before concluding a domain is complete.
 
-    That pass has now been done for wlinspect_t and wlresolve_t, on a KVM host
-    2026-09-01: `semodule -DB`, a full green rig run (57/57), harvest, then
-    `semodule -B`. It raised the run's denial count from 43 to 60 and added
-    NOTHING in either producer domain -- the whole delta was svirt_t and
-    init_t, and all of it the exec-transition triple (siginh, rlimitinh,
+    For wlinspect_t and wlresolve_t, a `semodule -DB` pass over a full green
+    run adds NOTHING in either producer domain -- the delta is svirt_t and
+    init_t, all of it the exec-transition triple (siginh, rlimitinh,
     noatsecure) plus inherited-fd read/write, which upstream policy dontaudits
-    because a domain transition legitimately produces them. So the two domains
-    this rig covers are complete as of that date. It does not generalise: a
-    later grant, or a new domain, re-owes the pass.
+    because a domain transition legitimately produces them. A new grant, or a
+    new domain, owes the pass again.
     """
     if mark is None:
         return []

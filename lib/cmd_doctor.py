@@ -186,7 +186,7 @@ def cmd_doctor(args, manager):
 
     liveness = get_substrate(config, manager).liveness()
 
-    # The inspector's figures — rung 5 T8, and the reason they are collected
+    # The inspector's figures. The reason they are collected
     # here rather than folded into `checks` is that they carry NO VERDICT and
     # add NOTHING to `problems` below. Every one of them counts events, and a
     # guest being denied is the filter working: a doctor that reported
@@ -200,8 +200,8 @@ def cmd_doctor(args, manager):
     # definition of "is the inspector healthy" that agrees with the first only
     # until someone edits one of them.
     egress = None
-    # Routed through the substrate predicate (G6 in the container
-    # egress-parity build spec) rather than uses_inspect() directly: the
+    # Routed through the substrate predicate rather than
+    # uses_inspect() directly: the
     # figures below are read purely off the on-disk status JSON keyed by
     # workload name (inspect_figures.read_inspect_status/read_resolve_status),
     # which carries nothing VM-specific, so this block already generalises.

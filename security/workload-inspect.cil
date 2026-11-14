@@ -93,27 +93,21 @@
 ;     line shows 0x542a (TCGETS2, glibc's isatty) rather than 0x5401, plus
 ;     one 0x5413 (TIOCGWINSZ): argparse sizing its help formatter, which
 ;     add_argument builds even when no help is printed.
-;   (WAS: cert_t, container_file_t and svirt_image_t. All three were granted
-;     in rung 3 -- see THE TERMINATING PLANE below. The reasoning that kept
-;     them denied was sound and its premise expired.)
-;   (WAS, the other way: qemu_var_run_t:sock_file, svirt_t connectto and
-;     self:unix_stream_socket, granted in rung 3 for the mint-time clock
-;     check and REMOVED when the check left for workload-clock.cil. A
-;     `semodule -DB` run of clock_rig on two enforcing hosts, 2026-09-20,
-;     with the inspector minting and terminating for a real guest: this
-;     domain attempted none of the three. Nothing here opens a unix socket.)
 ;
-; init_var_run_t:dir search was in this list for about an hour and does NOT
-; belong: it is granted above, because the resolver traverses /run/systemd to
-; reach the stub resolv.conf. It measured as "used, and the run is green
-; anyway" only because no green run had ever resolved a hostname.
+; Nothing here opens a unix socket: with the inspector minting and
+; terminating for a real guest under `semodule -DB`, this domain attempts no
+; qemu_var_run_t:sock_file, svirt_t connectto or self:unix_stream_socket.
+; The guest's clock is workload-clock.cil's business.
 ;
-; The boundary those two defended is NOT relaxed by their being granted: see
-; THE TERMINATING PLANE at the end of this module, which is the rule §6 said
-; to add when the listener gained a reason to read a certificate. `search` on
-; a directory is traversal and nothing else; the disks and the state files
-; themselves remain unreadable to this domain, and that is what the boundary
-; was ever about.
+; init_var_run_t:dir search is granted above, not listed here: the resolver
+; traverses /run/systemd to reach the stub resolv.conf, and a run that
+; resolves no hostname is green without it.
+;
+; cert_t, container_file_t and svirt_image_t are granted for the terminating
+; plane, and the boundary is NOT relaxed by that: see THE TERMINATING PLANE
+; at the end of this module. `search` on a directory is traversal and nothing
+; else; the disks and the state files themselves remain unreadable to this
+; domain, and that is what the boundary is about.
 
 (type wlinspect_t)
 (typeattributeset domain (wlinspect_t))
@@ -147,8 +141,7 @@
 ; entrypoint sets sys.dont_write_bytecode.
 (allow wlinspect_t bin_t (file (execute map)))
 
-; stdout/stderr to the journal — the log line per connection is the whole of
-; this rung's output.
+; stdout/stderr to the journal — the log line per connection.
 (allow wlinspect_t init_t (unix_stream_socket (read write)))
 ; The residual tty probe from the header: denied, and not logged.
 (dontaudit wlinspect_t init_t (unix_stream_socket (getattr ioctl)))
@@ -206,16 +199,16 @@
 ;
 ; The path is reached by a guest that dials an allowlisted host directly, past
 ; the redirect -- not a corner case but the adversarial case this
-; whole rung exists for: the drop is what makes the allowlist binding. A
+; whole design exists for: the drop is what makes the allowlist binding. A
 ; cooperating guest proves nothing about it.
 ;
-; WHY IT WAS SILENT, WHICH IS THE PART WORTH REMEMBERING
+; WHY A MISSING RULE IS SILENT
 ;
 ; A denial here does not crash the inspector and does not appear as a failure.
 ; connect() or getaddrinfo() raises, the relay catches OSError, and the
 ; connection is counted as a DROP with reason 'upstream unreachable'. That is
-; byte-identical to a genuinely dead upstream. Measured under enforcing with
-; these rules missing: 502 to the guest, and
+; byte-identical to a genuinely dead upstream. Under enforcing with these
+; rules missing: 502 to the guest, and
 ;   drop plane=cleartext host=example.com
 ;     reason='upstream unreachable: [Errno -3] Temporary failure in name resolution'
 ; -- a policy gap wearing a network error's clothes. No counter distinguishes
@@ -268,10 +261,9 @@
 (allow wlinspect_t dns_port_t (tcp_socket (name_connect)))
 
 ; AND THE BROKER DIAL, which is the same class of gap as the block above, on
-; the same code path, added in the same commit as the dial itself rather than
-; harvested later. Rung 6 puts an authorised request to a credential-backed
-; host through this workload's own broker instance on 127.129.x.y:8081 instead
-; of sending it to the origin -- so the inspector opens a connection to a THIRD
+; the same code path. An authorised request to a credential-backed
+; host goes through this workload's own broker instance on 127.129.x.y:8081
+; instead of to the origin -- so the inspector opens a connection to a THIRD
 ; port type, and without this rule the first credential-backed request on an
 ; enforcing host is an AVC while every unit test stays green
 ; ([[silent-selinux-denials-pass-functional-tests]] is the standing shape of
@@ -295,7 +287,7 @@
 ; shaped exactly like the answer.)
 ;
 ; A denial here is silent in precisely the way the block above describes, with
-; one difference that is the whole reason rung 6 decision 5 exists: the drop is
+; one difference that is the whole reason the broker has a drop reason of its own: the drop is
 ; counted as `credential broker unreachable` rather than `upstream
 ; unreachable`, so an operator can at least tell "a unit on this host is not
 ; answering" from "the provider is down". It still cannot tell a denied
@@ -357,7 +349,7 @@
 ;                        times out with nothing in the guest to say why. LOUD:
 ;                        the journal names the file and the errno.
 ;   inspect-status.json  WRITTEN, periodically, via a temp file and os.replace.
-;                        The counters rung 5 reads. SILENT: the writer catches
+;                        The counters `doctor` and the exporter read. SILENT: the writer catches
 ;                        OSError and logs a warning by design, so a missing
 ;                        grant here costs the file and nothing else — a green
 ;                        rig, a working inspector, and no observability at all.
@@ -378,12 +370,12 @@
 (allow wlinspect_t qemu_var_run_t (file (create getattr open read rename setattr unlink write)))
 
 
-; THE TERMINATING PLANE (rung 3)
+; THE TERMINATING PLANE
 ;
-; Everything above this line was harvested for a listener that SPLICED TLS: it
-; read a ClientHello, dialled upstream, and copied bytes. Rung 3 terminates
-; instead -- it presents a certificate it minted, and it verifies the upstream
-; chain itself -- and that gives the domain three things it never had: a
+; Everything above this line serves a listener that SPLICES TLS: it reads a
+; ClientHello, dials upstream, and copies bytes. Termination presents a
+; certificate the inspector minted and verifies the upstream chain itself,
+; and that gives the domain three things splicing never needs: a
 ; private key to read, an `openssl` to run, and a trust store to consult.
 ;
 ; Derive these by iterating under ENFORCING, not by harvesting under
@@ -506,16 +498,10 @@
 ; boundary before adding any second subprocess here.
 (allow wlinspect_t bin_t (file (execute_no_trans)))
 
-; NO GUEST AGENT SOCKET, and there was one. For one rung the minter asked
-; qemu-guest-agent for the guest's time before signing and resynced it if
-; it had drifted, which put /run/workload-vm/<name>/ga.sock -- a socket QEMU
-; created, so svirt_t owned the other end -- on the terminating path: a
-; `sock_file` grant, `svirt_t:unix_stream_socket connectto`, and a `self`
-; unix_stream_socket line. All three went to workload-clock.cil with the
-; check itself: the domain that parses what the internet sends should not be
-; the domain that can speak to QEMU's agent channel, and once the keeper
-; ticks on every VM the mint-time check closed a one-minute window for one
-; retryable handshake. Nothing in this domain opens a unix socket now.
+; NO GUEST AGENT SOCKET. The guest's clock is workload-clock.cil's: the
+; domain that parses what the internet sends must not be the domain that can
+; speak to QEMU's agent channel (/run/workload-vm/<name>/ga.sock, whose other
+; end svirt_t owns). Nothing in this domain opens a unix socket.
 
 ; SYSTEMD MOUNTS THE CACHES BEFORE THE PROCESS EXISTS. ReadWritePaths= under
 ; ProtectSystem=strict is implemented as a bind mount that init_t performs
@@ -577,9 +563,8 @@
 ; directory wlinspect_log_t at creation, so the create is checked against that
 ; type, and shipped policy grants systemd_tmpfiles_t nothing on it. Without
 ; the create tmpfiles logs "Permission denied" on every boot, and the directory
-; exists only once an inspector's LogsDirectory= has made it. Measured on a
-; KVM host under enforcing 2026-09-27 with dontaudit rules off: `create` is
-; the whole denial at boot. systemd-tmpfiles-clean.service opens and reads
+; exists only once an inspector's LogsDirectory= has made it. Under enforcing
+; with dontaudit rules off, `create` is the whole denial at boot. systemd-tmpfiles-clean.service opens and reads
 ; every directory a `d` line names, aged or not, and fails the whole clean on
 ; the one it cannot; the denial is dontaudited.
 (allow systemd_tmpfiles_t wlinspect_log_t (dir (create getattr open read search)))

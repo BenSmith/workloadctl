@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Each workload runs at an MCS level of its own, and its files carry it.
 
-Before this, every workload's data and state were s0, which every
-container's label dominates, so only file modes kept one workload out of
-another's files, and VMs had no categories at all (audit F3). The level is
+At s0, which every container's label dominates, only file modes would keep
+one workload out of another's files, and VMs would have no categories at
+all. The level is
 derived from the uid; the containers, the pod, QEMU and virtiofsd run at
 it; per-workload fcontext rules put it on the contents of data/ and state/,
 leaving the two directories and the PKI subtree at s0 for the host's

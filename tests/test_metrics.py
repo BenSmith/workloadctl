@@ -287,7 +287,7 @@ class TestMetricsDiscovery(unittest.TestCase):
         self.assertEqual(health_targets, [("db", "workload-multi-db")])
 
     def test_inspected_container_flag_comes_from_container_uses_inspect(self):
-        """P1-15/G11: get_enabled_workloads()'s uses_inspect ternary calls
+        """get_enabled_workloads()'s uses_inspect ternary calls
         container_uses_inspect() for a non-VM workload -- pin both a
         triggered and an untriggered container so collect_inspect()'s
         upstream gate is provably wired, not accidentally always-False."""

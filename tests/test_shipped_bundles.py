@@ -197,10 +197,10 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
     """A shipped service that serves anything to whoever reaches it is a
     finding, not a default.
 
-    The 2026-10-11 security audit (F32): otel-lgtm's Grafana, on a port the
-    bundle tells the operator to open to the LAN, served every host's logs
-    with no login, because the grafana/otel-lgtm image enables anonymous
-    access and the bundle did not turn it off. Checked in the rendered unit,
+    otel-lgtm's Grafana is on a port the bundle tells the operator to open to
+    the LAN, and the grafana/otel-lgtm image enables anonymous access, so
+    unless the bundle turns it off it serves every host's logs with no login.
+    Checked in the rendered unit,
     where the setting has to arrive to mean anything.
     """
 
@@ -213,10 +213,9 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
         self.assertRegex(unit, r'GF_AUTH_ANONYMOUS_ENABLED="?false"?(\s|$)')
 
     def test_caddy_admin_api_is_off_the_host_loopback(self):
-        """Audit F10: caddy runs on the host network, so its default admin
-        listener, localhost:2019, is the host's loopback, where every
-        host-network workload could load a new config. Checked 2026-10-11
-        with the bundle's own image: with CADDY_ADMIN on a unix socket,
+        """caddy runs on the host network, so its default admin listener,
+        localhost:2019, is the host's loopback, where every host-network
+        workload could load a new config. With CADDY_ADMIN on a unix socket,
         TCP 2019 is refused and `caddy reload` still works."""
         with tempfile.TemporaryDirectory() as tmp:
             svc = Path(tmp) / "svc"
@@ -228,10 +227,9 @@ class TestShippedServicesAskForALogin(unittest.TestCase):
 
 class TestOtelLgtmRunsUnprivileged(unittest.TestCase):
     """The grafana/otel-lgtm image expects root and creates its working
-    directories itself; as the workload user it cannot. Tempo 3 failed with
-    `mkdir /var/tempo: permission denied` on the services host, and launcher
-    v0.37.0 stopped the whole stack for it (2026-10-17). Checked in the
-    rendered unit, where the mount has to arrive."""
+    directories itself; as the workload user it cannot. Tempo 3 fails with
+    `mkdir /var/tempo: permission denied`, and the image's launcher stops the
+    whole stack for it. Checked in the rendered unit, where the mount has to arrive."""
 
     def test_every_directory_the_image_creates_is_mounted(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -246,9 +244,9 @@ class TestOtelLgtmRunsUnprivileged(unittest.TestCase):
 
 class TestAlloyKeepsItsJournalPosition(unittest.TestCase):
     """alloy runs with --rm and keeps loki.source.journal's position under
-    --storage.path. In the container's own layer the position went with each
-    restart, and alloy re-sent up to max_age of journal, which Loki refused
-    as a burst of push failures (services host, 2026-10-17). Checked in the
+    --storage.path. In the container's own layer the position goes with each
+    restart, and alloy re-sends up to max_age of journal, which Loki refuses
+    as a burst of push failures. Checked in the
     rendered unit, where the mount has to arrive."""
 
     def test_the_storage_path_is_mounted(self):
@@ -262,7 +260,7 @@ class TestAlloyKeepsItsJournalPosition(unittest.TestCase):
 
 class TestTheHostJournalSocket(unittest.TestCase):
     """A container given the host's journal socket writes entries under any
-    identifier, at any priority (audit F13, measured 2026-10-11); journald
+    identifier, at any priority; journald
     still stamps the sender's uid and unit. The bundles that run systemd as
     PID 1 forward their own journal there and keep it; the rest log to
     stdout, where the journal names the container."""
@@ -305,9 +303,9 @@ class TestTheHostJournalSocket(unittest.TestCase):
                             r"(?m)^\s*logging\s*=\s*systemd")
 
     def test_alloy_labels_an_entry_with_its_unit_and_uid(self):
-        """Checked 2026-10-14 with the bundle's image: an entry a rootless
-        container sent as sshd arrived labelled with its uid and
-        user@<uid>.service; without the rules, with neither."""
+        """With these rules, an entry a rootless container sends as sshd
+        arrives labelled with its uid and user@<uid>.service; without them,
+        with neither."""
         text = (WORKLOADS_DIR / "alloy" / "alloy-config.alloy").read_text()
         source = re.search(r'loki\.source\.journal "system" \{(.*?)\n\}',
                            text, re.S)

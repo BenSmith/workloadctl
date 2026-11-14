@@ -60,7 +60,7 @@ def container_config(name="web", uid=10004, mode="pasta", containers=None,
 
     `hosts` is a [network].hosts allowlist, which is one of the three triggers
     that make a container inspected -- and inspection is what decides whether
-    the host vantage shows a redirect (G10)."""
+    the host vantage shows a redirect."""
     names = containers or [name]
     net = {"mode": mode}
     if hosts is not None:
@@ -143,7 +143,7 @@ class TestVantages(unittest.TestCase):
         self.assertIn("ONLY", vantages[VANTAGE_HOST].detail)
 
     def test_an_inspected_container_is_told_the_capture_shows_a_redirect(self):
-        """G10, and the same claim that died for VMs when the inspector landed.
+        """and the same claim that died for VMs when the inspector landed.
 
         The mechanism is not substrate-specific: the capture chain is at
         `filter output priority filter - 10` and the redirect is a nat output
@@ -180,9 +180,8 @@ class TestVantages(unittest.TestCase):
 
         Two copies would drift, and the drift would be invisible: each side
         reads fine on its own, and the substrate an operator does not use is
-        the one whose wording goes stale. This is how G10 happened in the
-        first place -- the VM branch was corrected and the container prose,
-        which had no inspector when it was written, was left behind.
+        the one whose wording goes stale. One branch gets corrected and the
+        other's prose is left behind.
         """
         vm_host = {v.name: v for v in pcap_vantages(vm_config())}[VANTAGE_HOST]
         c_host = {v.name: v for v in pcap_vantages(
@@ -410,7 +409,7 @@ class TestValidation(unittest.TestCase):
 
     def test_the_host_vantage_takes_no_bpf_filter(self):
         """MEASURED: libpcap cannot compile a filter for the nflog link type,
-        and tcpdump refuses to start rather than silently ignoring it. §6.5's
+        and tcpdump refuses to start rather than silently ignoring it. The
         capability table says this vantage supports FILTER; it does not."""
         errors = self._errors(vm_config(), bpf=["port", "443"])
         self.assertTrue(any("NFLOG link-layer type filtering" in e

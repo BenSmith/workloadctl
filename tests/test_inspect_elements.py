@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`diagnose`'s reading of the four inspect elements nothing read until rung 5.
+"""`diagnose`'s reading of the four inspect elements.
 
 `inspect_element_commands` arms SIX objects across two tables. Until this
 tier `inspect_check` read two of them -- the DNAT maps -- and a workload

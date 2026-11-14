@@ -78,10 +78,8 @@ class TestWhereTheRecordGoes(unittest.TestCase):
         `workloadctl egress` reporting a workload that made no requests. That
         is indistinguishable from a guest that made none.
 
-        Measured on a KVM host 2026-08-31 as exactly that: 47 assertions green,
-        eight failing on a file that could not be created, and no AVC -- the
-        failure was DAC, not policy, which is why the SELinux harvest said
-        nothing.
+        There is no AVC either: the failure is DAC, not policy, so an SELinux
+        harvest says nothing.
 
         Asserted as `others may search`, not as the literal 0711, because what
         is required is the traversal; the mode that grants it is a detail.
@@ -173,7 +171,7 @@ class TestRotationIsLogrotates(unittest.TestCase):
     def _directives(self):
         """The file with its comments removed. A substring pin over the whole
         text counts the comment that ARGUES against a directive as the
-        directive being present — the exact defect a rung-3 review found and
+        directive being present — an easy defect to miss and
         the reason these assertions read the stanza rather than the file."""
         return "\n".join(
             ln for ln in self._conf().splitlines()

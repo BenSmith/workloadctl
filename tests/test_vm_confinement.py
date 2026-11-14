@@ -79,7 +79,7 @@ class TestLaunchArgv(unittest.TestCase):
         self.assertEqual(original, SAMPLE)
 
     def test_context_names_svirt_t_at_the_workloads_level(self):
-        """Each VM at its own category pair, as sVirt does (audit F3)."""
+        """Each VM at its own category pair, as sVirt does."""
         user, role, typ, level = vm_qemu_context(UID).split(":", 3)
         self.assertEqual((user, role, typ, level),
                          ("system_u", "system_r", VM_QEMU_TYPE, mcs_level(UID)))
@@ -133,8 +133,7 @@ class TestCilModule(unittest.TestCase):
     def test_qemus_lookup_of_its_stopper_is_dontaudited_not_allowed(self):
         """QEMU stopped by workload-vm-notify (unconfined_service_t) reads the
         sender's /proc entry to name it in "terminating on signal 15 from
-        pid N". On a Fedora 45 gate, 2026-11-08, that left one svirt_t search
-        denial per stopped VM; the shipped policy dontaudits the same lookup
+        pid N", one svirt_t search denial per stopped VM; the shipped policy dontaudits the same lookup
         for an init_t sender. Hidden, never granted."""
         self.assertIn(
             "(dontaudit svirt_t unconfined_service_t (dir (getattr open search)))",
@@ -285,9 +284,9 @@ class TestCilModule(unittest.TestCase):
 
     def test_qemus_stdio_reaches_the_journal(self):
         """Without it QEMU's fds 1 and 2 are SELinux's null device and a
-        QEMU that refuses its command line says so to nobody (dev host,
-        2026-10-14: /proc/<qemu>/fd/2 -> /null, a failed start with no
-        QEMU line in the journal)."""
+        QEMU that refuses its command line says so to nobody
+        (/proc/<qemu>/fd/2 -> /null, a failed start with no QEMU line in the
+        journal)."""
         self.assertIn(
             "(allow svirt_t init_t (unix_stream_socket (getattr ioctl read "
             "write)))", self.rules)

@@ -17,11 +17,11 @@ and joined by each workload that uses it:
 
 The share's files carry an MCS category of its own, which its members'
 processes hold beside their workload's pair, so a workload outside the
-share is refused them by SELinux whatever their modes (audit F3). A file a
+share is refused them by SELinux whatever their modes. A file a
 writer creates takes the directory's level, so new files keep the
 category. Writers are in the share's group, which owns the tree; readers
 are in its read group, which has a read ACL, and their mount is read-only,
-so a reader cannot plant a file in it (audit F14). Groups, not users: a
+so a reader cannot plant a file in it. Groups, not users: a
 process keeps its supplementary groups whatever uid it runs as in the
 container, so a reader serving files as container root is still let in.
 

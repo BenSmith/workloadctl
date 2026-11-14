@@ -117,23 +117,19 @@ class TestSkeleton(unittest.TestCase):
         address per armed inspector. All are empty on a host running no
         filtered workload, which is what makes an abandoned table inert.
 
-        THIS HELD ONLY BECAUSE THE GUARD WAS REWRITTEN TO GET IT BACK. The
-        first repair of the cross-workload hole (§7.2.3) bounded the guard by
-        DESTINATION instead, naming 198.18.0.0/16 and 2001:2::/48 literally,
-        and the argument for it was that those are reserved ranges nothing on
-        a normal host routes — so an abandoned table would drop traffic nobody
-        sends. That argument is about the world, not about the ruleset, and it
-        bought inertness at the price of a workload-scoped tool dropping every
-        non-root packet on the host bound for a /16 it does not own. The guard
-        now reads @wl_inspect_live, so this test does not need the carve-out
-        and does not have one: EVERY output-chain drop carries a set.
+        The cross-workload guard reads @wl_inspect_live rather than naming
+        198.18.0.0/16 and 2001:2::/48 literally. "Reserved ranges nothing on a
+        normal host routes" is an argument about the world, not about the
+        ruleset, and a literal range would make a workload-scoped tool drop
+        every non-root packet on the host bound for a /16 it does not own. So
+        this test has no carve-out: EVERY output-chain drop carries a set.
         """
         guards = (f"@{NFT_SET_FILTERED}", f"@{NFT_SET_EGRESS_CG}",
                   f"@{NFT_SET_INSPECT_SELF}", f"@{NFT_SET_INSPECT_SELF6}",
                   f"@{NFT_SET_INSPECT_LIVE}", f"@{NFT_SET_INSPECT_LIVE6}")
         # The output chain only. The input chain's drops are deliberately
         # unguarded on any set — there is no uid on the input path — and are
-        # bounded by destination plus `iif != lo` instead (§7.2.6).
+        # bounded by destination plus `iif != lo` instead.
         drops = [d for d in self.directives
                  if d.endswith("drop")
                  and d.startswith("add rule inet workload_filter output")]
@@ -152,8 +148,8 @@ class TestSkeleton(unittest.TestCase):
         chain runs at priority 0, ahead of firewalld's filter_INPUT at
         filter+10, so it would silently take over input policy for every
         service on the machine, and nothing would be reported — just every
-        service unreachable. §7.2.6 records it as the one direction where
-        getting it wrong is unrecoverable.
+        service unreachable. It is the one direction where getting it wrong is
+        unrecoverable.
         """
         chains = [d for d in self.directives if d.startswith("add chain")]
         self.assertTrue(chains, "no chain declared in the skeleton")
@@ -233,7 +229,7 @@ class TestSkeleton(unittest.TestCase):
                 "the loopback accept must precede the drop")
 
     def test_loopback_means_loopback_destinations(self):
-        """Audit F11 (2026-10-11): `oif lo` alone accepted a filtered
+        """`oif lo` alone would accept a filtered
         workload's dial to ANY address of the host's own -- every one leaves
         on lo -- so a container reached the host's wildcard listeners
         through podman's --map-guest-addr 169.254.1.2, and a container and a
@@ -424,16 +420,9 @@ class TestInternalDestinationGuard(unittest.TestCase):
         self.assertNotIn("2001::/32", v6)
 
     def test_the_advertised_address_is_now_blocked(self):
-        """INVERTED at rung 6 (D10), and worth saying so rather than editing
-        quietly.
+        """TEST-NET-1 is in the internal set.
 
-        It used to assert 192.0.2.0/24 was ABSENT: the guest reached the
-        credential broker at 192.0.2.1, so the broker's replies were addressed
-        from it and listing the prefix took the broker down completely -- every
-        request hanging, nothing logged. That was true of the retired proxy
-        before it, which shared the address.
-
-        Nothing carries the range now. Each workload's broker is an instance on
+        Nothing carries the range. Each workload's broker is an instance on
         a uid-derived loopback address the guest is never told, so TEST-NET-1 is
         what it says on the RFC: a documentation range no guest can legitimately
         want, which is the definition of what this set drops.
@@ -443,7 +432,7 @@ class TestInternalDestinationGuard(unittest.TestCase):
         self.assertIn("192.0.2.0/24", elems)
 
     def test_the_exemption_for_it_is_writable(self):
-        """The half that makes the inversion safe, per D10.
+        """The half that makes blocking TEST-NET-1 safe.
 
         A site really routing TEST-NET-1 internally needs a
         [[vm.network.internal]] entry, and internal_ok_elements refuses an
@@ -475,7 +464,7 @@ class TestInternalDestinationGuard(unittest.TestCase):
         This carve-out was written for tinyproxy and OUTLIVED it deliberately:
         the inspector resolves host-side on every connection it authorises,
         permanently, so deleting it with the service it was named for would
-        have taken hostname policy down on the rung that replaced it."""
+        take hostname policy down."""
         dns = [i for i, r in enumerate(self.rules)
                if NFT_SET_EGRESS_CG in r and "th dport 53" in r
                and r.endswith("accept")]
@@ -543,7 +532,7 @@ class TestRuleOrderIsPinned(unittest.TestCase):
     """
 
     # (label, required substrings) in the order they must appear — the
-    # output chain of §7.2.5 with rules 12 and 13 not yet shipped. Rule 18, the
+    # output chain as designed. The
     # counted HTTP/3 drop, IS shipped: it is attribution only — it counts
     # packets the default deny below it would have dropped anyway — and its
     # position in the pin is the point: in place between the proxy egress
@@ -600,10 +589,9 @@ class TestRuleOrderIsPinned(unittest.TestCase):
         reads as "stop cross-workload dials" and in fact means "stop dials
         from workloads ALREADY UNDER POLICY". Every caller outside that set
         went through: an `egress = "open"` VM, a container with no [network]
-        table, and any ordinary shell on the host. Confirmed on hardware
-        2026-09-05 on both substrates -- the unfiltered caller reached the
-        filtered workload's listener AND its dials landed in that workload's
-        egress records.
+        table, and any ordinary shell on the host -- on both substrates the
+        unfiltered caller would reach the filtered workload's listener AND its
+        dials would land in that workload's egress records.
 
         The exemption the rule actually needs is for host tooling, which is
         root by construction (`diagnose` and `doctor` both call
@@ -677,7 +665,7 @@ class TestRuleOrderIsPinned(unittest.TestCase):
 
 
 class TestInputChain(unittest.TestCase):
-    """The input chain of §7.2.6, asserted by PROPERTIES rather than pinned as
+    """The input chain, asserted by PROPERTIES rather than pinned as
     a sequence, and that distinction is the point.
 
     The output chain is pinned as an ordered sequence because order IS the
@@ -685,10 +673,10 @@ class TestInputChain(unittest.TestCase):
     changing what the chain does. This chain has two rules and no ordering to
     get wrong — neither rule's meaning depends on the other, and there is no
     accept below a drop that an insert could slip in front of. What it can
-    get wrong is its SHAPE, and §7.2.6 names four independent ways a
+    get wrong is its SHAPE, and there are four independent ways a
     plausible-looking version of it is wrong. Each of the four is a test here,
     plus one negative test for the absence of a qualifier no plausible-looking
-    version should carry, and one for the `counter` §11 reads the off-box
+    version should carry, and one for the `counter` diagnose reads the off-box
     arrivals figure off.
     """
 
@@ -700,7 +688,7 @@ class TestInputChain(unittest.TestCase):
                            if d.startswith("add rule inet workload_filter input")]
 
     def test_the_chain_exists_and_is_hooked_at_input_priority_0(self):
-        """Presence. §7.2.6's first named failure is a version of this design
+        """Presence. The first failure is a version of this design
         with no input chain at all: the output rules above assume it, and its
         absence fails open in both families."""
         decls = [d for d in self.directives
@@ -772,7 +760,7 @@ class TestInputChain(unittest.TestCase):
                           f"host-local traffic on these ranges: {rule}")
 
     def test_both_drops_are_counted(self):
-        """§11's off-box-arrivals figure IS these two counters, and it is the
+        """The off-box-arrivals figure IS these two counters, and it is the
         one figure in that list with no benign reading: the listener ranges
         are reachable from off the host only because the weak host model
         delivers them, so a non-zero value is an attack or a misrouted
@@ -1579,7 +1567,7 @@ if __name__ == "__main__":
 
 
 class TestConntrackOccupancy(unittest.TestCase):
-    """§11's conntrack figure. It is not the inspector's to report and it is
+    """The conntrack figure. It is not the inspector's to report and it is
     read here anyway, because the egress guard's correctness depends on
     conntrack state: a reply is only distinguishable from a fresh connection
     because an entry exists, so an exhausted table reclassifies the
@@ -1677,7 +1665,7 @@ class TestInspectDiagnose(unittest.TestCase):
         # the reading on a host where the set cannot be read, which is what
         # every test that is not about this counter should see.
         kw.setdefault("self_dials", None)
-        # Same reason, for rung 5's four filter-table sets: an empty mapping
+        # Same reason, for the four filter-table sets: an empty mapping
         # reads as "none of them could be read", which is the silent branch and
         # the right default for every test that is not about them.
         kw.setdefault("filter_sets", {})
@@ -1746,7 +1734,7 @@ class TestInspectDiagnose(unittest.TestCase):
         self.assertIn("both families", msg)
 
     def test_the_green_line_names_which_posture_is_in_force(self):
-        """Rung 3 T9. `inspect` and `splice` are different security postures
+        """`inspect` and `splice` are different security postures
         behind the same green line -- one authorises every request and holds
         the plaintext, the other checks one name per connection and holds
         nothing. An operator reading "inspected" and having the other one is
@@ -2093,7 +2081,7 @@ class TestInspectMapKeyShapes(unittest.TestCase):
 
 
 class TestAllowMayNotNameTheListenerRange(unittest.TestCase):
-    """An `allow` entry inside the inspector's ranges is refused (HLD §3).
+    """An `allow` entry inside the inspector's ranges is refused.
 
     `allow` is matched ahead of the guard that stops one workload reaching
     another's inspector, so nothing downstream catches such an entry: it is
@@ -2170,7 +2158,7 @@ class TestAllowMayNotNameTheListenerRange(unittest.TestCase):
 
 
 class TestListenerRangeRefusalReachesBothPaths(unittest.TestCase):
-    """The schema path and the arming path both refuse (HLD §3: "in the
+    """The schema path and the arming path both refuse ("in the
     helper as well as the schema").
 
     They are separate tests because they fail separately: validation runs when
@@ -2317,7 +2305,7 @@ class TestV6RouteProbeFailsQuiet(unittest.TestCase):
 
 
 class TestSelfDialCounterIsReported(unittest.TestCase):
-    """`diagnose` names the wrong-port self-dial drops (HLD §11).
+    """`diagnose` names the wrong-port self-dial drops.
 
     The guard drops two different things on two different counters, and this
     is the one that will actually happen: a guest dialling its own listener
@@ -2424,9 +2412,9 @@ class TestSelfDialCounterIsReported(unittest.TestCase):
 
 
 class TestRung2Schema(unittest.TestCase):
-    """The rung 2 schema: `tls`, `internal`, and `allow` as a reasoned table.
+    """The splice-level schema: `tls`, `internal`, and `allow` as a reasoned table.
 
-    Nothing here changes runtime behaviour -- T3 arms what `internal` means and
+    Nothing here changes runtime behaviour -- the arming helper arms what `internal` means and
     the inspector is what reads `tls`. What these pin is the set of configs the
     host will accept, which is the only thing standing between an operator's
     stated intent and a system that quietly does something else.
@@ -2438,7 +2426,7 @@ class TestRung2Schema(unittest.TestCase):
 
     # --- tls ---
 
-    def test_an_unbuilt_mode_names_the_rung_rather_than_listing_valid_values(self):
+    def test_an_unbuilt_mode_names_the_release_rather_than_listing_valid_values(self):
         """The refusal has to say WHEN, not just "no".
 
         A mode named in TLS_UNBUILT is a word for a PROPERTY that has not
@@ -2459,11 +2447,11 @@ class TestRung2Schema(unittest.TestCase):
         # and the assertion below is what says so rather than the test
         # quietly passing.
         with mock.patch.object(vm_egress_validate, "TLS_UNBUILT",
-                               {"tunnel": "rung 9, with the thing it needs"}):
+                               {"tunnel": "a later release, with the thing it needs"}):
             errors = self._egress({"hosts": ["github.com"], "tls": "tunnel"})
         self.assertTrue(errors)
         message = " ".join(errors)
-        self.assertIn("rung 9", message)
+        self.assertIn("a later release", message)
         self.assertNotIn("must be one of", message)
 
     def test_an_unknown_tls_value_still_lists_what_is_valid(self):
@@ -2493,13 +2481,13 @@ class TestRung2Schema(unittest.TestCase):
         self.assertEqual(self._egress({"hosts": ["github.com"]}), [])
 
     def test_a_whole_workload_splice_must_say_why(self):
-        """ADR 008 decision 2, on the hatch that was exempt from it longest.
+        """ADR 008 decision 2, on the widest hatch.
 
         Splicing is a named exemption carrying a written reason, never a
-        default and never implicit. `[[vm.network.splice]]` has enforced that
-        per host since rung 4 T1; `tls = "splice"` did not, which left the
-        WIDEST bypass in the schema -- every host, not a named one -- as the
-        only one an operator could open without saying anything.
+        default and never implicit. `[[vm.network.splice]]` enforces that per
+        host; `tls = "splice"` must too, or the WIDEST bypass in the schema --
+        every host, not a named one -- would be the only one an operator could
+        open without saying anything.
         """
         errors = self._egress({"hosts": ["github.com"], "tls": "splice"})
         self.assertTrue(any("tls_reason" in e for e in errors), errors)
@@ -2648,7 +2636,7 @@ class TestRung2Schema(unittest.TestCase):
             "policy": [{"host": "api.example.com"}]}), [])
 
     def test_a_policy_host_need_not_appear_in_hosts(self):
-        """§3, and it is the composition rule seen from the other side: a
+        """The composition rule, seen from the other side: a
         `hosts` entry is not a `policy` entry, but a `policy` entry allowlists
         on its own."""
         self.assertEqual(self._egress({
@@ -2781,7 +2769,7 @@ class TestRung2Schema(unittest.TestCase):
 
     def test_an_apex_governed_only_by_its_own_entry_is_fine(self):
         """No .hosts at all: both names are allowlisted by their own entries
-        and both are constrained, which is the configuration §3 documents."""
+        and both are constrained, which is the documented configuration."""
         self.assertEqual(self._egress({
             "policy": [{"host": "*.example.com", "methods": ["GET"],
                         "paths": ["/*"]},
@@ -2892,7 +2880,7 @@ class TestRung2Schema(unittest.TestCase):
         self.assertTrue(any("unknown key" in e for e in errors), errors)
 
     def test_placeholder_on_an_entry_is_sent_to_the_credential_block(self):
-        """It was on the entry in the design's §3 draft, and moved.
+        """`placeholder` belongs on the credential block, not the entry.
 
         Named rather than reported as an unknown key, for the reason
         TLS_UNBUILT gives: an operator who wrote it followed a document that
@@ -2917,7 +2905,7 @@ class TestRung2Schema(unittest.TestCase):
                             for e in errors), errors)
 
     def test_an_internal_host_named_only_by_policy_is_on_a_list(self):
-        """§3: a name in `policy` need not also appear in `hosts`. A rule that
+        """A name in `policy` need not also appear in `hosts`. A rule that
         consulted only `hosts` would refuse a working config on the one key
         whose whole job is to unblock a host."""
         self.assertEqual(self._egress({
@@ -2926,8 +2914,8 @@ class TestRung2Schema(unittest.TestCase):
             "internal": [{"host": "git.local", "reason": "the forge"}]}), [])
 
     def test_a_wildcard_internal_entry_over_an_exact_allowlist_is_accepted(self):
-        """The overlap test runs BOTH ways round here too, and this rule spent
-        two rungs testing only the easy one. `*.nas.example` covers an
+        """The overlap test runs BOTH ways round here too, and testing only the
+        easy one is the trap. `*.nas.example` covers an
         allowlisted `a.nas.example`, so the entry is live -- and a check that
         read the entry's `host` as a NAME against the allowlist patterns calls
         it dead and refuses a working config. Same shape, same words, as
@@ -2959,7 +2947,7 @@ class TestRung2Schema(unittest.TestCase):
             "internal": [{"host": "nas.example", "reason": "lab range"}]})
         self.assertTrue(any("is on no list" in e for e in errors), errors)
 
-    # --- splice (per host; HLD §11 hatch 2) ---
+    # --- splice (per host; the splice hatch) ---
 
     def test_a_splice_host_the_allowlist_covers_is_accepted(self):
         self.assertEqual(self._egress({
@@ -2973,7 +2961,7 @@ class TestRung2Schema(unittest.TestCase):
 
         The host is inspected -- which is what its client cannot survive, and
         why somebody wrote the exemption. The failure arrives as a TLS error
-        rather than as a policy message, which is the §5 case whose whole point
+        rather than as a policy message, which is the case whose whole point
         was to be diagnosable.
         """
         errors = self._egress({
@@ -3028,8 +3016,8 @@ class TestRung2Schema(unittest.TestCase):
         Under `tls = "splice"` every host is spliced already, so these entries
         ask for something that is true -- the config's intent is satisfied, not
         contradicted, which is the test every other "key with no effect"
-        refusal in this function applies. And the mode is HLD §11's third
-        hatch, reached mid-incident by an operator whose toolchain is broken:
+        refusal in this function applies. And the mode is the workload-wide
+        splice hatch, reached mid-incident by an operator whose toolchain is broken:
         new output there costs something and buys nothing.
         """
         self.assertEqual(self._egress({
@@ -3131,7 +3119,7 @@ class TestRung2Schema(unittest.TestCase):
     def test_an_allow_on_443_is_refused_with_tls_absent(self):
         """The case the design's own wording would have let through.
 
-        §3 words this as an error "under tls = 'inspect'". The redirect keys on
+        This is an error under any `tls`, not only "inspect". The redirect keys on
         the workload uid and the ORIGINAL port and reads nothing else -- not
         `tls`, not the destination -- so the element is intercepted whatever
         `tls` says, and `egress = "filtered"` is the real condition.
@@ -3251,9 +3239,9 @@ class TestRung2Warnings(unittest.TestCase):
     def test_validate_surfaces_them_for_a_vm(self):
         """The channel, not just the function.
 
-        collect_config_warnings returned early for every VM before this rung,
-        so a warning that existed and was never reached would look identical to
-        one that never fired.
+        If collect_config_warnings returned early for a VM, a warning that
+        exists and is never reached would look identical to one that never
+        fired.
         """
         from validation import collect_config_warnings
         warnings = collect_config_warnings({
@@ -3311,7 +3299,7 @@ class TestAllowNameResolution(unittest.TestCase):
 
 
 class TestReservedRanges(unittest.TestCase):
-    """`ports` may not bind any range this design owns (T2).
+    """`ports` may not bind any range this design owns.
 
     The check was one `in MGMT_NETWORK` with a docstring committing to v4,
     written when there was one range and it was v4. Two listener ranges arrived
@@ -3352,7 +3340,7 @@ class TestReservedRanges(unittest.TestCase):
                           if p.port is not None], [])
 
     def test_the_broker_range_is_inherited_from_the_nine(self):
-        """The broker's reservation moved from stated to inherited (rung 6).
+        """The broker's reservation moved from stated to inherited.
 
         It had an entry of its own while there was one host-wide listener on
         127.0.0.1:8081 -- an address operators publish on freely, so the
@@ -3472,7 +3460,7 @@ class TestReservedRanges(unittest.TestCase):
 
 
 class TestInternalOkAccept(unittest.TestCase):
-    """The `internal` exemption: the accept ahead of the internal drop (T3).
+    """The `internal` exemption: the accept ahead of the internal drop.
 
     A per-workload accept keyed on (uid, address) and carrying NO PORT. The
     missing port is safe only because of the cgroup match on the rule, and the
@@ -3703,11 +3691,11 @@ class TestInternalOkElements(unittest.TestCase):
 
 
 class TestRung6CredentialSchema(unittest.TestCase):
-    """`[[vm.network.credential]]` and the `credential` selector (rung 6, ADR 007).
+    """`[[vm.network.credential]]` and the `credential` selector (ADR 007).
 
-    Nothing here attaches a credential -- T5 is the branch that dials the
+    Nothing here attaches a credential -- the inspector is what dials the
     broker. What these pin is the set of configs the host will accept, and the
-    stakes are higher than the rung 2 schema's: every failure this table
+    stakes are higher than the splice schema's: every failure this table
     prevents lands as a 401 from the provider on a request the inspector
     considers fully authorised, which is the one error shape that sends an
     operator looking at the guest, at the key, and at the provider before they
@@ -3832,10 +3820,11 @@ class TestRung6CredentialSchema(unittest.TestCase):
                 self.assertIn("`credential` must be the name", joined)
 
     def test_credential_is_a_known_key_and_placeholder_is_not(self):
-        """The inversion this rung performs, asserted in both directions.
+        """Asserted in both directions.
 
-        `credential` stopped being refused as unbuilt and `placeholder` did not
-        become an unknown key -- it moved, and the message says where.
+        `credential` is not refused as unbuilt, and `placeholder` is not
+        reported as an unknown key -- it belongs on the credential block, and
+        the message says where.
         """
         self.assertEqual(self._egress(self._net()), [])
         moved = " ".join(self._egress(self._net(policy=[
@@ -3915,7 +3904,7 @@ class TestRung6CredentialSchema(unittest.TestCase):
         self.assertIn("NOT a fix", joined)
 
     def test_a_bridged_vm_may_not_declare_a_credential(self):
-        """Nothing of ours is in that guest's data path (§5.3).
+        """Nothing of ours is in that guest's data path.
 
         No inspector, so no request to attach anything to -- and the material
         would be sealed and loaded for a guest that reaches its provider
@@ -3954,7 +3943,7 @@ class TestRung6CredentialSchema(unittest.TestCase):
 
 
 class TestRung6PolicyDocument(unittest.TestCase):
-    """The `credential` key in the inspector's policy document (D8, D11)."""
+    """The `credential` key in the inspector's policy document."""
 
     def _net(self, credential):
         entry = {"host": "api.example", "methods": ["GET"], "paths": ["/v1/*"]}
@@ -4020,7 +4009,7 @@ class TestRung6PolicyDocument(unittest.TestCase):
             inspect_policy_digest(vm_inspect_policy_text(self._net(None))))
 
     def test_no_address_placeholder_or_env_reaches_the_document(self):
-        """D8. The listener derives the address from its own uid, and decides
+        """The listener derives the address from its own uid, and decides
         nothing by the other two -- carrying them would make the document
         non-deterministic w.r.t. the TOML or leak the fiction into a file the
         guest-facing process reads."""
@@ -4032,7 +4021,7 @@ class TestRung6PolicyDocument(unittest.TestCase):
 
 
 class TestRung6BrokerAddress(unittest.TestCase):
-    """`broker_listen_address` (D3): per-workload, derived, never shared."""
+    """`broker_listen_address`: per-workload, derived, never shared."""
 
     def test_the_first_workload_lands_on_the_base(self):
         from workload_addr import UID_MIN, broker_listen_address

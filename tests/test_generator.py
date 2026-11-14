@@ -700,8 +700,7 @@ class TestDefaultUser(unittest.TestCase):
 
     The pod member case, measured first:
 
-    Measured on the proving host (podman 5.8.7, 2026-09-30), with this
-    generator's flags: --userns=keep-id on `podman pod create` and no user on
+    Measured with podman 5.8.7 and this generator's flags: --userns=keep-id on `podman pod create` and no user on
     the member, the member ran as the keep-id user (inspect: User=1000:1000)
     with nothing in its own sets, but a plain `podman exec`, which is what
     `workloadctl exec` and `shell` run, and a health check both held all
@@ -984,8 +983,8 @@ class TestGeneratorSecrets(unittest.TestCase):
         self.assertIn("/etc/ssl/cert.pem", service)
         # The source is write-env's copy in the workload's runtime dir, not
         # systemd's init_var_run_t file, and :Z relabels it to the container's
-        # own category pair (audit F19: from /run/credentials the container
-        # got EACCES).
+        # own category pair (from /run/credentials the container gets
+        # EACCES).
         self.assertRegex(
             service,
             r'--volume "/run/user/\d+/workload-secrets/workload-filemount/'
@@ -1736,7 +1735,7 @@ class TestGeneratorUserns(unittest.TestCase):
 
     def test_host_userns(self):
         # userns=host is gated: it must carry the unsafe_host_userns opt-in or the
-        # generator (via validate_workload_config) skips the workload (S5).
+        # generator (via validate_workload_config) skips the workload.
         write_config(self.config_dir, "hostns", """\
             [workload]
             name = "hostns"
@@ -2532,7 +2531,7 @@ class TestGeneratorVmWorkload(unittest.TestCase):
     def test_virtiofsd_prestart_runs_outside_the_sidecars_context(self):
         """SELinuxContext= applies to every Exec line, and wlvfsd_t may
         enter only virtiofsd: an rm in it fails 203/EXEC, `entrypoint`
-        denied on bin_t (dev host, 2026-10-14). Every Exec line but
+        denied on bin_t. Every Exec line but
         ExecStart is `+`."""
         sidecar, _uid = self._sidecar_and_uid()
         self.assertIn("SELinuxContext=system_u:system_r:wlvfsd_t:", sidecar)
@@ -2797,7 +2796,7 @@ class TestGeneratorVmWorkload(unittest.TestCase):
     def test_a_spare_memory_backend_comes_before_guest_ram(self):
         """The first memory backend is the one that can lose its fd.
 
-        Gate 2026-10-01: virtiofsd failed to map guest RAM ("No such
+        virtiofsd can fail to map guest RAM ("No such
         device") because qemu 10.2.2's passt netdev closes sv[1] twice and
         GLib's worker thread closed the number again after the guest RAM
         memfd reused it. A bare qemu loop under load lost it in 102 of 600
@@ -3878,8 +3877,8 @@ class TestEnqueueStarts(unittest.TestCase):
 
 
 class TestGeneratorContainerEgress(unittest.TestCase):
-    """P1-7/P1-9/P1-10/P1-15: element-lifecycle wiring, inspect units, and CA
-    delivery for a triggered container workload -- and R10's byte-identical
+    """Element-lifecycle wiring, inspect units, and CA
+    delivery for a triggered container workload -- and the byte-identical
     guarantee for one with no [network] trigger at all."""
 
     def setUp(self):
@@ -3899,9 +3898,9 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         return (Path(self.services_dir) / relpath).read_text()
 
     def test_untriggered_single_container_has_no_egress_lines(self):
-        """P1-15: this is the gate this test must catch reverting. A
+        """this is the gate this test must catch reverting. A
         workload with no [network] table gets no ExecStartPre/ExecStopPost
-        for workload-container-filter and no inspect units at all (R10)."""
+        for workload-container-filter and no inspect units at all."""
         write_config(self.config_dir, "plain", """\
             [workload]
             name = "plain"
@@ -4051,7 +4050,7 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         self.assertNotIn("SSL_CERT_FILE", service)
 
     def test_ca_delivery_image_delivers_nothing(self):
-        """P1-14. "image" asserts the image was BUILT trusting this workload's
+        """"image" asserts the image was BUILT trusting this workload's
         CA, so workloadctl has nothing left to do -- no bind mount, no
         environment. That makes it indistinguishable from the untriggered CA
         case in the emitted unit, which is precisely why it is worth pinning:
@@ -4085,10 +4084,9 @@ class TestGeneratorContainerEgress(unittest.TestCase):
             (Path(self.services_dir) / "workload-agent3-inspect.service").exists())
 
     def test_host_mode_emits_no_inspector_and_says_so(self):
-        """P1-14, updated by P0-1's answer -- the deliberate change this
-        test's previous docstring called for.
+        """Host mode with an egress key is refused.
 
-        P0-1 measured it on hardware: under the default ``userns = "keep-id"``
+        Measured on hardware: under the default ``userns = "keep-id"``
         only one in-container uid maps to the workload uid, so a host-mode
         container's processes span the workload's subuid range while every
         egress rule selects on the single uid. The combination is now a
@@ -4147,7 +4145,7 @@ class TestGeneratorContainerEgress(unittest.TestCase):
             (Path(self.services_dir) / "workload-plainhost.service").exists())
 
     def test_bridge_mode_arms_the_filter_before_any_member_starts(self):
-        """P1-14, and the same ordering property as the pod-mode test above.
+        """and the same ordering property as the pod-mode test above.
 
         Bridge mode gives every container its OWN netns, unlike pod mode where
         they share one -- so it is not obvious that one workload-level unit is
@@ -4158,8 +4156,8 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         first, and the network-create head unit is the unit every member is
         ordered after.
 
-        The bridge-mode DNAT question in P1-9 is still open; if answering it
-        moves the hook, this fails as a diff rather than as a silent change of
+        The bridge-mode DNAT question is still open; if answering it moves the
+        hook, this fails as a diff rather than as a silent change of
         which unit carries it."""
         write_config(self.config_dir, "br", """\
             [workload]
@@ -4187,8 +4185,8 @@ class TestGeneratorContainerEgress(unittest.TestCase):
         self.assertEqual(
             armed, ["head"],
             "bridge mode arms the network-create head unit, same as pod mode "
-            "arms the pod-create one; if that changes, the DNAT question in "
-            "P1-9 has been answered and this pin is what should carry the new "
+            "arms the pod-create one; if that changes, the bridge DNAT "
+            "question has been answered and this pin is what should carry the new "
             "answer")
         self.assertIn("After=workload-br-net.service", member)
         self.assertIn("After=workload-br-inspect.socket", head)

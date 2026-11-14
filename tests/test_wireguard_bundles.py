@@ -1,11 +1,11 @@
 """The WireGuard bundles bring their tunnel up through one wg-up.sh.
 
 wg-quick's default-route handling sets src_valid_mark, and /proc/sys/net is
-read-only in a container; the images also have no resolvconf for DNS=. On
-the proving host (2026-10-16) wireguard-vpn failed on the README's own
-full-tunnel config, and a first version of the fix, whose AllowedIPs parse
-ran the prefixes together, routed nothing into the tunnel. wg-up.sh hands
-wg-quick Table = off and no DNS=, and routes the tunnel itself.
+read-only in a container; the images also have no resolvconf for DNS=. So
+the README's own full-tunnel config fails under plain wg-quick. wg-up.sh
+hands wg-quick Table = off and no DNS=, and routes the tunnel itself; an
+AllowedIPs parse that runs the prefixes together routes nothing into the
+tunnel.
 """
 import os
 import stat

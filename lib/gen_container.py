@@ -435,7 +435,7 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
     # started, so port-80/443 traffic that should be redirected into the
     # inspector just hangs -- the workload looks healthy while nothing on
     # those ports is reachable. Single mode only: this unit IS the
-    # workload-level service here (see the P1-7 gate below); pod/bridge mode
+    # workload-level service here (see the gate below); pod/bridge mode
     # gets the same wiring on the pod/net head unit instead, which is the one
     # unit ordered ahead of every member container (see gen_container_heads._head_unit).
     if mode == "single" and container_uses_inspect(workload):
@@ -532,12 +532,12 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
 
     _hardening(svc, name, uid, resources, external_rw_paths, spec.fetches_image)
 
-    # Egress element-lifecycle arming (P1-7): single mode only -- this unit
+    # Egress element-lifecycle arming: single mode only -- this unit
     # IS the workload-level service here (it gets the wants symlink below),
     # and its ExecStartPre runs ahead of the `podman run` in ExecStart. In
     # pod/bridge mode the pod/net head unit owns it, for the same "before the
     # first container" reason.
-    # Gated on the config, not inside container_egress_exec, for R10 (see
+    # Gated on the config, not inside container_egress_exec, so untriggered units stay unchanged (see
     # that function's docstring).
     if mode == "single" and container_uses_inspect(workload):
         container_egress_exec(svc, name)
@@ -555,7 +555,7 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
 
 
 def container_broker_before(config, mode: str) -> str:
-    """The unit a container workload's broker must be ordered ahead of (P2-3).
+    """The unit a container workload's broker must be ordered ahead of.
 
     NOT the umbrella. In pod/bridge mode `workload-<name>.service` carries
     `After=` its member services, so ordering the broker before it puts the
@@ -612,8 +612,8 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
     setup_file.write_text(setup_content)
     log_msg(f"  Created setup service at {setup_file}")
 
-    # Transparent egress inspection socket + service (P1-9), on the
-    # same terms as the VM path (generate_vm_workload) -- D6: the
+    # Transparent egress inspection socket + service, on the
+    # same terms as the VM path (generate_vm_workload) -- the
     # binary and unit shape do not change between substrates.
     # generate_inspect_socket/service take nothing substrate-specific
     # but the arming helper (config["workload"]["name"], uid, and
@@ -648,7 +648,7 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
                 generate_resolve_service(config, user_name, uid))
             log_msg("  Created DNS responder service")
 
-    # The credential broker instance (P2-2), on the same reuse terms:
+    # The credential broker instance, on the same reuse terms:
     # generate_broker_service takes its substrate-specific values
     # as parameters, so this is a call site and not a second
     # generator. Gated on container_uses_credentials, which is also

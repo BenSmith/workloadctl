@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Does the wrong-port self-dial counter actually count, and does `diagnose`
-say so? (design doc ss11, HLD ss12 rung 1)
+say so?
 
 The guard behind this counter drops two different things, and the counter is
 the only thing that tells them apart. A packet to *another* workload's plane is
@@ -20,8 +20,8 @@ Three separate things have to hold and only the first has a unit test:
 2 is the one that made this worth writing. `meta skuid` cannot be exercised
 without a process that really owns the uid, so nothing under `just test` can
 send the packet -- and a counter that never increments is indistinguishable
-from a guest that never self-dialled. 3 is the seam: every piece of this rung
-that shipped inert shipped inert at a seam.
+from a guest that never self-dialled. 3 is the seam: a piece that ships inert
+ships inert at a seam.
 
 A note on the shape, because it is the trap here rather than a detail. A set
 carrying `counter` renders its elements WRAPPED:
@@ -197,7 +197,7 @@ import diagnose_inspect
 
 uid = %d
 # is_vm is not decoration: inspect_check dispatches its nouns, its
-# schema section and its remedy on it (G7), so a stub without it raises
+# schema section and its remedy on it, so a stub without it raises
 # AttributeError and this row reports "diagnose produced no line" -- a
 # rig defect wearing a product defect's face.
 cfg = SimpleNamespace(name="wlsd", uid=uid, vm_bridge=None, is_vm=True,

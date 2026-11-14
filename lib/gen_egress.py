@@ -45,14 +45,14 @@ from unit_file import Unit
 def generate_inspect_socket(config, user_name: str, uid: int, *,
                             arming_helper: str) -> str:
     """Generate the socket unit for one workload's transparent egress
-    inspector -- VM or container (P1-9): the unit shape is substrate-generic
+    inspector -- VM or container: the unit shape is substrate-generic
     (uid-derived addressing, name-keyed ordering), so this function is reused
     verbatim for both. `arming_helper` is the one substrate-specific fact --
     which script's `up`/`down` the ExecStartPre/ExecStopPost invoke, since the
     VM and container arming scripts read the config's [vm.network] vs
     [network] table respectively (workload-vm-inspect vs
     workload-container-inspect). It has no default: the caller is the
-    substrate, and a default would make this module name one of them. D6's
+    substrate, and a default would make this module name one of them. The
     "the binary does not change" is about the LISTENER
     (moat-inspect, ExecStart below in
     generate_inspect_service) -- the arming helper is not that binary.
@@ -131,7 +131,7 @@ def generate_inspect_socket(config, user_name: str, uid: int, *,
     sock.add("ExecStopPost",
              f"-+/usr/libexec/workloadctl/{arming_helper} down {dq(name)}")
     # Four listener ports, both families, one per plane. The values come
-    # from the T4 derivation (inspect_address) and the plane's inspect port —
+    # from inspect_address and the plane's inspect port —
     # never a literal. The v6 form brackets the address so it is not parsed as
     # the scope-id separator.
     for family_addr in (addr.v4, f"[{addr.v6}]"):
@@ -170,7 +170,7 @@ def harden_sidecar(svc, name: str, *, families: str, tasks_max: int,
 
     These two processes are the ones ADR 008 names as the cost of the design:
     code parsing hostile guest input, on the path for all HTTP and HTTPS, and
-    from a later rung holding a CA key. They were shipped confined by SELinux
+    the inspector holding a CA key. They were shipped confined by SELinux
     alone, which is one mechanism where gen_vm's virtiofsd sidecar carries
     two -- and the sidecar's confinement was argued, while the absence here
     was not argued anywhere.
@@ -441,7 +441,7 @@ def generate_broker_service(config, uid: int, *, before: str,
     """Generate the credential broker instance for one workload.
 
     Substrate-neutral through four keyword parameters, on the same terms as
-    generate_inspect_socket/_service (D6): nothing in the unit below is
+    generate_inspect_socket/_service: nothing in the unit below is
     VM-specific, so each substrate is a call site rather than a generator of
     its own. `before` is the unit this one must be ordered ahead of, `hosts`
     the (host, credential) pairs, `upstream` the addresses those hosts
@@ -449,7 +449,7 @@ def generate_broker_service(config, uid: int, *, before: str,
     or container_broker_command). None has a default, for the reason
     generate_inspect_socket's `arming_helper` has none.
 
-    P2-3: `before` exists because the VM default is WRONG for a container in
+    `before` exists because the VM default is WRONG for a container in
     pod/bridge mode. There the umbrella carries `After=` its member services,
     so `Before=workload-<name>.service` orders the broker after every
     container has already started -- the same hole the inspector arming was
@@ -457,9 +457,7 @@ def generate_broker_service(config, uid: int, *, before: str,
     the pod/net head unit, which is the one workload-level unit ordered ahead
     of the members.
 
-    Modelled on the host-wide agent-broker.service this replaces -- deleted in
-    the same rung, so read it from git history if the derivation matters -- and
-    NOT on harden_sidecar. The two sandboxes differ in the one directive
+    NOT modelled on harden_sidecar. The two sandboxes differ in the one directive
     that matters most here: this unit is DynamicUser=yes, and that is the whole
     of ADR 007's protection. The inspector runs as _wl-<name>, the uid QEMU runs
     as, so a guest escape obtains everything that uid can read; the broker's
@@ -622,7 +620,7 @@ def generate_broker_service(config, uid: int, *, before: str,
     # An instance whose config exists cannot fail for the reason the host-wide
     # unit could, so restarting it is worth doing rather than a loop waiting to
     # happen; the guest gets a refused connection from the inspector in the
-    # meantime, which is D5's named drop reason and not a silence.
+    # meantime, which is a named drop reason and not a silence.
     svc.add("Restart", "on-failure")
     svc.add("RestartSec", "2")
 
@@ -686,7 +684,7 @@ def generate_resolve_socket(config, user_name: str, uid: int) -> str:
 
     sock = unit.section("Socket")
     # Both transports on the workload's own loopback address. IPv4 only: there
-    # is deliberately no v6 responder plane (§9 rejects one on cost), and a v6
+    # is deliberately no v6 responder plane (rejected on cost), and a v6
     # plane on `lo` would not be a substitute anyway -- the shipped `oif lo
     # accept` would make it reachable from every workload on the host, which is
     # the one property 127/8's unreachability from the workload is providing:

@@ -1,34 +1,33 @@
 # Manual rigs
 
-Checks that need a real KVM host and cannot run in the normal suites. Nothing
+Checks that need a real host and cannot run in the normal suites. Nothing
 here runs under `just test` or `just test-runtime`; each is invoked by hand on a
-host that has the workloadctl RPM installed.
+host that has the workloadctl RPM installed. A run's result, and what each
+break flag or deliberate break showed, goes in the commit message of the
+change it proved.
 
 ## Writing a row here
 
 These rigs exist because unit gates do not see the seam. They have blind spots
 of their own, and every rule below was paid for by a defect that shipped past a
-green rig. Read this before adding a row; the rest of the file is what each rig
-found.
+green rig. Read this before adding a row.
 
-**Probe the window, not the settled state.** Every row in
-`container_egress_rig` followed one shape — enable, recreate, sleep, probe —
-and that shape is blind to a control that arms *too late*. The egress arming
-sat on the umbrella unit, which is `After=` its members, so every container
-started unfiltered and the workload became filtered mid-flight; by the time
-anything was probed, that is indistinguishable from correct. The class is
-general and it is most of what these rigs guard: a filter, a policy load, a
-seccomp profile, a cgroup move can all be right and late. If a row sleeps
-before it measures, ask what it would miss.
+**Probe the window, not the settled state.** A row shaped enable, recreate,
+sleep, probe is blind to a control that arms *too late*. If the egress arming
+ran after a workload's containers started, the workload would run unfiltered
+and become filtered mid-flight; by the time anything is probed, that is
+indistinguishable from correct. The class is general and it is most of what
+these rigs guard: a filter, a policy load, a seccomp profile, a cgroup move can
+all be right and late. If a row sleeps before it measures, ask what it would
+miss.
 
 **Assert the ordering, not the presence of a string.** A containment check
 (*"the arming appears in this unit"*) passes for any unit ordered after the
-members, which is exactly how the test covering the above stayed green. Read
-systemd's **parsed** state — `systemctl show <unit> -p ExecStartPre` and
-friends — not the generated file: only the host says what the manager actually
-loaded, and the two differ after an RPM upgrade without a regenerate, which is
-the state the `%post` scriptlet warns about. Where an observation is available
-rather than a configuration reading, prefer it;
+members. Read systemd's **parsed** state — `systemctl show <unit> -p
+ExecStartPre` and friends — not the generated file: only the host says what the
+manager actually loaded, and the two differ after an RPM upgrade without a
+regenerate, which is the state the `%post` scriptlet warns about. Where an
+observation is available rather than a configuration reading, prefer it;
 `ExecMainStartTimestampMonotonic` is comparable across units.
 
 **Pin the premise as its own row.** "The arming is on the head unit" only
@@ -36,22 +35,21 @@ matters because the umbrella runs late. Without a row asserting *that*, the
 remedy is a preference, and a future change could quietly make it pointless.
 The premise row is usually the one worth writing first.
 
-**A row can assert the defect and pass on it.** The `rules` row here pinned
-`"no inspected egress"` — the sentence an *uninspected* workload gets — so for
-weeks it was green over precisely the bug a later review found. When a product
-message changes, the row that pinned it must be **re-derived from what the
-message should now say**, not edited until it goes green again. A row that only
-ever had to pass is a row that has stopped measuring.
+**A row can assert the defect and pass on it.** A row that pins a product
+message is green over a bug once the message becomes the wrong one — the
+sentence an *uninspected* workload gets, say, printed for an inspected one.
+When a product message changes, the row that pinned it must be **re-derived
+from what the message should now say**, not edited until it goes green again.
+A row that only ever had to pass is a row that has stopped measuring.
 
-**Every "needs another host" deferral deserves re-reading.** Four rows here sat
-deferred on that basis and three needed a *fixture*: a veth, an `/etc/hosts`
-line, a routable address in a namespace. Ask what property the row actually
-needs before asking for a machine.
+**Ask what a "needs another host" row actually needs.** Usually it is a
+*fixture*: a veth, an `/etc/hosts` line, a routable address in a namespace.
+Ask what property the row needs before asking for a machine.
 
 **And check the fixture cannot satisfy the property by accident.** An origin on
 a dummy link is *local*, and `oif lo` accepts a filtered uid's traffic
-unconditionally — so a row measuring a drop would have measured the loopback
-exemption and passed. Put fixtures behind the veth. Where a row asserts
+unconditionally — so a row measuring a drop would measure the loopback
+exemption and pass. Put fixtures behind the veth. Where a row asserts
 something is blocked, add a **control row** proving an unblocked caller reaches
 the same fixture: without it, a responder that never started satisfies every
 assertion in the section.
@@ -69,6 +67,11 @@ directly rather than on functional success — a silent denial leaves the featur
 working and the counters reconciling. `ausearch -ts boot` is unreliable on at
 least one host here; grep the log.
 
+**A rig's own config decays.** `tests/test_manual_rig_configs.py` parses and
+validates the TOML every rig generates, so a config the schema has moved past
+fails in `just test` rather than at `enable` on a hardware trip, where it looks
+like the thing under test.
+
 ## broker_rig.py — does a guest get a key it never holds, and can two brokers tell each other's callers apart?
 
 Needs root, KVM and the workloadctl RPM installed. Boots **two** throwaway VM
@@ -79,22 +82,9 @@ and from the host as each workload's own uid.
 sudo python3 tests/manual/broker_rig.py
 ```
 
-**This is a rewrite, not the rig that was here.** The old one probed a host-wide
-broker at an advertised endpoint (192.0.2.1:8081) that every guest was told
-about, reached through a uid-keyed nft redirect. ADR 007 deleted that whole
-shape, so all 18 of its assertions were about a mechanism that no longer exists
-and it was deleted with them. Patching only the `workload.toml` it generated
-would have been worse than deleting it: `tests/test_manual_rig_configs.py` would
-have gone green over a rig that still dialled an address nothing answers, and
-the failure would have looked exactly like the thing under test — the specific
-decay that gate exists to catch. The old rig is recoverable from git history if
-a future reader wants its scaffolding.
-
-**Four claims, on two workloads rather than four.** The old rig needed four
-because `broker = true`, `hosts` and the credential name were three independent
-config axes and both of its defects lived in their *combinations*. Three of
-those axes are gone. The arms now differ in exactly one line — which credential
-they name — so a difference in what comes back has one available explanation.
+**Four claims, on two workloads.** The arms differ in exactly one line — which
+credential they name — so a difference in what comes back has one available
+explanation.
 
 1. A guest reaches a credential-backed host holding a placeholder and never the
    key. Asserted from both ends: the stub reports which `Authorization` arrived,
@@ -123,100 +113,53 @@ calling), and the same dial as the **other workload's** uid must be refused too
 keeps one workload's caller out of the other's credential. Both refusals are
 403, so each assertion matches the broker's sentence rather than the status.
 
+**The arms cover the shapes a generated config has to express.** One arm takes
+the default auth convention (`x-api-key`) and the other overrides it
+(`Authorization: Bearer`), so one run covers both `[[vm.network.credential]]`
+keys. Both split one host's rules across two policy entries with one
+credential — `/v1/*` for GET, `/v2/*` for POST — the ordinary way to write a policy,
+which has to collapse to one `--host` on the broker's command line because the
+broker refuses a repeated host.
+
+**No `[[vm.network.internal]]` exemption, deliberately.** For a brokered host
+the inspector never dials the origin; it dials the broker on loopback. An
+origin dial would make the origin's reachability and certificate a
+prerequisite for a request that goes to loopback, and with no exemption the
+first probe would fail with `internal destination`. That absence is the only
+check on hardware that the origin dial stays gone.
+
 **What the host-side scaffolding costs.** The broker's upstream is
 `https://<the Host>` with no override — deliberately, so a policy-matched path
 cannot be prefixed on the way out — so the provider has to answer at that name
 on 443. The rig writes one `/etc/hosts` line and serves the stub on 443 at
 `10.99.97.30`, inside a network namespace of its own reached over a veth, and
-removes all of it at teardown. It used to bind the host's `127.0.0.1:443`,
-which a VM host running a reverse proxy already holds, so the rig could not
-run on one. The stub's certificate is handed to each broker instance
-through `SSL_CERT_FILE` in a drop-in rather than installed into the host trust
-store: the trust decision stays the broker's, made the way it always is, and the rig leaves no trust anchor behind on a
-machine it borrowed. Nothing about the path under test is weakened — the drop-in
-adds one environment variable and changes no directive.
+removes all of it at teardown; a VM host running a reverse proxy already holds
+its own `127.0.0.1:443`. The stub's certificate is handed to each broker
+instance through `SSL_CERT_FILE` in a drop-in rather than installed into the
+host trust store: the trust decision stays the broker's, made the way it always
+is, and the rig leaves no trust anchor behind on a machine it borrowed. Nothing
+about the path under test is weakened — the drop-in adds one environment
+variable and changes no directive.
 
 **The guard rows read the manager's parsed `ExecStart=`, not a file.** The
-broker takes everything as flags on the generated unit now: there is no
-`broker.toml`, no `ExecStartPre` and no runtime directory, and the row that
-used to `cat` the config as the workload uid and expect a refusal has become
-four rows on `systemctl show -p ExecStart` — the line names the workload's own
-uid and address; it carries the placeholder (the positive half, so the next
-row measures something); it carries no secret (it is on a world-readable unit,
-so this has to be true rather than arranged); and `ExecStartPre` is empty and
-the runtime directory absent.
+broker takes everything as flags on the generated unit: there is no config
+file, no `ExecStartPre` and no runtime directory. Four rows on `systemctl show
+-p ExecStart`: the line names the workload's own uid and address; it carries
+the placeholder (the positive half, so the next row measures something); it
+carries no secret (it is on a world-readable unit, so this has to be true
+rather than arranged); and `ExecStartPre` is empty and the runtime directory
+absent.
 
-**Last green 2026-10-03, all 41 rows, under enforcing on a VM host running
-production workloads and a reverse proxy on 443**, against the moatery 0.5.0
-RPM, and the first run with the stub in its own namespace. Before that
-**2026-09-21, all
-41 rows, on a KVM host under enforcing, against
-the installed RPM** (broker-flags: the first run in which the broker started
-from the generator's `ExecStart=` flags, with the four guard rows above; both
-arms' keys arrived at the stub, `x-api-key` for the default convention and
-`Authorization: Bearer` for the overridden one, and no denial in the audit
-log). Before that 2026-09-21 at 35 rows against inspector-flags (the
-inspector's broker endpoint as a `--broker` flag the generator computes; this
-is the rig that dials it), and 2026-09-20 against inspector-decouple, where
-the endpoint was a value the launcher derived.
-It has now found five defects, none of which any unit test
-could see. The first two made the brokered path inert for a real guest:
-
-- `_serve_terminated` seeds the upstream pool with the ORIGIN connection it
-  opened before the first request was read, keyed by the host. A brokered
-  request for that host found the entry, was handed the origin, and `dial` was
-  never called — so the request reached the provider carrying the guest's own
-  placeholder while the record said a credential had been attached. Fixed by
-  giving the broker leg a pool slot of its own.
-- The broker's address is `127.129.x.y`, which is inside `wl_internal4`, and
-  that drop is keyed on the workload's cgroup and sits ABOVE the skeleton's
-  `oif lo accept`. So once the broker WAS dialled, the packet was dropped by
-  the rule that exists to stop a guest reaching the LAN — presenting exactly as
-  a broker that is down. Fixed by arming the broker's own address as an
-  internal exemption for workloads that have one.
-
-The second was predicted in the listener's own refusal text ("a missing SELinux
-rule on this dial presents exactly like a broker that is down") and arrived
-through nftables instead.
-
-Three more came out of reading what the first two implied:
-
-- **The generated config could not name a provider's auth convention.** ADR 007
-  names the profile as `(upstream, credential, auth_header, auth_format)`; the
-  render emitted the first two, so every instance ran `x-api-key: {secret}` and
-  any provider wanting `Authorization: Bearer` answered 401 on a request the
-  inspector had recorded as fully authorised and brokered. The hand-written
-  host-wide config could express it and the generated one could not, which made
-  the new shape a regression for a whole class of provider. Both keys are now
-  optional on `[[vm.network.credential]]`; the two arms differ in exactly this,
-  so one run covers the default and an override.
-- **Two policy entries for one host rendered an unparseable `broker.toml`.**
-  Splitting a host's rules — `/v1/*` for GET, `/v2/*` for POST, one credential
-  — is the ordinary way to write §3 and it validates, but it emitted the host's
-  table twice, which TOML refused: the broker exited at start and every
-  brokered request 502'd on a config `validate` had just called clean. Both
-  arms now deploy that shape deliberately. (The file is gone — the broker
-  takes `--host` flags — but the broker refuses a repeated host for a reason
-  of its own, so the shape still has to collapse on the host and the arms
-  still deploy it.)
-- **The origin was dialled for a brokered host and never written to.** The
-  connection was opened before the request was read, verified, pooled and
-  abandoned — which made the ORIGIN's reachability and certificate a
-  prerequisite for a request that goes to loopback, and reported the failure
-  against the origin's name. This rig needed a `[[vm.network.internal]]`
-  exemption because of it; **it deliberately no longer carries one**, and that
-  absence is the only check on hardware that says the origin dial is gone. If
-  it comes back, the first probe fails with `internal destination`.
-
-**It also reads two things no probe can show.** The inspector's own record, for
-the rung 6 seam: `upstream` is honestly the broker's loopback address on a
-brokered request and `credential` names the material that rode along, which is
-what makes a loopback upstream legible rather than alarming. And the audit log,
-because a denial on the inspector's *new* access — the dial to the broker's port
-— is silent by construction: the connect fails, the listener counts a dead
-broker, and the guest gets a 502 naming the broker, which is exactly what a
-genuinely dead broker produces. A green run of the four claims does not
-establish that the grant is present, only that nothing needed it yet.
+**It also reads two things no probe can show.** The inspector's own record:
+`upstream` is honestly the broker's loopback address on a brokered request and
+`credential` names the material that rode along, which is what makes a loopback
+upstream legible rather than alarming. And the audit log, because a denial on
+the inspector's dial to the broker's port is silent by construction: the
+connect fails, the listener counts a dead broker, and the guest gets a 502
+naming the broker, which is exactly what a genuinely dead broker produces. The
+same presentation comes from the broker's address, `127.129.x.y`, falling
+inside `wl_internal4` without its exemption. A green run of the four claims
+does not establish that the grant is present, only that nothing needed it yet.
 
 ## self_dial_rig.py — does the wrong-port counter count, and does `diagnose` say so?
 
@@ -234,8 +177,7 @@ the dropped packet, and `diagnose` gets from the host's nft to the printed
 line. The second is why this exists — `meta skuid` cannot be exercised without
 a process that really owns the uid, so nothing under `just test` can send the
 packet, and a counter that never increments looks exactly like a guest that
-never self-dialled. The third is the seam, and every part of this rung that
-shipped inert shipped inert at a seam.
+never self-dialled. The third is the seam.
 
 **The element shape is the trap.** A set carrying `counter` renders its
 elements wrapped, `{"elem": {"val": {"concat": [...]}, "counter": {...}}}`,
@@ -252,13 +194,14 @@ assertion still passes against a rule that has lost `meta skuid` and is
 dropping the address for everyone, host tooling included. Absent and zero are
 also held apart — an unarmed element reads as absent, not as zero.
 
-Last green 2026-08-25, all rows, on a bare-metal Fedora 44 host.
-
 ## inspect_rig.py — does a guest told nothing land in the inspector?
 
-The rung's headline claim, and the one thing about it that only a real boot can
-show. Needs a KVM host with the workloadctl RPM installed; it boots two
-throwaway VM workloads and probes them from inside, then purges them.
+The one thing about transparent inspection that only a real boot can show.
+Needs a KVM host with the workloadctl RPM installed; it boots two throwaway VM
+workloads and probes them from inside, then purges them. Run it under
+**enforcing**, not `semodule -DB`: a permissive or dontaudit-disabled pass
+measures the branch that ran, and an earlier denial changes which branch that
+is.
 
 ```bash
 sudo python3 tests/manual/inspect_rig.py
@@ -266,12 +209,11 @@ sudo python3 tests/manual/inspect_rig.py --quiet   # failures and the tally only
 ```
 
 `--quiet` is for reading a run back over ssh rather than watching it: a green
-run collapses from 58 PASS lines, several carrying a whole JSON document, to
-one tally line. Failures are never suppressed — each prints in full, under the
-section header naming the phase it was in, and an escaping exception prints
-that header too. `tests/test_manual_rig_quiet.py` pins that, because the branch
-that matters here only runs on a KVM host and only when something is already
-wrong.
+run collapses to one tally line. Failures are never suppressed — each prints in
+full, under the section header naming the phase it was in, and an escaping
+exception prints that header too. `tests/test_manual_rig_quiet.py` pins that,
+because the branch that matters here only runs on a KVM host and only when
+something is already wrong.
 
 **Two guests, differing in one config line.** The `plain` arm is filtered with
 no `hosts`, so nothing is allowlisted and every dial to 80/443 is DNAT'd onto
@@ -283,33 +225,32 @@ without that arm the forward and splice code paths never execute under SELinux
 at all. The single-line difference between the arms is what makes a failure
 attributable to one half or the other.
 
-**The negative half is the guest's, and it is new.** The plain arm also dials
+**The negative half is the guest's.** The plain arm also dials
 `192.0.2.1:3128` and asserts nothing answers, then sets `https_proxy` to that
-endpoint and asserts a real `curl` through it fails. An operator upgrading a
-workload whose image bakes in the old export, or whose custom seed was written
-against the old docs, has to get a hard failure rather than a client that
-quietly falls back — otherwise both designs are live at once and the
-transparent one is not the only path out.
+endpoint and asserts a real `curl` through it fails. A workload whose image
+bakes in a proxy export has to get a hard failure rather than a client that
+quietly falls back, or the transparent path is not the only path out.
 
-**The second arm changed shape at rung 2.** It was called `proxy` and carried a
-real tinyproxy, and its job was the `wl_inspect_cg` exemption: the proxy's
-upstream `CONNECT` leg was `tcp dport 443` from the workload's own uid, so
-without that element it was redirected into the listener it was dialling past.
-Rung 2 deleted the proxy and with it that member of the set. The exemption
-check stays — an inspector missing from the set dials into itself, and **no
-unit test can see that fail**, because the element resolves a cgroup id at add
-time — but it now covers inspectors and responders rather than proxies.
+**The cgroup exemptions are matched per arm, after the probes.** An inspector
+missing from `wl_inspect_cg` dials into itself, and **no unit test can see that
+fail**, because the element resolves a cgroup id at add time. The inspector is
+socket-activated and both cgroup elements are armed by the *service*'s
+`ExecStartPre`, not the socket's — a socket-bound but unstarted service has no
+cgroup to resolve — so the sets are legitimately empty until the first guest
+dial. The check runs after `probes()` and matches the exact cgroup path per
+arm in *both* sets (`wl_inspect_cg` for the redirect, `wl_egress_cg` for the
+default-deny), because the invariant is both-or-neither and a bare count of
+`>= 1` is satisfied by one arm while the other dials into itself.
 
-**The record's seam, added at rung 5 T2.** A live guest makes an *allowed*
-cleartext request to an allowlisted host with a per-run marker in its path, and
-the rig then reads it back through `workloadctl egress` — the same command an
-operator would type. Seven assertions: the file exists with the modes and owner
-the design claims (`0700` directory, `0600` file, both `_wl-<name>`), the
-allowed request is in it, its `id` is the id on the journal line for the same
-connection, `--id` selects that connection alone, the plain arm's denial
-carries the `reason` that says *which* denial it was, a non-root read is
-refused with a sentence rather than a traceback, and an unknown `--reason` is
-an error rather than an empty report.
+**The record's seam.** A live guest makes an *allowed* cleartext request to an
+allowlisted host with a per-run marker in its path, and the rig then reads it
+back through `workloadctl egress` — the same command an operator would type.
+The file exists with the modes and owner the design claims (`0700` directory,
+`0600` file, both `_wl-<name>`), the allowed request is in it, its `id` is the
+id on the journal line for the same connection, `--id` selects that connection
+alone, the plain arm's denial carries the `reason` that says *which* denial it
+was, a non-root read is refused with a sentence rather than a traceback, and an
+unknown `--reason` is an error rather than an empty report.
 
 Nothing in `just test` reaches any of that. The writer is unit-tested against a
 fake listener and the reader against a fixture directory, and **both stay green
@@ -320,93 +261,33 @@ never let a diagnostic kill a guest request all look identical from there. The
 journal, so a record holding only refusals would be a green reading that says
 nothing about the path the private sink exists for.
 
-**The staleness seams, added at rung 5 T4/T5/T7.** Three comparisons between a
-value a *running* process holds and a value on disk, which is a shape the unit
-suite can only test against injected observations. Ten assertions: the listener
-reports a policy digest at all, that digest is the digest of the document on
-disk, a healthy workload is *not* reported stale, an edited document *is* — and
-its remedy names the VM rather than the socket — the edit is then restored and
-the report goes quiet again, all four filter-table sets carry the workload's
-uid, and the CA fingerprint the minter reports equals a fresh `openssl x509
--fingerprint -sha256` of the file, with an expiry beside it.
+**The staleness seams.** Three comparisons between a value a *running* process
+holds and a value on disk, which is a shape the unit suite can only test
+against injected observations: the listener reports a policy digest at all,
+that digest is the digest of the document on disk, a healthy workload is *not*
+reported stale, an edited document *is* — and its remedy names the VM rather
+than the socket — the edit is then restored and the report goes quiet again,
+all four filter-table sets carry the workload's uid, and the CA fingerprint the
+minter reports equals a fresh `openssl x509 -fingerprint -sha256` of the file,
+with an expiry beside it.
 
-The reason none of that is reachable from `just test` is the same reason the
-status-file checks exist at all: **every one of these comparisons treats an
-unknown as silence**, deliberately, so that a diagnostic never manufactures a
-failure out of a missing diagnostic. A digest the listener could not write, a
-set name that drifted, an `nft` the CLI's domain may not exec — each produces
-exactly what a healthy host produces. A comparison that never runs and a
-comparison that always agrees are the same green line, and only a live host
-distinguishes them.
+**Every one of these comparisons treats an unknown as silence**, deliberately,
+so that a diagnostic never manufactures a failure out of a missing diagnostic.
+A digest the listener could not write, a set name that drifted, an `nft` the
+CLI's domain may not exec — each produces exactly what a healthy host produces.
+A comparison that never runs and a comparison that always agrees are the same
+green line, and only a live host distinguishes them.
 
 The policy edit is destructive and is undone in a `finally`, with the undo
 *asserted* rather than assumed. A rig that breaks the product and then dies
-leaves the next run measuring the break, and a break that looks like the
-feature under test is the worst kind to inherit.
+leaves the next run measuring the break.
 
-**What only a real boot showed.** Both defects this rig found were ordering
-against user creation, and both passed every unit test. The generator called
-`getpwnam` for `_wl-<name>` having only just written the sysusers config, so on
-a *first* enable the user did not exist, the `KeyError` hit the per-workload
-`try/except`, and the workload got **no VM units at all** — the existing test
-mocked `getpwnam`, which is precisely what hid it. And the inspect socket had no
-`After=workload-<name>-setup.service`, so it raced user creation and usually
-won. A mock of the thing that is missing at boot cannot see the failure.
-
-On a host with no IPv6 uplink the rig installs a temporary route to the probe
-address over the inspector's dummy link and removes it afterwards; without it
-the v6 probes die at the routing lookup, before nftables is consulted, which
-looks like a redirect defect and is not.
-
-On a host with no IPv6 uplink the temporary route makes the guest's v6 source
-address come off the `wl-egress` link, which carries every workload's
-listener address — so the listener logs a `peer=` that is some *other*
-workload's plane. It is an artifact of the rig's own route, not a policy
-finding: the guards match on destination, and a host with a real v6 uplink
-sources from a global address. Worth recognising rather than re-investigating.
-
-**A name resolves to IPv4 only.** passt's DHCPv6 hands the guest a host IPv6
-address, and on a host with no v6 uplink the only global ones are the
-inspectors' on `wl-egress` -- the guest took its own inspector's. While the
-responder answered AAAA with that address, every by-name dial tried v6 first and
-was refused inside the guest in a millisecond. The fetch rows stayed green over
-it, because curl falls back to v4 and gets its 200; only a v6-only client, or one
-that dials the first answer alone, fails. The row reads `getent ahosts` and
-prints the guest's own v6 addresses beside it, so a run on a host with a real
-uplink, where the trap is not set, says so.
-
-Last green 2026-09-26, **all 58 rows**, on a bare-metal Fedora 44 KVM host
-under plain **enforcing**, with no responder handed `--address6`. Before that
-2026-09-21, all 57 rows, same host and posture, against the installed RPM at
-the inspector-flags merge -- the first run in which the listener started from the generator's
-`ExecStart=` flags rather than a bare name it derived the rest from. Before that
-2026-08-25, all rows, same host and posture with the shipped dontaudit rules in
-place: the first recorded run of the post-deletion shape, since the rig was
-rewritten in the same commit that deleted the proxy and every earlier figure
-describes a different rig.
-
-Run under **enforcing**, not `semodule -DB`. A permissive or dontaudit-disabled
-pass measures the branch that ran, and an earlier denial changes which branch
-that is. The history is worth keeping for that reason: an earlier 31-assertion
-run under `-DB` is what *found* the two SELinux findings below — both real,
-neither visible from `just test` — and a 33-assertion run under enforcing is
-what closed them. `workload-<name>-resolve.service` measuring as `wlresolve_t`
-rather than `unconfined_service_t` is the whole of what
-`security/workload-resolve.cil` was written for.
-
-**One correction the first post-deletion run produced, in the rig itself.** The
-`wl_inspect_cg` check used to sit in `guards()`, before any probe, and it failed
-there at 33/34 on a host where nothing was wrong. Under rung 1 the member it
-watched was the workload's tinyproxy — an ordinary long-running service, up
-before the guards ran. The inspector is socket-activated, and both cgroup
-elements are armed by the *service*'s `ExecStartPre`, not the socket's, because
-an element resolves to a cgroup id at add time and a socket-bound-but-unstarted
-service has no cgroup for one to resolve to. So the set is legitimately empty
-until the first guest dial. The check moved after `probes()` and got stronger on
-the way: it now matches the exact cgroup path per arm, in *both* sets
-(`wl_inspect_cg` for the redirect, `wl_egress_cg` for the default-deny), because
-the invariant is both-or-neither and a bare count of `>= 1` is satisfied by one
-arm while the other dials into itself.
+**Ordering against user creation.** A first enable has to produce VM units and
+a working inspect socket on a host where `_wl-<name>` did not exist a moment
+before: the generator must not need `getpwnam` for a user it has only just
+written the sysusers config for, and the socket is ordered
+`After=workload-<name>-setup.service`. A unit test that mocks `getpwnam` cannot
+see either.
 
 **Status files.** Both producers keep counters and write them into the VM's
 runtime directory, and that write is guaranteed never to raise: a failure is a
@@ -415,38 +296,17 @@ directory produces precisely what a working one produces — green suite, green
 rig, no file. `status_files()` therefore looks for the file itself, checks the
 stamp is fresh rather than merely present, and dials again to confirm the
 counters *move* (a file written once at startup and never again is a producer
-whose every later write is failing). **What the first run actually found was worse than that.** The
-module carried NO `qemu_var_run_t` rules, so the listener could not read its own
-policy document — `Permission denied: /run/workload-vm/<name>/inspect.json` —
-exited 1, and the socket unit restart-looped. Every guest dial to 80/443 timed
-out. That is a rung-2 regression, not a T6 one: the policy file arrived and the
-grant did not, so on an enforcing host the transparent path had never worked.
-Loud, at least, unlike the status write. Note that no sibling grant includes
-`rename`, which `os.replace` needs — copying `workload-proxy.cil`'s block
-verbatim gives a half-grant that reaches the replace and fails there.
+whose every later write is failing). It waits out `STATUS_INTERVAL` (30 s)
+before reading a tick, since a pre-loop write is zeros, freshly stamped,
+identical to a broken counter. A policy grant on the runtime directory needs
+`rename` too, which `os.replace` needs.
 
-**Domains.** `moat-inspect` has a filecon and a
-`type_transition` and should be `wlinspect_t`. The responder (then
-`workload-vm-resolve`, now moatery's `moat-resolve`) had
-neither, so it entrypointed `bin_t` from `init_t` with nothing to retype it and
-ran in PID 1's own domain — a process terminating guest-supplied DNS packets,
-outside the boundary `wlinspect_t` exists to draw. Measured on the host, it ran as
-`unconfined_service_t` — a process parsing guest-supplied DNS wire format,
-unconfined for as long as it had existed, with nothing anywhere failing.
-`security/workload-resolve.cil` now supplies `wlresolve_t`. On a permissive
-host every check in this group passes trivially, so the rig says so out loud
-rather than reporting a green it has not earned.
-
-Two things the rig got wrong on its first run, both fixed, both worth knowing
-before trusting a result here. It waited seconds for a status tick when
-`STATUS_INTERVAL` is 30s, so it kept reading the pre-loop write — zeros,
-freshly stamped, identical to a broken counter. And it demanded the status file
-be ABSENT after a restart, which fails a correct system: the inspect service is
-`PartOf=workload-<name>.service`, so a VM restart restarts the producer, which
-comes straight back up and writes a fresh snapshot with no dial needed. The
-property that actually matters is that the previous instance's COUNTS cannot
-survive, so the check now makes drops non-zero first and then asserts the
-post-restart file is absent or all-zero.
+**Domains.** `moat-inspect` runs as `wlinspect_t` and the responder as
+`wlresolve_t` (`security/workload-resolve.cil`); without its own domain the
+responder would run as `unconfined_service_t`, parsing guest-supplied DNS
+wire format with nothing failing. On a permissive host every check in this
+group passes trivially, so the rig says so out loud rather than reporting a
+green it has not earned.
 
 **Stale status across a restart.** The runtime directory is
 `RuntimeDirectoryPreserve=yes` (so a restart does not yank the qmp and console
@@ -455,16 +315,37 @@ so after a restart the file on disk belongs to the previous boot with no
 process running to correct it. `written_at` cannot tell that apart from a live
 producer idle since the same moment. The arming helpers clear it, and this is
 the only check that can see that wiring — it needs a real preserved directory
-surviving a real restart. It asserts *before* anything dials the restarted
-guest, because one dial recreates the file for an innocent reason and the check
-would pass either way.
+surviving a real restart. The inspect service is
+`PartOf=workload-<name>.service`, so a VM restart restarts the producer, which
+writes a fresh snapshot with no dial needed; the property is that the previous
+instance's COUNTS cannot survive. The check makes drops non-zero first, then
+asserts the post-restart file is absent or all-zero *before* anything dials the
+restarted guest.
+
+**IPv6 on a host with no uplink.** The rig installs a temporary route to the
+probe address over the inspector's dummy link and removes it afterwards;
+without it the v6 probes die at the routing lookup, before nftables is
+consulted, which looks like a redirect defect and is not. That route makes the
+guest's v6 source address come off the `wl-egress` link, which carries every
+workload's listener address — so the listener logs a `peer=` that is some
+*other* workload's plane. It is an artifact of the rig's own route, not a
+policy finding: the guards match on destination, and a host with a real v6
+uplink sources from a global address.
+
+**A name resolves to IPv4 only.** passt's DHCPv6 hands the guest a host IPv6
+address, and on a host with no v6 uplink the only global ones are the
+inspectors' on `wl-egress`. A responder answering AAAA with that address would
+send every by-name dial to v6 first, refused inside the guest in a millisecond;
+the fetch rows would stay green over it, because curl falls back to v4. So no
+responder is handed `--address6`, and the row reads `getent ahosts` and prints
+the guest's own v6 addresses beside it, so a run on a host with a real uplink,
+where the trap is not set, says so.
 
 ### Harvesting the missing policy
 
 Do the `semodule -DB` pass *first*, not after several enforcing iterations.
-`workload-inspect.cil`'s own header records a rule that was invisible to four
-enforcing runs because shipped policy dontaudits it, and whose only symptom was
-a systemd error message naming no SELinux concept at all.
+Shipped policy dontaudits some rules this domain needs, and a missing one can
+surface only as a systemd error message naming no SELinux concept at all.
 
 ```bash
 sudo semodule -DB                        # disable dontaudit, rebuild
@@ -472,27 +353,17 @@ sudo python3 tests/manual/inspect_rig.py # provoke the denials
 sudo semodule -B                         # restore dontaudit when done
 ```
 
-Read the denials out of `/var/log/audit/audit.log` directly. `ausearch -ts
-boot` has been observed reporting zero records on a host whose log plainly
-contains hundreds, so the rig itself remembers a byte offset into the file
-rather than asking `ausearch` for a time range. An empty result from
-`audit_denials()` means "nothing in the audited set" and is not proof the
-domain is complete.
+Read the denials out of `/var/log/audit/audit.log` directly; the rig remembers
+a byte offset into the file rather than asking `ausearch` for a time range. An
+empty result from `audit_denials()` means "nothing in the audited set" and is
+not proof the domain is complete.
 
-The rig's own config decayed, too: it emitted `allow = ["1.1.1.1:53"]`, the
-bare-string form rung 2 retired, and died at `enable` with no VM ever booted —
-a surface indistinguishable at a glance from the SELinux findings above. Only
-the generator's error message told them apart. `tests/test_manual_rig_configs.py`
-now parses and validates the TOML every rig generates, so that class of decay
-fails in `just test` rather than on a hardware trip.
+## input_chain_rig.py — two measurements of packets crossing a real kernel hook
 
-## input_chain_rig.py — the two rung-1 measurements no unit test can make
+`just test` cannot reach either: one asks whether a drop rule stops traffic
+that has never been sent, and the other counts what a capture actually holds.
 
-Both concern packets crossing a real kernel hook, which is why `just test`
-cannot reach either: one asks whether a drop rule stops traffic that has never
-been sent, and the other counts what a capture actually holds.
-
-Unlike the other rigs here it needs **no KVM and no VM** — everything happens in
+Unlike the VM rigs it needs **no KVM and no VM** — everything happens in
 throwaway network namespaces, so it runs anywhere `ip netns` and `tcpdump` do.
 It reads the installed skeleton, so install the RPM first.
 
@@ -509,15 +380,13 @@ The rig sends a packet in over a veth from a peer namespace, which is the only
 way to produce `iif != lo` without another machine.
 
 **The capture doubling.** `pcap_output_rule` and `pcap_input_rule` log to the
-same nflog group, and a host-local packet crosses both hooks. Measured: 10
-packets on the wire, 18 in the file, `pcap_output` 8 + `pcap_input` 10 = 18. So
-the loss check has to sum both counters, and the inflation is **2x, not 4x** —
-the 4x needs a second leg, which arrives only when the inspector re-originates.
+same nflog group, and a host-local packet crosses both hooks: 10 packets on the
+wire are 18 in the file, `pcap_output` 8 + `pcap_input` 10. So the loss check
+has to sum both counters, and the inflation is **2x, not 4x** — the 4x needs a
+second leg, which arrives only when the inspector re-originates.
 
 Every packet a socket sent is captured twice; bare ACKs the kernel emits on its
 own behalf appear once, because there is no owner for `meta skuid` to match.
-
-Last green 2026-08-25, all rows, on a bare-metal Fedora 44 host.
 
 ## clock_rig.py — what a vCPU pause does to a guest's clock, and whether a wrong clock costs the guest its egress
 
@@ -534,14 +403,14 @@ deliberately wrong, and then skews it again with nothing dialling and waits for
 the clock keeper. Twelve minutes end to end, most of it the 120-second pause,
 cloud-init's first boot, and two waits on a one-minute timer.
 
-**Why it exists.** Rung 3 mints 30-day leaves for the guest to validate, which
-puts the guest's clock on the critical path for all of its traffic. Drift is a
-non-issue — about 10 ppm, four orders of magnitude inside a leaf's window — but
-a *pause* is not: the guest loses the pause exactly and never gets it back, and
-the 1-hour `notBefore` backdate covers roughly 1,200 years of drift and exactly
-one hour of pause. Past that, every freshly-minted leaf has a `notBefore` in the
-guest's future and validation fails on every request while `diagnose` reports a
-healthy VM.
+**Why it exists.** The inspector mints 30-day leaves for the guest to validate,
+which puts the guest's clock on the critical path for all of its traffic. Drift
+is a non-issue — about 10 ppm, four orders of magnitude inside a leaf's window
+— but a *pause* is not: the guest loses the pause exactly and never gets it
+back, and the 1-hour `notBefore` backdate covers roughly 1,200 years of drift
+and exactly one hour of pause. Past that, every freshly-minted leaf has a
+`notBefore` in the guest's future and validation fails on every request while
+`diagnose` reports a healthy VM.
 
 **One of the two paths that reaches it is ours.** `workloadctl backup
 --consistency crash` issues QMP `stop`, copies the qcow2, and `cont`s in a
@@ -560,75 +429,38 @@ somewhere inside the `workloadctl exec` round-trip, so the reading is bracketed
 by two host reads and the interval's *width* is that latency. The upper bound is
 the stable one; the lower tracks the round-trip.
 
-**Last green 2026-09-21, 29/29 on a TSC-clocksource KVM host and 26/26 on
-an hpet one (3b skipped, as designed), both under enforcing, against the
-installed RPM** (inspector-flags: the inspector is started from an
-`ExecStart=` that hands it `--name --policy --state-dir --status --record
---broker`, all computed by the generator; the journal shows it terminating
-and forwarding for the guest from that line, 7 and 8 measure as below. The
-first TSC run went 28/29: the keeper's domain row read `init_t` off
-systemd's pre-exec child, which systemd 259 names `(workload-vm-clock)` in
-/proc for ~10 ms before execve -- the rig's catch now skips it, header.)
-Previous: 2026-09-20, 29/29 (TSC) and 26/26 (hpet)
-(no-clock-hook: the inspector's per-mint clock resync is
-gone, and 7 now measures the failure it used to prevent -- `certificate is
-not yet valid` on a fresh leaf with the keeper held off, `mints +2` while the
-inspector reports healthy, the clock untouched, `diagnose` red with the
-offset -- before 8 releases the keeper and the same leaf validates on a cache
-hit with `diagnose` green. A `semodule -DB` harvest on both hosts: `wlclock_t`
-attempted exactly the three denials `security/workload-clock.cil` declines to
-grant, and `wlinspect_t`, minting and terminating for a real guest, attempted
-none of the three agent-socket grants that were removed from it.)
-Before that: 2026-09-20, 27/27 (TSC) and 24/24 (hpet) under enforcing
-(clock-keeper: measurement 8 arrived -- the keeper's tick caught live in
-`wlclock_t`; the first run of that row failed a working domain by reading
-the journal's `_SELINUX_CONTEXT`, above). Before that, 2026-09-20, TSC host
-under enforcing (inspector-decouple). Green on 2026-09-02 and
-2026-08-27; the re-run was against a later build, on a host also carrying live
-production workloads, with clean teardown and nothing else disturbed. Rungs since then
-deliberately deferred this rig — they touch nothing it covers — so the re-run
-exists to close one residual doubt: a later rung deleted an `ExecStopPost` from
-*every* VM unit, including ones with no broker, which is the generic VM unit
-path this rig exercises.
-
 **The `ptp_kvm` arm needs a host this rig does not control**, and that is the
 one thing to check before reading a result. `ptp_kvm` answers only where the
 **host's** clocksource is the TSC; on `hpet` or `acpi_pm` the module refuses to
-load in every guest and measurements 3, 3b and 3c skip, saying so. An earlier
-run on such a host reached 8/9 and could say nothing about the guest-side
-remedy. Two homelab hosts qualify; check the candidate rather than assuming.
+load in every guest and measurements 3, 3b and 3c skip, saying so. Check the
+candidate host rather than assuming.
 
-**What the guest-side arm settled, once it could run at all.** `/dev/ptp_kvm`
-appears, chrony selects it as a refclock (`#* PHC0`, ~874 ns) with
-`makestep 1 -1`, and **the guest repairs a 120-second pause by itself in 24
-seconds**. Measurement 3c then turns the remedy off, and the rest of the rig
-measures the guest that a custom `user_data_file` produces — one with no
-`ptp_kvm` wiring — rather than contriving a second workload for it.
+**The guest-side arm.** `/dev/ptp_kvm` appears, chrony selects it as a refclock
+(`#* PHC0`) with `makestep 1 -1`, and the guest repairs a 120-second pause by
+itself within about half a minute. Measurement 3c then turns the remedy off,
+and the rest of the rig measures the guest that a custom `user_data_file`
+produces — one with no `ptp_kvm` wiring — rather than contriving a second
+workload for it.
 
-**What it settled about the pause itself.** The step equals the pause to 25 ms
-(119.984 s against 120.008 s), the guest survives it, and **nothing puts it
-back**: still 119.3 s behind after resume with the guest-side remedy off.
-`guest-set-time` with **no argument fails** — it reads the guest's RTC
-and returns `hwclock: select() to /dev/rtc0 to wait for clock tick timed out`,
-which corrects an earlier note recording it as not returning at all. The
-**explicit-nanoseconds form works**, taking the guest from −120.9 s to +0.6 s,
-inside the measurement's own bracket. That is the remedy rung 3 adopts.
+**The pause itself.** The step equals the pause to within tens of
+milliseconds, the guest survives it, and **nothing puts it back** with the
+guest-side remedy off. `guest-set-time` with **no argument fails** — it reads
+the guest's RTC and returns `hwclock: select() to /dev/rtc0 to wait for clock
+tick timed out`. The **explicit-nanoseconds form works**, inside the
+measurement's own bracket, and is the remedy the clock keeper uses. The
+no-argument form is recorded as an observation rather than a failure, so a
+future QEMU or image that makes it work shows up as a change here.
 
-The no-argument form is a *finding*, not a defect in the rig, and is recorded
-as an observation rather than a failure so a future QEMU or image that makes it
-work shows up as a change here. It has been stable across both full runs.
-
-**Measurement 7 closes the loop by measuring the failure.** Everything above
-measures a clock; 7 measures what the clock is on the critical path *of*. With
-the clock keeper's timer stopped (and recorded as stopped), it pushes the guest
-**two hours** back — past the `notBefore` backdate, so a stale clock cannot
-validate a fresh leaf by accident — and asks it for a name it has never asked
-for, so the leaf it is handed is minted now. The handshake must **fail** with
-`certificate is not yet valid`. Four corroborations say why it failed: the
-inspector's `mints` moved (it signed the leaf and has no idea), the `mint`
-block carries no clock or remedy figure (the minter used to run a per-mint
-resync and count it; the counters left with the check, and a key reappearing
-is the seam coming back), the guest is **still** two hours out afterwards
+**Measurement 7 measures the failure.** Everything above measures a clock; 7
+measures what the clock is on the critical path *of*. With the clock keeper's
+timer stopped (and recorded as stopped), it pushes the guest **two hours** back
+— past the `notBefore` backdate, so a stale clock cannot validate a fresh leaf
+by accident — and asks it for a name it has never asked for, so the leaf it is
+handed is minted now. The handshake must **fail** with `certificate is not yet
+valid`. Four corroborations say why it failed: the inspector's `mints` moved
+(it signed the leaf and has no idea), the `mint` block carries no clock or
+remedy figure (the inspector does not touch the guest's clock, and a key there
+is that seam coming back), the guest is **still** two hours out afterwards
 (nothing on the mint path touched it), and `workloadctl diagnose --json` fails
 its `vm_guest_clock` line naming the offset — the operator's one view of a
 guest the keeper cannot see or has not yet reached.
@@ -646,29 +478,29 @@ changed and not the certificate. The tick is caught running with `wlclock_t`
 in its label, the keeper's journal line appears exactly once, and `diagnose`
 goes green on the same line it was red on.
 
-**The domain is read off the live process, not the journal, and the first
-run of this row failed a working domain by doing the latter.** A oneshot
-leaves no `MainPID` to ask, so the rig scans `/proc` at 20 Hz for the tick and
-reads its `attr/current` before it exits. The obvious shortcut — journald's
-`_SELINUX_CONTEXT` on the keeper's stdout line — reads `init_t` on every
-service that transitions on exec, because for `_TRANSPORT=stdout` that field is
-the stream socket's peer label, captured when systemd's pre-exec child
-connected it; `_COMM` and `_EXE` on the same line are post-exec, which is what
-makes it convincing. Measured 2026-09-20.
+**The domain is read off the live process, not the journal.** A oneshot leaves
+no `MainPID` to ask, so the rig scans `/proc` at 20 Hz for the tick and reads
+its `attr/current` before it exits, skipping systemd's pre-exec child, which
+`/proc` names `(workload-vm-clock)` for a few milliseconds before execve and
+which is still `init_t`. The obvious shortcut — journald's `_SELINUX_CONTEXT`
+on the keeper's stdout line — reads `init_t` on every service that transitions
+on exec, because for `_TRANSPORT=stdout` that field is the stream socket's peer
+label, captured when systemd's pre-exec child connected it; `_COMM` and `_EXE`
+on the same line are post-exec, which is what makes it convincing.
 
 ---
 
-## rung5_rig.py — do rung 5's reporting surfaces tell the truth about a live guest?
+## reporting_rig.py — do the egress reporting surfaces tell the truth about a live guest?
 
-Rung 5's T6 (`workloadctl rules`), T8 (`doctor`'s egress section) and T9 (the
-exporter's inspector series). Needs root, `/dev/kvm` and the installed RPM —
-`workloadctl` and `workload-exporter` are invoked by name, off PATH and out of
-`/usr/libexec`, exactly as an operator gets them. Two throwaway VMs: one
-filtered, one with `egress = "open"`.
+`workloadctl rules`, `doctor`'s egress section and the exporter's inspector
+series. Needs root, `/dev/kvm` and the installed RPM — `workloadctl` and
+`workload-exporter` are invoked by name, off PATH and out of `/usr/libexec`,
+exactly as an operator gets them. Two throwaway VMs: one filtered, one with
+`egress = "open"`.
 
 ```bash
-sudo python3 tests/manual/rung5_rig.py
-sudo python3 tests/manual/rung5_rig.py --quiet   # failures and the tally only
+sudo python3 tests/manual/reporting_rig.py
+sudo python3 tests/manual/reporting_rig.py --quiet   # failures and the tally only
 ```
 
 **Why it exists when every figure has a unit test.** All three surfaces are
@@ -681,25 +513,22 @@ claims only a host settles:
 - **`rules` reports origin `disk`.** Off a host every test takes the `config`
   fall-back, because there is no `/run/workload-vm/<name>/inspect.json` to
   prefer — so the preferred branch, and the 0640 root-owned read that goes with
-  it, had never executed against a file the listener wrote.
-- **`doctor` and the exporter agree.** Decision 9 says one producer, and the
-  unit suite proves the two renderers agree about a hand-written document.
-  Agreeing about a live one is a different claim: both must have opened the
-  same file, through their own code paths, and come back with the same numbers.
+  it, never executes against a file the listener wrote.
+- **`doctor` and the exporter agree.** There is one producer, and the unit
+  suite proves the two renderers agree about a hand-written document. Agreeing
+  about a live one is a different claim: both must have opened the same file,
+  through their own code paths, and come back with the same numbers.
 - **The counters move.** A reader stuck at zero passes every assertion written
   against a document full of zeros. The rig drives an allowed request and a
   refused one and insists the figures changed.
 
 **The policy is two entries over one host, and both state both keys.** Two
 entries are the point — they union, neither overrides the other, and `rules`
-has to print both against the one name, which is the §3 composition rule the
+has to print both against the one name, which is the composition rule the
 report exists to make visible. Both entries state `methods` *and* `paths`
 because `validate` refuses overlapping entries that omit one: an omitted key
 means ANY, so the omitting entry silently permits everything its sibling was
-narrowed to forbid. Written the natural way — one entry for methods, one for
-paths — the rig fails at `enable` with no VM ever booted, which looks nothing
-like the thing under test. `tests/test_manual_rig_configs.py` caught exactly
-that before this file first reached a host.
+narrowed to forbid.
 
 **Admission is read off two status codes, not asserted directly.** Nothing
 serves `api.example.com`, so the governed probes end 502 at the dial rather
@@ -717,47 +546,23 @@ redirected, so any address reaches the listener and the SNI decides.
 
 ### Reading a failure
 
-Every probe's result is recorded, pass or fail. The first version of this rig
-ignored `curl`'s result, so a guest that had not finished booting produced no
-traffic, no socket activation and no status document — and the rig reported
-that as eight failures about `doctor` and the exporter, none of which named the
-cause. If the traffic line says a probe returned nothing, read no further down:
+Every probe's result is recorded, pass or fail. If the traffic line says a
+probe returned nothing, read no further down: a guest that had not finished
+booting produces no traffic, no socket activation and no status document, and
 everything below it is measuring an inspector that was never dialled.
 
 ---
 
 ## container_egress_rig.py — does the container substrate actually filter?
 
-The first rig here that needs **no KVM**. Everything the VM rigs prove about
-the egress path was proven on a guest; this asks the same questions of a
-container, where the traffic is re-originated by pasta as the workload's own
-uid rather than by passt on a guest's behalf. Needs root, podman and the
-installed RPM. Throwaway container workloads, all prefixed `ceg-`. **Last green 2026-09-26
-on a bare-metal Fedora 44 host under enforcing** (container responder: the
-S11 section below, with `CEG_LAN_HOST` unset, so the LAN row skipped); before
-that all 153 rows on 2026-09-21 (broker-flags: the
-container substrate's broker instance started from the generator's
-`ExecStart=` flags and the brokered request reached the provider carrying the
-sealed key; the LAN row run with `CEG_LAN_HOST` set), earlier the same day
-against inspector-flags (the first run in which the container substrate's
-inspector started from the generator's flag line), before that
-2026-09-20 (inspector-decouple; one row skipped for want of `CEG_LAN_HOST`),
-and before that 2026-09-06
-against an RPM built from the branch under review, with the `rules`/`drift`/`pcap` reporting rows
-re-run after they were converted from measured gaps to assertions.
+Needs **no KVM**. Everything the VM rigs prove about the egress path is proven
+on a guest; this asks the same questions of a container, where the traffic is
+re-originated by pasta as the workload's own uid rather than by passt on a
+guest's behalf. Needs root, podman and the installed RPM. Throwaway container
+workloads, all prefixed `ceg-`. The row count is in the run's own output.
 
-It has grown in four waves: two PR-shaped reviews added the pod, ordering and
-resolver sections; then the credential broker arm; then the record reader,
-rotation and purge; then the three reporting verbs above. That lineage is
-worth keeping. A row COUNT is not, which is why one is no longer written
-here: it went stale on every wave, it says nothing about what is covered —
-twenty rows over one surface and twenty over twenty are the same number — and
-a pinned total quietly invites keeping the number up rather than keeping the
-coverage honest. The count is in the run's own output, where it belongs.
-
-Use `--only=<section>,<section>` to iterate one arm. A full pass is ~40
-minutes, and three of the six defects below were found by re-running a single
-section in three.
+Use `--only=<section>,<section>` to iterate one arm; a full pass is about
+40 minutes.
 
 ```bash
 sudo python3 tests/manual/container_egress_rig.py
@@ -765,15 +570,16 @@ sudo CEG_LAN_HOST=192.0.2.10 python3 tests/manual/container_egress_rig.py
 sudo python3 tests/manual/container_egress_rig.py --keep   # leave them running
 ```
 
-**The ladder is walked on one workload, not built three times.** Rung 1 (no
-`[network]` egress key), rung 2 (`hosts` only, spliced, no CA), rung 3 (a
-`[[network.policy]]` entry, refused until `ca_delivery` is stated, then
+**The ladder is walked on one workload, not built three times.** No
+`[network]` egress key, then `hosts` only (spliced, no CA), then a
+`[[network.policy]]` entry (refused until `ca_delivery` is stated, then
 terminating) are three states of one file with a `workloadctl recreate` between
 them. Three separately-enabled workloads would each prove their own end state
 and say nothing about the *transition*, which is where a silently-gained CA
 requirement would hide. It also settles the apply question by exercising it:
-`recreate`, never `restart` — `restart` regenerates no units, and the rung-3
-transition adds a bind mount and five environment variables to the podman argv.
+`recreate`, never `restart` — `restart` regenerates no units, and the
+terminating transition adds a bind mount and five environment variables to the
+podman argv.
 
 **Both redirected planes, and the cleartext one first.** A rig that checks 443
 and stops leaves plaintext HTTP unfiltered in a workload every report calls
@@ -800,185 +606,109 @@ asserted.** `rules` is VM-only pending the container document renderer and its
 refusal names the trigger, which is the shape a VM-only surface should have.
 `drift` and `pcap` are merely *unrouted*, which is not the same as declining —
 whatever they do, an operator meets it, so the rig records it rather than
-guessing. `diagnose` used to be in that list and no longer is: G7 routed it, so
-a filtered container now gets an inspector line like a VM's.
+guessing. `diagnose` gives a filtered container an inspector line like a VM's.
 
-### Cross-workload inspector reachability — now scored
+### Cross-workload inspector reachability
 
-**This was the one thing the rig measured and did not score. The decision it
-was waiting on has landed, and it was "close it", so the probe asserts.**
+The rig dials the filtered workload's listener from an unfiltered container, on
+the listener's real ports rather than through a redirect, and requires two
+layers to stop it. `workload_filter` drops a non-root packet aimed at a live
+inspector address that is not the sender's own (`@wl_inspect_live`), and the
+listener refuses a caller whose uid is not the workload's own — root included —
+through `moatery.peer_identity`, which reads the kernel's socket table because
+`SO_PEERCRED` is AF_UNIX-only and says nothing about a TCP peer. A `REACHED`
+line is a regression in one of those two.
 
-Two layers now stop it, and the rig requires both to hold. `workload_filter`
-drops a non-root packet aimed at a live inspector address that is not the
-sender's own (`@wl_inspect_live`), and the listener refuses a caller whose uid
-is not the workload's own — root included — through `moatery.peer_identity`,
-which reads the kernel's socket table because `SO_PEERCRED` is AF_UNIX-only
-and says nothing about a TCP peer. A `REACHED` line is a regression in one of
-those two.
+Both are needed because the default-deny drop in `workload_filter` is guarded
+on `@wl_filtered` membership, which an unfiltered workload of *either*
+substrate is not in, so an untranslated packet from it is not dropped there. A
+dial that got through would land in the *victim's* egress record, so a
+workload's own record of what it sent would describe traffic it never sent.
 
-The original note is kept below because the shape of the hole is worth
-remembering: `nftables/workload-redirect.nft` argues
-that a uid with no element in the redirect maps cannot reach another workload's
-inspector, because its packet leaves untranslated and meets the default-deny
-drop in `workload_filter` — but that drop is itself guarded on `@wl_filtered`
-membership, which an unfiltered workload of *either* substrate is also not in.
-So the argument does not close for a container, and reading the rule suggests
-it does not close for an `egress = "open"` VM either.
+### Fixtures in place of another host
 
-The rig dials the filtered workload's listener from the unfiltered container,
-on the listener's real ports rather than through a redirect. Reaching it was
-never only a reachability problem: the dials landed in the *victim's* egress
-records, so a workload's own record of what it sent described traffic it never
-sent. Of the three remedies weighed — a peer-credential check in the listener,
-an input-chain rule covering co-resident uids, or an accepted and documented
-boundary — the first two were both taken, and the boundary was not accepted.
-
-### The three rows that "needed another host", and two of them never did
-
-These sat unrun for a fortnight each, deferred on the grounds that this host
-was the wrong one. Re-reading what each actually needed, two were a fixture
-rather than a machine, and the rig now stands both up and tears them down.
-
-**IPv6** needed a v6 destination the kernel will *route*, not an uplink. A
-ULA on the far side of a veth is one: the packet is built, the routing lookup
-succeeds, and it arrives at the nftables hook under test. An uplink would have
-added an ISP to the measurement rather than removing a doubt from it. The
+**IPv6** needs a v6 destination the kernel will *route*, not an uplink. A ULA
+on the far side of a veth is one: the packet is built, the routing lookup
+succeeds, and it arrives at the nftables hook under test. An uplink would add
+an ISP to the measurement rather than removing a doubt from it. The
 discriminating probe is the *denied* one — a second name at the **same
 address** that is not in `hosts`, so a refusal for it can only have come from
 the inspector reading the name.
 
-**A moved `[[network.allow]]` address** needed two stub origins with different
+**A moved `[[network.allow]]` address** needs two stub origins with different
 bodies and one line in `/etc/hosts`. Which origin answered is the whole
 question, and one origin moved would make "the pin held" and "the rotation
-never took" the same reading.
+never took" the same reading. The rig asserts the container itself now
+resolves the new address before the row it guards; otherwise the row measures
+a DNS cache. After a rotation `diagnose`'s `allow_drift` check names the stale
+address and the entry that pinned it: the inspector is not in this path and
+never sees the connection, so nothing else would.
 
-**`ca_delivery = "env"` against an embedded root store** did need something
-absent, and what was absent was an *image*, so it is a pull. **The obvious
-example is the wrong one**: Node looks like the canonical "ignores
-`SSL_CERT_FILE`" client, and `NODE_EXTRA_CA_CERTS` is one of the five variables
-workloadctl delivers — so Node trusts the CA and the row would pass having
+**`ca_delivery = "env"` against an embedded root store** needs an *image*. Node
+is the wrong one: `NODE_EXTRA_CA_CERTS` is one of the five variables
+workloadctl delivers, so Node trusts the CA and the row would pass having
 measured nothing. Go reads `SSL_CERT_FILE` too. A JVM reads none of the five;
-its anchors are `cacerts` inside the image.
+its anchors are `cacerts` inside the image. The refused-handshake message it
+gets names both remedies — re-seeding a VM, and a container image's own trust
+store or `[[network.splice]]`.
 
 **The origins live in a network namespace behind a veth, and that is
-load-bearing.** The first version put them on a dummy link, which made every
-address *local* — and `workload-filter.nft` accepts a filtered uid's traffic
-unconditionally when `oif lo`, because loopback is the workload's control plane
-and not egress. A local origin is reached whether or not any element authorises
-it, so the rotation row would have passed its dial and proved nothing.
-
-**Two product defects came out of the first hardware pass**, both of them
-about legibility rather than enforcement, which is why every functional
-assertion around them was green:
-
-1. **No surface named a stale `allow` address.** The pinning worked in both
-   directions, and after a rotation `diagnose`, `doctor` and `validate` between
-   them named neither the stale address nor the entry that pinned it — while
-   `egress` had nothing at all, because the inspector is not in this path and
-   never sees the connection. The whole visible symptom was a dial that used to
-   work. `diagnose` now carries an `allow_drift` check, on both substrates.
-2. **The refused-handshake message named a VM-only remedy.** A client that
-   rejects the minted leaf was told "a guest provisioned before this workload
-   had a CA does not trust it and must be re-seeded" — right for a stale VM
-   seed, and actively misleading for a container whose trust store is baked
-   into the image, which has no seed to revisit and no CA route to repair. The
-   JDK arm hit exactly that: all five CA variables delivered and readable, and
-   the JVM refused the leaf anyway. The sentence now names both shapes and the
-   remedy each needs, `[[network.splice]]` included.
-
-Two rig bugs came out of the same pass, and both are the class this file keeps
-warning about. `fd00:ceg::` is not a valid address — `g` is not a hexadecimal
-digit — and the row reported it as "nothing could bind", three layers from the
-cause. And the rotation row passed for the wrong reason: `/etc/hosts` had been
-rewritten and the caches flushed, but the *container* was still being answered
-with the old address, so the probe reached the old origin and read as a pass.
-It was measuring a DNS cache and reporting it as the arm-time pin. Both are now
-preconditions the rig asserts before the row it guards.
+load-bearing.** An address on a dummy link is *local*, and
+`workload-filter.nft` accepts a filtered uid's traffic unconditionally when
+`oif lo`, because loopback is the workload's control plane and not egress. A
+local origin is reached whether or not any element authorises it. The rig
+asserts its fixture addresses bind before the rows that use them, so a bad
+address reads as a fixture failure rather than three layers from the cause.
 
 ### Pod mode, and the ordering that no steady-state row can see
 
-**Added 2026-09-06, after two PR-shaped reviews found the hole these rows now
-guard.** The egress arming used to live on the umbrella
-(`workload-<name>.service`), which looked right — `[network]` is
-workload-level, one uid per workload, and the umbrella is the unit that
-represents "this workload is up". But the umbrella is `After=` its members, so
-systemd started every container *first* and ran the arming afterwards. For the
-whole of member startup the workload had no `wl_filtered` element, no DNAT and
-no listener: it ran completely unfiltered, image pull included, and then became
-filtered mid-flight.
-
-**Why 78/78 was green over it.** Not "the rigs are single-mode" — this rig has
-deployed a filtered bridge workload since P1-9. It is that every row measured
-**steady state**: enable, recreate, sleep, probe. By the time anything is
-probed, a workload that armed late and one that armed on time are identical.
-The bug lives entirely in the window before the first probe.
+The egress arming lives on the head unit, not the umbrella
+(`workload-<name>.service`). The umbrella looks like the right place —
+`[network]` is workload-level, one uid per workload, and the umbrella is the
+unit that represents "this workload is up" — but it is `After=` its members, so
+systemd would start every container *first* and arm afterwards, leaving the
+workload unfiltered for the whole of member startup, image pull included.
 
 So `check_head_unit_ordering` asserts the *ordering*, not the presence of a
-string — a containment check passes for any unit ordered after the members,
-which is exactly how the original P1-14 test passed over this. Five of its six
-rows read systemd's parsed state rather than the generated file, because only
-the host can say what the manager actually loaded, and the two differ after an
-RPM upgrade without a regenerate — the state the `%post` scriptlet warns about.
+string. Five of its six rows read systemd's parsed state rather than the
+generated file, because only the host can say what the manager actually
+loaded. **The load-bearing row is the one about the umbrella:** `the umbrella
+really is ordered AFTER its members` pins the *premise*. Without it, "the
+arming is on the head unit" is a preference; with it, the other placement is
+provably a hole. The sixth row is an observation rather than a configuration
+reading: monotonic start timestamps for the head unit and each member, head
+first.
 
-**The load-bearing row is the one about the umbrella, not the head unit.**
-`the umbrella really is ordered AFTER its members` pins the *premise*. Without
-it, "the arming is on the head unit" is a preference; with it, the old
-placement is provably a hole. It reads 2/2 on a live host.
-
-The sixth row is an observation rather than a configuration reading: monotonic
-start timestamps for the head unit and each member. Head-first by 0.09 s in
-bridge mode and 0.33 s in pod mode.
-
-**Pod mode had never run on a host at all.** `check_bridge_mode` covered one
-multi-container topology and nothing covered the other, so pod mode reached a
-release exercised by unit tests alone — on the substrate where the ordering
-hole lived. `ceg-pod` carries **two** members deliberately: with one member
-there is less window, and the claim is that the arming precedes *all* of them.
-The second member is also probed against a denied host on its own, because it
-shares the pod's netns and therefore the redirect; if only the first were
-filtered, every other assertion here would still pass with half the pod
-unfiltered.
+`ceg-pod` carries **two** members deliberately: with one member there is less
+window, and the claim is that the arming precedes *all* of them. The second
+member is also probed against a denied host on its own, because it shares the
+pod's netns and therefore the redirect; if only the first were filtered, every
+other assertion here would still pass with half the pod unfiltered.
 
 ### The default deny takes DNS, and it is a fact about the host
 
-`check_container_resolver` (S10). **Measured 2026-09-06; before that it was a
-reading of the rule and nothing more.** A triggered container's uid enters
+`check_container_resolver`. A triggered container's uid enters
 `wl_filtered` and meets the last rule in the output chain. The port-53 accept
 in `workload-filter.nft` is scoped to `wl_egress_cg` — the **inspector's**
 cgroup, which a container is never in — so a container's queries survive only
 through `oif lo`. A loopback stub (127.0.0.53) resolves fine; a LAN resolver is
 a workload-uid socket to a routable address on port 53 that no rule accepts,
 and the container then resolves **nothing**, including the hostnames its own
-`hosts` allowlist names.
-
-**Every host this rig has ever run on uses the resolved stub**, this one
-included. That is why the whole hardware history passed through the `oif lo`
-accept without anyone choosing it — the green measured the branch that ran.
-
-**The fixture is a routable resolver, not another host.** What the row needs is
-a port-53 destination the kernel will route off loopback, and the far side of
-the existing veth is one. The namespace is load-bearing for the reason it is
-everywhere else here: an address on a dummy link is *local*, `oif lo` accepts a
-filtered uid's traffic to it unconditionally, and the row would pass having
-measured the exemption instead of the drop.
+`hosts` allowlist names. A host using the resolved stub passes through the
+`oif lo` accept without anyone choosing it, so the row stands up a routable
+resolver on the far side of the veth rather than relying on the host's.
 
 **Both protocols.** The drop carries no protocol qualifier and the accept above
 it matches `th dport`, which is TCP and UDP alike — but real DNS is UDP first,
 and a TCP-only probe leaves the protocol resolvers actually use unmeasured.
 
-**A drop is not always a timeout, and the difference turned out to be the best
-evidence in the section.** An nftables `drop` in the *output* chain rejects a
-**local** sender synchronously, so the blocked UDP query fails at `send()` with
-`EPERM` rather than waiting — measured, not predicted. (The green run reported
-it as the raw `ERR 1`; the `DROPPED-EPERM` label was added afterwards and
-changes the printed detail only, never a verdict.) That is the filter's own
-signature: an absent reply is also what a dead responder looks like, `EPERM` is
-not. The TCP half does time out, and the control row is what makes *that*
-readable. Connection-refused means the packet *arrived* and nothing was
-listening — a dead fixture reporting itself as a working filter. So a refusal
-counts as `reached`, and an unfiltered uid must reach the responder before any
-other row is scored. Without that control, a responder that never came up
-satisfies every assertion in the section.
+**The UDP drop reads as `EPERM`.** An nftables `drop` in the *output* chain
+rejects a **local** sender synchronously, so the blocked query fails at
+`send()` (`DROPPED-EPERM`) rather than waiting. That is the filter's own
+signature: an absent reply is also what a dead responder looks like, `EPERM`
+is not. The TCP half does time out, and the control row is what makes *that*
+readable: a refusal counts as `reached`, and an unfiltered uid must reach the
+responder before any other row is scored.
 
 The remedy is asserted too, not just the break: an `[[network.allow]]` entry
 for the resolver **on port 53 specifically** — the element is
@@ -986,34 +716,25 @@ for the resolver **on port 53 specifically** — the element is
 matches, which is why `diagnose`'s message spells the TOML out rather than
 saying "add an allow entry".
 
-### A filtered container asks its own responder (S11)
+### A filtered container asks its own responder
 
 `check_container_responder`, plus two rows each in the pod and bridge
 sections. A triggered single or pod container on pasta resolves through
-moat-resolve on its own `127.130.x.y`, reached by pasta's `--dns-host`. S10
-still stands for bridge mode, which aardvark-dns answers, and for the uid's
-own port-53 dials. It found two product defects, and every unit test passed
-over both:
+moat-resolve on its own `127.130.x.y`, reached by pasta's `--dns-host`. The
+default-deny DNS section above still stands for bridge mode, which aardvark-dns answers, and for the uid's
+own port-53 dials.
 
-- **The AAAA answer was the container's own address.** On a host with no
-  IPv6 default route, pasta copies whatever global v6 address the host has
-  onto the container's interface, and on a host running filtered workloads
-  that is an inspector's address on the `wl-egress` link. The responder
-  answered AAAA with the inspector's v6 address, busybox wget tried v6 first,
-  and every HTTPS fetch by name was refused inside the container in half a
-  second. No responder gets `--address6` now: a VM guest had the same
-  trap through passt's DHCPv6, masked by curl's v4 fallback (`inspect_rig`'s
-  IPv4-only row). The row that
-  caught it was not an S11 row: it was every pre-existing fetch in the rig,
-  red at once.
-- **The static map was read before it was written.** The responder service
-  was `PartOf=` the workload, which propagates a restart as a restart: a
-  responder already running came straight back up and loaded the previous
-  start's map a second before the workload's prestart rewrote it, so a new
-  `allow` name was answered with the inspector address. It is
-  `StopPropagatedFrom=` now, on both substrates. The first run passed this row
-  because nothing had queried yet; the row now starts one first and records
-  that as its premise.
+- **No AAAA answer is the container's own address.** On a host with no IPv6
+  default route, pasta copies whatever global v6 address the host has onto the
+  container's interface, and on a host running filtered workloads that is an
+  inspector's address on the `wl-egress` link. A client that tries v6 first
+  would be refused inside the container. No responder gets `--address6`; every
+  fetch by name in the rig is the row that sees this.
+- **The static map is current.** The responder service is
+  `StopPropagatedFrom=` the workload rather than `PartOf=` it, so a workload
+  restart does not restart a running responder before the workload's prestart
+  has rewritten the map. The row starts a query first and records that as its
+  premise, so a responder that has not loaded anything yet cannot pass it.
 
 **nslookup, never getent.** podman builds the container's hosts file from the
 host's, so a name the rig put in `/etc/hosts` is answered there and the
@@ -1025,33 +746,29 @@ again, in the fixture namespace, answering a fixed address; the unfiltered
 container getting that answer is the control that makes the filtered one's
 timeout a drop.
 
-**The credential broker arm (P2) is 19 rows, and the last one is a real
-request.** A container holding only a placeholder makes a request that reaches
-the provider carrying the sealed key. The three refusal rows — another
-workload's uid, root, and the container being unable to name `127.129.x.y` at
-all — sit behind a control row proving the broker serves its OWN inspector,
-without which all three are satisfied by a broker that is dead. That is not
-hypothetical: on the first hardware run they were, because **nothing started
-the broker**. The unit was generated, ordered ahead of the right unit, given
-its `IPAddressAllow=` and its `wl_internal_ok4` element, and pulled in by
-nothing. `Before=` orders a unit; it does not start one. Forty-five unit rows
-passed with it in place, because each reads the broker unit's own text and the
-missing half lived in a different unit.
+### The credential broker
 
-**The record's readers (P3) are three arms, and every negative row has a
-positive one in front of it.** Everything this rig read before them came back
-through a single invocation — `egress <name> --json -n 0`, as root, over the
-live file — so a thousand lines of reader had one path through it. The rest is
-now scored: the flat and grouped renderers, `--host`, `--since`/`--until`, the
-closed `--reason` vocabulary (an unknown value must be an *error naming the
-set*, because an empty report is what a workload that never hit that refusal
-looks like), `-n -1` refused as not a count, the non-root branch reached with
-`setpriv`, and the no-record-file branch. **A reader that returned an empty
-list unconditionally would score full marks on any set of negative
-assertions** — it answers "no records", "nothing matched" and "nothing in that
-window" identically and plausibly. So each is paired with a row over a record
-whose host, path and time the section itself caused. Same shape as the dead
-broker, one surface over.
+**The last row is a real request.** A container holding only a placeholder
+makes a request that reaches the provider carrying the sealed key. The three
+refusal rows — another workload's uid, root, and the container being unable to
+name `127.129.x.y` at all — sit behind a control row proving the broker serves
+its OWN inspector, without which all three are satisfied by a broker that is
+dead. The broker unit's own text says nothing about whether anything starts
+it — `Before=` orders a unit; it does not start one — so only that control row
+sees a broker nothing pulls in.
+
+### The record's readers
+
+**Every negative row has a positive one in front of it.** The flat and grouped
+renderers, `--host`, `--since`/`--until`, the closed `--reason` vocabulary (an
+unknown value must be an *error naming the set*, because an empty report is
+what a workload that never hit that refusal looks like), `-n -1` refused as not
+a count, the non-root branch reached with `setpriv`, and the no-record-file
+branch. **A reader that returned an empty list unconditionally would score full
+marks on any set of negative assertions** — it answers "no records", "nothing
+matched" and "nothing in that window" identically and plausibly. So each is
+paired with a row over a record whose host, path and time the section itself
+caused.
 
 **Rotation is the only moment the record file is created by the listener
 rather than by systemd**, so it is the only moment the owner, the mode and the
@@ -1064,17 +781,15 @@ handler and reopens on the next write, so an immediate assertion measures the
 flag), then checks owner, mode, label, and that `egress` reads *across* the two
 generations rather than only the live one.
 
-**`disable --purge` is asserted, not left to cleanup.** The rig ran bare
-`disable` and purged in teardown, where nothing reads the result — so the code
-that removes the record tree had never executed for a container. What it
-prevents is not tidiness: the next workload given that uid inherits a
-`LogsDirectory=` owned by a user that no longer exists, systemd refuses to set
-it up, and the inspector fails `240/LOGS_DIRECTORY` while the workload itself
-starts fine — hanging on 80 and 443 and nothing else, with the explanation in a
-different unit's journal. The pre-purge rows are the control: without them,
-"the directory is gone" is satisfied by one that was never created.
+**`disable --purge` is asserted, not left to cleanup.** What it prevents is not
+tidiness: the next workload given that uid inherits a `LogsDirectory=` owned by
+a user that no longer exists, systemd refuses to set it up, and the inspector
+fails `240/LOGS_DIRECTORY` while the workload itself starts fine — hanging on
+80 and 443 and nothing else, with the explanation in a different unit's
+journal. The pre-purge rows are the control: without them, "the directory is
+gone" is satisfied by one that was never created.
 
-**P3-0 is measured and deliberately not scored.** It asks what the listener
+**The near-end reading is measured and deliberately not scored.** It asks what the listener
 sees as the *near* end of a container connection, because a pod- or
 bridge-mode workload is N containers under one uid and the record names the
 workload. There is no correct answer to pin: a single address means no
@@ -1083,7 +798,7 @@ address means a second reading with two members is worth taking. Nothing is
 added to the record until that reading exists — a field that is constant in
 every topology is worse than no field, because it reads as attribution.
 
-### What it still does not measure
+### What it does not measure
 
 **A global-scope IPv6 destination.** The redirect map keys on `tcp dport`
 alone, so translation is scope-blind and the ULA result carries — but that is a
@@ -1104,10 +819,9 @@ sudo python3 tests/manual/uid_attribution_rig.py pasta    # the shipped path
 
 ### What it answers
 
-P0-1 from the container egress-parity build spec: does `[network] mode =
-"host"` keep uid attribution? Every rule in `nftables/workload-filter.nft`
-selects on the single workload uid, so the whole design rests on a container's
-packets carrying it. Measured 2026-09-05 on a KVM host under enforcing:
+Does `[network] mode = "host"` keep uid attribution? Every rule in
+`nftables/workload-filter.nft` selects on the single workload uid, so the whole
+design rests on a container's packets carrying it:
 
 |                    | image default | `user = "0"` | `user = "1000"` |
 | ------------------ | ------------- | ------------ | --------------- |
@@ -1121,13 +835,13 @@ hides this entirely, because it re-originates the container's traffic as a host
 socket that it owns. Host mode has no such indirection: the container's sockets
 *are* host sockets, and two arms of three leave as subuids no shipped rule
 matches. That is why `validate_container_network()` refuses `mode = "host"`
-combined with any egress key — the alternative was filtering whichever
-containers happened to run as the keep-id uid while reporting the workload as
+combined with any egress key — the alternative is filtering whichever
+containers happen to run as the keep-id uid while reporting the workload as
 filtered.
 
-Both arms also confirm the other half of P0-1: the host's own traffic is never
-captured. Root and an ordinary user matched no workload selector on any arm,
-even with the network namespace shared.
+Both arms also confirm that the host's own traffic is never captured. Root and
+an ordinary user match no workload selector on any arm, even with the network
+namespace shared.
 
 ### Why counters rather than an end-to-end dial
 
@@ -1138,51 +852,42 @@ whether a route exists, or whether anything is listening. The destination is
 unroutable on purpose (TEST-NET-3), so every probe is a single SYN and the only
 variable is which rule claimed it.
 
-### Four ways this rig lied before it told the truth
-
-Each read as a product defect first, and the code is shaped by all four. A rig
-that lies is worse than no rig: its failure looks exactly like the thing under
-test, which is the same decay `tests/test_manual_rig_configs.py` exists to
-catch one level up.
+### Traps the code is shaped around
 
 1. **`nft reset counters table` resets named counters only**, not the anonymous
-   per-rule ones used here. Every row inherited the previous row's count, and
-   one probe that sent *no packet at all* was dressed up as a match. Now deltas.
-2. **busybox `su` is not GNU `su`** and refused to drop privileges with `must
-   be suid to work properly`. The "non-root" probe would have measured root and
-   read as a clean falsification of the hypothesis it existed to test. It now
-   proves the uid changed before its verdict counts.
+   per-rule ones used here, so every row reads deltas.
+2. **busybox `su` is not GNU `su`** and refuses to drop privileges with `must
+   be suid to work properly`. The "non-root" probe proves the uid changed
+   before its verdict counts.
 3. **keep-id injects the host username into the container's `/etc/passwd`**, so
    `id` inside prints `uid=10002(_wl-<name>)` — which looks exactly like an
-   `exec` that escaped to the host. It had not; that *is* the container, and
-   the surprise was the finding rather than a bug.
+   `exec` that escaped to the host. It has not; that *is* the container.
 4. **Retransmits cross probe boundaries.** An unroutable destination leaves
    every probe retransmitting on a doubling backoff, and under pasta those are
    re-originated by a long-lived host process owned by the workload uid — so
-   they land in the next probe's window and attribute the host's own `curl` to
-   the workload. A settle-and-hope window fits *inside* a backoff gap; each
-   probe now gets its own destination port and a freshly built table, which
-   makes the contamination unmatchable rather than unlikely.
+   they would land in the next probe's window and attribute the host's own
+   `curl` to the workload. A settle-and-hope window fits *inside* a backoff
+   gap; each probe gets its own destination port and a freshly built table,
+   which makes the contamination unmatchable rather than unlikely.
 
 ### What it deliberately does not measure
 
-**IPv6** — `container_egress_rig.py` now covers the v6 redirect on a ULA
-fixture, but this rig measures the uid *selector*, which is family-blind
-(`meta skuid` reads neither address nor family), so there is nothing here a v6
-arm would add. **Whether the
-DNAT redirect would capture host traffic in host mode** — it cannot, because
-nothing arms a redirect for a host-mode workload; the rig measures the uid
-selector, which is the part the design depends on. **`userns = "host"`**, where
-in-container root maps to the workload uid directly and the mapping question
-does not arise; the refusal covers it regardless, which is deliberate — a
-`[network]`-level rule that changed meaning based on a `[security]` key would
-be the kind of coupling nobody remembers.
+**IPv6** — `container_egress_rig.py` covers the v6 redirect on a ULA fixture,
+but this rig measures the uid *selector*, which is family-blind (`meta skuid`
+reads neither address nor family), so there is nothing here a v6 arm would
+add. **Whether the DNAT redirect would capture host traffic in host mode** — it
+cannot, because nothing arms a redirect for a host-mode workload; the rig
+measures the uid selector, which is the part the design depends on.
+**`userns = "host"`**, where in-container root maps to the workload uid
+directly and the mapping question does not arise; the refusal covers it
+regardless, which is deliberate — a `[network]`-level rule that changed meaning
+based on a `[security]` key would be the kind of coupling nobody remembers.
 
 ---
 
 ## deployed_snapshot_rig.py — do the workloads nobody opted in still get the same units?
 
-The one guarantee an opt-in phase owes above all others: a workload that did
+The one guarantee an opt-in change owes above all others: a workload that did
 not opt in gets **exactly** what it got before. `tests/test_generator_snapshot.py`
 asserts that against the bundles committed to this repo — the smaller set, and
 the one whose shapes were chosen by whoever wrote the feature. A `[network]`
@@ -1200,8 +905,8 @@ touched), and diffs every emitted unit and sysusers file byte-for-byte.
 
 It needs ssh and passwordless sudo on each host, and nothing else — no root
 here, no KVM, no podman. The generator is a pure function from config to unit
-text, which is what makes this cheap enough to run against every host on every
-phase.
+text, which is what makes this cheap enough to run against every host for
+every change.
 
 ### What it answers
 
@@ -1212,28 +917,24 @@ phase.
   fails closed — the generator emits no units, so a workload pairing host mode
   with an egress key stops running rather than running unfiltered. That is the
   right direction and still an outage, and "no shipped bundle uses that
-  combination" was only ever a claim about this repository.
+  combination" is only a claim about this repository.
 - **Can the differ see a difference at all?** `--self-check` perturbs the
   "after" generator, asserts every row goes red, then reverts and asserts they
   all go green again. A rig that compares nothing prints the same clean sweep
-  as one that works.
+  as one that works. The perturbation is indented to its anchor's own column,
+  and a mutation that fails to apply is itself a FAIL rather than a silent
+  no-op.
 
-### Three ways it lied before it told the truth
+### Traps the code is shaped around
 
 1. **The render root is in the output.** Each render gets a fresh `mkdtemp`
    whose path lands in the emitted `ExecStart=/usr/bin/systemd-sysusers ...`
-   line, so *every* unit differed for a reason having nothing to do with the
-   generator. First run: 2/18 identical, all 16 "failures" spurious.
-2. **A disabled workload renders nothing, and nothing equals nothing.** Two
-   deployed workloads carry no `.enabled` marker, so the generator skipped them
-   and they compared equal having emitted zero units — passing rows that tested
-   precisely nothing (the same shape as a permission that is granted but never exercised).
-   The marker is now forced and a zero-unit render is a hard error.
-3. **The self-check's mutation ignored indentation.** Pasted at column 0 it was
-   an `IndentationError`, the generator emitted nothing for any config, and the
-   rig reported 18 broken workloads instead of one broken rig. The probe is now
-   re-indented to its anchor's own column, and a mutation that fails to apply
-   is itself a FAIL rather than a silent no-op.
+   line, so it is normalised before the diff; otherwise *every* unit differs
+   for a reason having nothing to do with the generator.
+2. **A disabled workload renders nothing, and nothing equals nothing.** A
+   deployed workload with no `.enabled` marker is skipped by the generator and
+   compares equal having emitted zero units. The marker is forced and a
+   zero-unit render is a hard error.
 
 ### What it deliberately does not measure
 
@@ -1261,7 +962,9 @@ tree with a local layer carrying `asset.txt`, `setup.sh` and `helper.py` over
 it; `lbr-vm` is a VM bundle planted in the shipped tree from this checkout's
 `vm-base`, with its relative `user_data_file` answered by a seed in the local
 layer. Every local file says `local` and every shipped one says `usr`, so each
-row reads which copy a reader got.
+row reads which copy a reader got. Each bundle's asset carries the bundle's
+name, so a build served from another bundle's cached layers cannot satisfy the
+asset row.
 
 ### What it answers
 
@@ -1283,17 +986,6 @@ row reads which copy a reader got.
   build without layered seed lookup stops the run there.
 - **No AVC anywhere during the run**, unfiltered, since an AVC from one of
   these readers need not name a workload.
-
-First run on the dev host, 2026-10-29: 29/29, no denials. With the VM arm, the
-same day: 35/35, no denials.
-
-### How it lied before it told the truth
-
-Both bundles first shipped the same `asset.txt` text, so `lbr-over`'s build was
-served from `lbr-local`'s cached layers and both workloads ran one image ID.
-The asset row passed for `lbr-over` without its context being read at all. The
-assets now carry the bundle name, so a cache hit across bundles can't satisfy
-the row.
 
 ### What it deliberately does not measure
 
@@ -1326,7 +1018,10 @@ registries.d entry and the bundle policy, restoring whatever was there.
 - **No bundle policy refuses every OCI add.**
 - **Unsigned, wrong-key and moved-signature artifacts are refused**, each
   leaving nothing in the bundles root or staging. A mistyped bare name and a
-  shipped bundle's name are refused.
+  shipped bundle's name are refused. Every add names `--name`, so "leaves
+  nothing" looks where the bundle would have gone, and a wrongly admitted
+  bundle is removed after its row, so a later refusal fails on its own check
+  rather than on "already exists".
 - **Root-run files.** A setup script and a `[build] script` are each refused
   without `--allow-host-setup` and added with it.
 - **Signed add.** The record pins the pushed digest, every file is `etc_t`
@@ -1341,17 +1036,10 @@ registries.d entry and the bundle policy, restoring whatever was there.
 - **`rm`** is refused while an instance uses the bundle.
 - **No AVC denial** during the run.
 
-### Last run
-
-2026-10-30 on the dev host (podman 5.8.7, skopeo 1.22.3, enforcing): 42
-passed, no AVC denials. Each refusal was broken on purpose in the installed
-`cmd_bundle.py` or `bundle_fetch.py` (the policy gate, the root-run gate,
-drift, the shipped name, rm in use, a missing policy, a dropped `--policy`),
-and every one turned its rows red. That run found two rows adding without
-`--name`, which put the bundle under the ref's name where "leaves nothing"
-never looked. A wrongly admitted bundle is now removed after its row, so a
-later refusal fails on its own check rather than on "already exists".
-
+To break it on purpose, edit the installed `cmd_bundle.py` or
+`bundle_fetch.py`: the policy gate, the root-run gate, drift, the shipped name,
+rm in use, a missing policy, a dropped `--policy`. Each should turn its rows
+red.
 
 ## device_rig.py — does sunshine-streaming's configuration reach a real GPU, and leave the sound card out?
 
@@ -1379,21 +1067,8 @@ checkout's sunshine-streaming bundle and loads that bundle's `policy.cil`.
   own PipeWire sink, so `/dev/snd` is empty in the container.
 - **No denial with the payload as its source.**
 - **Control:** the same configuration without `gpu` has no render node and no
-  `/dev/kfd`, and no denial.
-
-First run on the dev host, 2026-11-08, found sunshine's policy granting
-`sound_device_t` `getattr read write` without `open`: every open of a sound
-card under `/dev/snd` was denied, while the stream's audio, from PipeWire's own
-sink, worked. The bundle now takes no sound device. The same day, 12/12, no
-denials.
-
-### How it lied before it told the truth
-
-The control arm first dropped the `audio` group and counted an `EACCES` on
-every card as the group's work. The sunshine arm got the same `EACCES` from
-the policy's missing `open`, so the control row passed on an AVC rather than on
-DAC. A row for the control's own denials was added before the sound device
-was dropped.
+  `/dev/kfd`, and no denial. The control's own denials have a row, so an
+  absence the policy caused cannot pass as one the configuration caused.
 
 ## image_fetch_rig.py — does a filtered container get its image from outside its filter?
 
@@ -1412,7 +1087,9 @@ in no store) runs a first start, a second start, a start with the registry
 blocked, a start stopped mid-copy, an `update` with a rollback target and a
 purge. A ~400 MB image checks the start timeout, a 16 MiB tmpfs over the fetch
 cache checks the free-space refusal, a missing tag is the fetch step broken on
-purpose, and an unfiltered workload is the control.
+purpose, and an unfiltered workload is the control. One arm fetches from
+registry.access.redhat.com, whose repositories carry thousands of tags, so
+the worker's `skopeo inspect --no-tags` is on the path under test.
 
 **The fetch's uid is watched, not inferred.** The transient unit is collected
 the moment it ends, so a thread polls its `UID` during the start; a row on a
@@ -1426,14 +1103,3 @@ the registry itself and the row after it requires that attempt in the record.
 start step but not the transient unit; the rig asserts the unit is still
 copying afterwards, so the next row (the next start stops it first) measures
 the cleanup rather than a fetch that had already ended.
-
-Findings (tp, 2026-11-10, 32/32 on the second run):
-
-- The first run failed both rows that fetched from
-  registry.access.redhat.com: a non-raw `skopeo inspect` pages through every
-  tag of the repository for `RepoTags`, and Hummingbird's repositories have
-  thousands, so each inspect hit the 60 s `RuntimeMaxSec`. docker.io's
-  `python` passed. The worker now passes `--no-tags` (1 s).
-- The download ran as uid 65421, in the dynamic range. Nothing was written to
-  `/var/tmp`; no denials from the fetch chain with dontaudit off.
-- The 400 MB image fetched and started in 35 s.

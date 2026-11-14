@@ -5,11 +5,6 @@ produces a unit that looks configured and then either reaches nothing or
 redirects into itself. The values are asserted from the same constants the
 generator reads, so a drift between the constant and the rendered unit is a
 failure.
-
-These were written before the listener program existed, when no functional test
-could have caught any of it. It exists now, as moat-inspect, which is why the
-unit numbers the original docstring cited are gone: rung 2 reuses those labels
-for different work, and a stale "T5a" reads as a live forward reference to it.
 """
 
 import importlib
@@ -113,7 +108,7 @@ class TestGeneratedSocket(unittest.TestCase):
             'down "web"', self.unit)
 
     def test_the_service_carrying_the_prestart_is_rejected(self):
-        """The whole point of §7.7: the prestart on the service is too late by
+        """The whole point: the prestart on the service is too late by
         one unit. It belongs on the socket, which is what binds first."""
         service = self.gen.generate_inspect_service(_config({}), "_wl-web", UID)
         self.assertNotIn("workload-vm-inspect up", service)
@@ -370,9 +365,9 @@ class TestSidecarHardening(unittest.TestCase):
                 self.assertIn('"/run/workload-vm/web"', unit)
 
     def test_the_inspector_can_write_its_leaf_caches(self):
-        """ProtectSystem=strict makes /var read-only too, and MEASURED on a KVM
-        host 2026-08-26 that is not a theoretical gap: every mint failed with
-        EROFS, the guest's connection was reset, and the journal said nothing.
+        """ProtectSystem=strict makes /var read-only too, and that is not a
+        theoretical gap: every mint fails with EROFS, the guest's connection
+        is reset, and the journal says nothing.
         A warm cache hid it, so it presented as "the first request to a host
         fails and the second succeeds" -- a network fault's shape.
         """

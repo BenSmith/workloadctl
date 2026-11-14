@@ -656,7 +656,7 @@ def vm_confinement_check(config, *, enabled=PROBE, module_loaded=PROBE,
 
 # Everything under data/ carries the workload's own level (workload_mcs),
 # stamped by the setup unit at each boot, so no other workload's process may
-# open it whatever its mode (audit F3). A file a container creates takes its
+# open it whatever its mode. A file a container creates takes its
 # directory's level, so new files keep it. A file at another level is one a
 # relabel or a hand has reset since; the setup unit's next run restamps it.
 #

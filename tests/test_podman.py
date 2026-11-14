@@ -423,7 +423,7 @@ def _as_root(euid=0):
 
 
 class RootDropsPrivsWithoutSudoTests(unittest.TestCase):
-    """A root caller becomes the workload user by setuid, not by sudo (Q6-X).
+    """A root caller becomes the workload user by setuid, not by sudo.
 
     sudo emits ~6 audit records per invocation and `workload-exporter` makes
     one call per health-checked workload every 30s, which is what buried real

@@ -106,7 +106,7 @@ class TestTheMintedCertificate(unittest.TestCase):
         # `Missing Authority Key Identifier` -- naming the LEAF's extension for
         # a defect in the CA, which is why it is worth its own test.
         #
-        # Measured 2026-08-26: OpenSSL 3.5 adds SKI to a self-signed CA on its
+        # OpenSSL 3.5 adds SKI to a self-signed CA on its
         # own, so `-addext subjectKeyIdentifier=hash` is belt-and-braces and
         # REMOVING IT DOES NOT FAIL THIS TEST. Said plainly because a reader
         # who breaks it on purpose finds that out and concludes the test is
@@ -152,8 +152,8 @@ class TestTheMintedCertificate(unittest.TestCase):
         # anchor parses the certificate; it does not verify a chain, so none of
         # the extension failures above can surface here -- those are raised
         # during verification, against a LEAF, and there are no leaves until
-        # T4. This is the cheap half; the real proof is a handshake, owed by
-        # the rung that mints something to hand a client.
+        # This is the cheap half; the real proof is a handshake, made by
+        # the inspector's tests, which mint something to hand a client.
         import ssl
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.load_verify_locations(cafile=str(self.cert))
@@ -406,8 +406,8 @@ class TestTheEgressAnchor(unittest.TestCase):
 
 class TestTheBundleTheVariablesName(unittest.TestCase):
     """The five variables replace each runtime's store, so what they name
-    holds the system's roots and the CA (audit F33: a splicing guest that
-    trusted the CA alone verified no origin's certificate)."""
+    holds the system's roots and the CA: a splicing guest that trusted the
+    CA alone would verify no origin's certificate."""
 
     CA = b"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n"
 

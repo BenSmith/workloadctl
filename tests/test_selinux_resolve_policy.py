@@ -6,12 +6,11 @@ transports, LOADS CLEANLY and mostly works. What it does instead is confine the
 wrong file, or leave the TCP retry path unbindable so that only large answers
 fail -- which reads as a flaky upstream, not as a policy gap.
 
-The finding this module exists to prevent is worse than either. Before it, the
-responder had no filecon at all: the script was bin_t, systemd's own rules ran
-the service as unconfined_service_t, and a process parsing guest-supplied DNS
-wire format ran unconfined for as long as it had existed. Nothing failed.
-Nothing could fail. It was found by asking a running host for the label, on
-2026-08-25, and the check that finds it again lives in
+What this module exists to prevent is worse than either. With no filecon
+at all the script is bin_t, systemd's own rules run the service as
+unconfined_service_t, and a process parsing guest-supplied DNS wire format
+runs unconfined. Nothing fails; nothing could fail. Only asking a running
+host for the label sees it, and that check lives in
 tests/manual/inspect_rig.py -- not here, because no static test can see it.
 
 Deliberately not asserted: that the rule set is *sufficient*. That is an
@@ -55,9 +54,7 @@ class TestFilecon(unittest.TestCase):
         and most of the host into this domain."""
         body = _body()
         self.assertRegex(body, r"\(typetransition\s+init_t\s+wlresolve_exec_t\s+process\s+wlresolve_t\)")
-        # Measured 2026-08-25, correcting the inverse assertion this test used
-        # to make: `execute map` on bin_t, never execute_no_trans on the
-        # attribute. See the same test in test_selinux_inspect_policy.py for
+        # `execute map` on bin_t, never execute_no_trans on the attribute. See the same test in test_selinux_inspect_policy.py for
         # why the old rule could not fail.
         self.assertRegex(
             body,
@@ -98,9 +95,8 @@ class TestSocketActivation(unittest.TestCase):
         `Accept=no` does not mean systemd never accepts: when the service goes
         away with connections pending, systemd flushes them by accepting and
         closing. Denied, it retries at the socket's trigger interval and spins
-        -- while the workload keeps working, which is why this was found by
-        reading an audit log rather than by anything failing. Measured on an
-        enforcing host 2026-08-27; see the comment on the rule.
+        -- while the workload keeps working, so only the audit log shows it.
+        See the comment on the rule.
         """
         self.assertRegex(
             _body(),

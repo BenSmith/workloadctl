@@ -288,8 +288,8 @@ def _qemu_argv(*, disk, seed, tpm_sock, port, run_dir, mem_mib, vcpus, name,
     # address out of 2001:2::/32 and advertises a v6 default route whether or
     # not the HOST has a v6 uplink. On a v4-only host the guest then resolves a
     # AAAA, SYNs into a black hole, and blocks for the full connect timeout --
-    # ~11 minutes, per attempt, per fetch. Measured 2026-08-27: the gate run
-    # wedged in workload-vm-build-disk with one socket in
+    # ~11 minutes, per attempt, per fetch: a gate run wedges in
+    # workload-vm-build-disk with one socket in
     #   SYN-SENT [2001:2::c612:102]:52116 -> [2620:52:6:1161::37]:443
     # fetching the guest's cloud image, while `curl` from the same guest
     # answered 302 in 0.6s -- happy eyeballs falls back to v4 and a plain
@@ -402,7 +402,7 @@ def _render_bib_config(pubkey: str) -> str:
     _GATE_ROOT_MINSIZE).
 
 THE KEY GOES IN /etc, NOT IN THE USER'S HOME, AND THAT IS NOT A STYLE
-    CHOICE. Measured 2026-08-27: BIB writes the baked user's home as
+    CHOICE. BIB writes the baked user's home as
 
         system_u:object_r:var_t:s0  /var/home/wlrt/.ssh/authorized_keys
 

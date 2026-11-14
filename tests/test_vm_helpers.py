@@ -67,9 +67,8 @@ class FakeQMP:
 class NotifyTest(unittest.TestCase):
     def setUp(self):
         # QEMU's runcon prefix asks the uid for the VM's level, which the
-        # test's own uid has none of. On an SELinux host with runcon it
-        # raised (measured on the forge's runner 2026-10-14); the prefix is
-        # test_vm_passt_beside's.
+        # test's own uid has none of, so on an SELinux host with runcon it
+        # raises; the prefix is test_vm_passt_beside's.
         patcher = mock.patch.object(notify, "qemu_launch_argv",
                                     lambda cmd, uid: list(cmd))
         patcher.start()

@@ -1,16 +1,16 @@
 """The two Pi-hole bundles: their upstreams, their first gravity run, and
 what a dead service does to the unit.
 
-On the proving host (2026-10-16) proxy-stack's Squid refused its own
-squid.conf (`cache_effective_user root` is fatal under Squid 7); dropped to
-squid, it could not open /dev/stdout, since it opens its logs after the drop
-and the container's stdout is journald's socket. The monitor that saw it die
-exited 0, so Restart=on-failure never fired; a dead Pi-hole in pihole-vpn
-ended the same way. Its first start on a fresh cache also raced `squid -z`,
-which returns before it has made the cache directories. Both bundles exported PIHOLE_DNS_,
-a Pi-hole v5 variable v6 ignores, so the tunnel's resolver was never Pi-hole's
-upstream. And proxy-stack pointed the container at 127.0.0.1 before FTL was
-up, so a fresh volume's gravity run, which comes first, waited 120 s for DNS.
+`cache_effective_user root` is fatal under Squid 7, and dropped to squid,
+Squid cannot open /dev/stdout, since it opens its logs after the drop and
+the container's stdout is journald's socket. A monitor that exits 0 when its
+service dies means Restart=on-failure never fires, for Squid in proxy-stack
+or Pi-hole in pihole-vpn. A first start on a fresh cache must not race
+`squid -z`, which returns before it has made the cache directories.
+PIHOLE_DNS_ is a Pi-hole v5 variable v6 ignores, so it cannot make the
+tunnel's resolver Pi-hole's upstream. And a container pointed at 127.0.0.1
+before FTL is up makes a fresh volume's gravity run, which comes first, wait
+120 s for DNS.
 """
 import os
 import stat

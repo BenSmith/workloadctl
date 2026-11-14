@@ -1,10 +1,8 @@
 """wayvnc listens on loopback only, reached over ssh.
 
-Audit F36 (2026-10-17): the desktop bundles ran wayvnc on 0.0.0.0 with no
-authentication unless VNC_PASSWORD was set, and both deployed desktops
-left it unset; from a LAN machine each server offered security type None.
-The password path itself wrote enable_auth with no RSA-AES key or TLS
-certificate, which wayvnc 0.9 refuses. The user chose loopback and ssh.
+wayvnc on 0.0.0.0 offers security type None to the LAN unless VNC_PASSWORD
+is set, and enable_auth with no RSA-AES key or TLS certificate is refused by
+wayvnc 0.9. Loopback and ssh avoid both.
 """
 import re
 import unittest

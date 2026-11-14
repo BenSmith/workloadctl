@@ -6,9 +6,8 @@ logind keeps a user's record for UserStopDelaySec (10 s) after its manager
 is told to stop. A user created with that uid inside the window is filed
 under the old name: logind looks for linger under that name, finds none,
 and stops the new user's manager at its next clean-up, taking
-/run/user/<uid> with it. Found 2026-11-10 by image_fetch_rig.py, whose arms
-purge and recreate back to back: the mirror arm's restarts all failed with
-226/NAMESPACE. Purge and cleanup now wait for logind to drop the uid
+/run/user/<uid> with it, and the new workload's restarts fail with
+226/NAMESPACE. Purge and cleanup wait for logind to drop the uid
 (workload_uid.wait_logind_release) before userdel frees it.
 
     sudo python3 tests/manual/uid_reuse_rig.py
@@ -16,8 +15,7 @@ purge and recreate back to back: the mirror arm's restarts all failed with
 Purges `rig-uid-a`, creates `rig-uid-b` at once, and checks that b got a's
 uid, that logind files that uid under b's name with linger, and that b's
 manager and workload survive a logind clean-up. On a build without the wait
-the logind rows fail (the proving host, 2026-11-10: 5/7 before the wait,
-7/7 after). The manager rows did not catch the kill in that run: logind's
+the logind rows fail. The manager rows may not catch the kill: logind's
 clean-up does not always reach the stale user inside the rig's 15 s.
 Needs the workloadctl RPM and anonymous docker.io.
 """

@@ -536,8 +536,8 @@ class TestPasstRunsAsTheWorkloadUser(unittest.TestCase):
     root, passt does not fail: it logs `Started as root, will change to nobody`
     once and drops to `nobody`, after which traffic keeps flowing normally
     while every VM on the host shares one uid and per-workload policy silently
-    matches nothing. Measured on Fedora 44 / passt 0^20260728 / QEMU 10.2.2
-    (2026-08-10): as a normal user the helper runs as that user; under `sudo`
+    matches nothing. Measured on Fedora 44 / passt 0^20260728 / QEMU 10.2.2:
+    as a normal user the helper runs as that user; under `sudo`
     the same command line yields `nobody passt --quiet ...`.
 
     Because the degraded mode is indistinguishable from the working one at the

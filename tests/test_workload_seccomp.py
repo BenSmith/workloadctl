@@ -321,10 +321,10 @@ class TestAPod(unittest.TestCase):
                                 NETLINK_PROTOCOLS["generic"]), ALLOW)
 
     def test_the_profile_is_readable_whatever_the_umask(self):
-        """The workload user's podman reads the profile. Written under the
-        enabling root's umask 077 (on the proving host, 2026-10-16) it was
-        0600 root, and podman exited 125 with "opening seccomp profile
-        failed: permission denied" on every start."""
+        """The workload user's podman reads the profile. Written under an
+        enabling root's umask 077 it would be 0600 root, and podman exits 125
+        with "opening seccomp profile failed: permission denied" on every
+        start."""
         import os
         config_dir, services_dir, sysusers_dir = self.dirs
         write_config(config_dir, "vpn", """\

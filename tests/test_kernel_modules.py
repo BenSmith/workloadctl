@@ -1,9 +1,8 @@
 """[security] kernel_modules: the modules the host loads for a container
 workload, since its containers may not make the kernel load one.
 
-On the proving host (2026-10-16) the wireguard-vpn bundle's wg-quick, under
-workload-vm.cil's module_request deny, was refused the wireguard module
-until the workload named it.
+Under workload-vm.cil's module_request deny, the wireguard-vpn bundle's
+wg-quick is refused the wireguard module unless the workload names it.
 """
 import subprocess
 import tomllib

@@ -35,9 +35,8 @@ class HandlerReturnCodeTest(unittest.TestCase):
     The exception ladder run() tests below is not the only way a command
     reports failure. `egress` and `pcap` return an int instead, and main()'s
     dispatch dropped it -- so both printed a correct diagnostic to stderr and
-    exited 0. Found on a KVM host 2026-08-31 by a rig that asserted the exit
-    status rather than the message, which is the only thing that separates
-    "refused" from "reported nothing".
+    exited 0. The exit status, not the message, is the only thing that
+    separates "refused" from "reported nothing".
 
     Driven through main() with a stub handler rather than through a real
     subcommand, so this pins the DISPATCH and does not move if either of those

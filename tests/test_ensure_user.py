@@ -56,7 +56,7 @@ def _load_script():
     return load_script("libexec/workload-ensure-user")
 
 
-# Stand-in VM host keypair (S1). The private half is a multi-line PEM so tests
+# Stand-in VM host keypair. The private half is a multi-line PEM so tests
 # exercise the block-scalar indentation path; the (c) contract check keys off
 # this exact text appearing in the rendered user-data.
 FAKE_HOST_PRIV = (
@@ -186,9 +186,8 @@ class TestRenderDefaultUserData(unittest.TestCase):
 class TestHomeUnderAShare(unittest.TestCase):
     """A share strictly inside the guest's home. cloud-init's `mounts` runs
     before `users_groups`, so the mount point's `mkdir -p` made the home as
-    root and useradd then left it root-owned and without skel: found on a
-    real VM on the GPU host, 2026-11-13, with `./proj:/home/workload/proj`
-    (the user could not create a file in ~)."""
+    root and useradd then leaves it root-owned and without skel: with
+    `./proj:/home/workload/proj` the user cannot create a file in ~."""
 
     def render(self, *mount_points):
         mounts = [(f"t{i}", mp, "virtiofs", "rw")
@@ -329,7 +328,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         (self.home / ".ssh" / "id_ed25519.pub").write_text(
             "ssh-ed25519 AAAAFAKEKEY user@host\n"
         )
-        # VM host keypair (S1) — build_cloud_init_iso reads + pins these.
+        # VM host keypair — build_cloud_init_iso reads + pins these.
         (self.home / ".ssh" / "vm_host_ed25519_key").write_text(FAKE_HOST_PRIV)
         (self.home / ".ssh" / "vm_host_ed25519_key.pub").write_text(FAKE_HOST_PUB + "\n")
         self.config_dir = Path(self.tmp) / "cfg"
@@ -366,13 +365,13 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
     def _run_build(self, config: dict, name: str = "myvm",
                    inject_host_key: bool = True, inject_ca: bool = True):
         # A custom seed must install the workload's SSH host key or
-        # build_cloud_init_iso fails the S1 (c) contract. Unless a test is
+        # build_cloud_init_iso fails the custom-seed contract. Unless a test is
         # exercising that failure (inject_host_key=False), append a reference to
         # the magic var so the rendered user-data carries the host key. The
         # value is a multi-line PEM; the tests never parse the YAML, so a
         # trailing block is harmless — it only has to satisfy the substring pin.
         # The CA contract is the same shape as the host-key one and lives in
-        # the same place for the same reason: from rung 3 T3 a custom seed on a
+        # the same place for the same reason: a custom seed on a
         # filtered VM must install the egress CA bundle, so without this every
         # test in this class fails on the CA check before reaching its own
         # subject. Tests exercising THAT failure pass inject_ca=False.
@@ -431,7 +430,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         return self.runtime / name / "cloud-init.iso"
 
     def _seed_dir(self, name: str = "myvm") -> Path:
-        # The seed is staged on the tmpfs runtime dir (S6), never the home.
+        # The seed is staged on the tmpfs runtime dir, never the home.
         return self.runtime / self.mod.SEED_DIRNAME / name
 
     def _read_user_data(self, name: str = "myvm") -> str:
@@ -1093,7 +1092,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
                         f"seed_dir not removed; rmtree calls: {rmtree_calls}")
 
     def test_seed_dir_staged_on_tmpfs_not_home(self):
-        """S6: the plaintext-secret seed is staged on the tmpfs runtime dir, so
+        """the plaintext-secret seed is staged on the tmpfs runtime dir, so
         it never lands at rest in the persistent home even if the rmtree is
         cut short by a crash (rmtree is mocked here to simulate that)."""
         ud = self.config_dir / "user-data"
@@ -1121,9 +1120,9 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self.assertIn("ssh-ed25519 AAAAFAKEKEY", text)
 
     def test_linked_state_files_are_replaced_not_written_through(self):
-        # The 2026-10-11 audit (L16, audit-vmfs, V5): the workload user links
-        # the fingerprint and instance-id at root-owned files, and the next
-        # rebuild wrote both and chowned them to the workload user.
+        # The workload user can link the fingerprint and instance-id at
+        # root-owned files; a rebuild must not write through the links and
+        # chown the targets to the workload user.
         cfg = {"vm": {"user": "fedora"}}
         self._run_build(cfg, name="defvm")
         outside = Path(self.tmp) / "outside"
@@ -1168,7 +1167,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self.assertFalse(iso.is_symlink())
         self.assertFalse(self._seed_dir("defvm").is_relative_to(iso.parent))
 
-    # --- S1 host-key pinning ---------------------------------------------
+    # --- host-key pinning -------------------------------------------------
 
     def test_default_mode_injects_host_key_block(self):
         """Default seed installs the generated host key via ssh_keys:, with the
@@ -1283,14 +1282,11 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         (self.config_dir / "user-data").write_text("#cloud-config\n" + body)
 
     def test_no_seed_is_refused_for_a_missing_proxy_block(self):
-        """The retired half of this contract, asserted as an absence.
+        """No proxy block is demanded, asserted as an absence.
 
-        Through rung 1 a seed that never named the advertised address was
-        refused on any hostname-filtered workload: the guest would have gone
-        direct, which is dropped rather than refused, so every fetch hung. Rung
-        2's redirect is transparent, so a seed that says nothing about proxies
-        is now the CORRECT seed -- and a check still demanding one would refuse
-        every seed an operator writes against the current design.
+        The redirect is transparent, so a seed that says nothing about proxies
+        is the CORRECT seed -- and a check demanding one would refuse every
+        seed an operator writes against the design.
         """
         self._seed()
         cfg = {"vm": {"cloud_init": {"user_data_file": "user-data"},
@@ -1299,16 +1295,9 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self.assertNotIn("proxy", self._read_user_data())
 
     def test_ca_contract_fires_now_that_the_ca_exists(self):
-        """The inverse of what this asserted through rung 2.
-
-        It used to assert VM_CA_BUNDLE_AVAILABLE was False and that a custom
-        seed omitting the bundle was accepted -- deliberately written as the
-        test that would fail when the flag flipped, because the flag, the
-        write_files entry in the default seed and this contract have to move in
-        one commit. Rung 3 T3 is that commit, so the assertion inverts rather
-        than being deleted: a custom seed for a filtered VM that installs no
-        anchor is now REFUSED, which is the whole point of the flag having
-        existed.
+        """A custom seed for a filtered VM that installs no anchor is
+        REFUSED. The flag, the write_files entry in the default seed and this
+        contract move together.
         """
         self.assertTrue(self.mod.VM_CA_BUNDLE_AVAILABLE)
         self._seed()
@@ -1633,8 +1622,8 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
     # --- a share inside the home, mounted by cloud-init's `mounts:` --------
     #
     # `mounts:` runs before `users_groups`, so the mount point's mkdir makes
-    # the home as root and useradd leaves it root-owned, without skel: found
-    # on a real VM, 2026-11-13. The built-in seed repairs it in runcmd.
+    # the home as root and useradd leaves it root-owned, without skel. The
+    # built-in seed repairs it in runcmd.
 
     _WORK = {"vm": {"user": "fedora",
                     "cloud_init": {"user_data_file": "user-data"},
@@ -1703,7 +1692,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
 
     def test_a_runcmd_item_yaml_reads_as_a_mapping_is_refused(self):
         """cloud-init's schema check refuses it and skips every runcmd
-        item: seen on a real VM, 2026-11-13, with the hand-back chown."""
+        item, the hand-back chown included."""
         for item in ("  - chown fedora: /home/fedora\n",
                      "  - echo done:\n",
                      "- echo a: b\n"):
@@ -1797,9 +1786,8 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
         self._run_build(cfg, name="defvm")
         text = self._read_user_data("defvm")
         self.assertIn("home-fedora", text)
-        # And it names no proxy. The default seed carried an http_proxy export
-        # at the advertised literal through rung 1; a guest that still got one
-        # would dial a host address where nothing listens.
+        # And it names no proxy: a guest given an http_proxy export would dial
+        # a host address where nothing listens.
         self.assertNotIn("http_proxy", text)
         self.assertNotIn("192.0.2.1:3128", text)
 
@@ -1813,7 +1801,7 @@ class TestBuildCloudInitIsoTemplateMode(unittest.TestCase):
 
 
 class TestVmHostKeyGeneration(unittest.TestCase):
-    """generate_vm_host_keypair + write_vm_known_hosts (S1)."""
+    """generate_vm_host_keypair + write_vm_known_hosts."""
 
     def setUp(self):
         self.mod = vm_ssh_keys
@@ -2570,7 +2558,7 @@ class TestSetupHomeDirectory(unittest.TestCase):
 
 
 class TestRecordDeploymentProvenance(unittest.TestCase):
-    """The /var provenance stamp (Q1 Gap 1). The rule it feeds is tested in
+    """The /var provenance stamp. The rule it feeds is tested in
     tests/test_deployment.py; what matters here is that ensure-user writes it
     and that failing to write it can never fail a service start."""
 
@@ -2801,8 +2789,8 @@ class TestSetupNvram(unittest.TestCase):
             self.assertEqual(dst.read_bytes(), b"existing")
 
     def test_a_dangling_link_is_left_alone_not_written_through(self):
-        # The 2026-10-11 audit (L16, audit-vmfs, V4): nvram.fd as a dangling
-        # link made root create its target, owned by the workload user.
+        # nvram.fd as a dangling link must not make root create its target,
+        # owned by the workload user.
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
@@ -2854,9 +2842,9 @@ class TestSetupVmSocketDir(unittest.TestCase):
                 self.mod.setup_workload_runtime_dir(pw, "myvm")  # must not raise
 
     def test_the_policy_dir_is_roots_beside_the_runtime_dir(self):
-        """Audit F20: inspect.json lived in the runtime dir, which is the
-        workload uid's, and a process with the uid and QEMU's label could
-        create files there and move inspect.json aside and back. Its
+        """Not in the runtime dir, which is the workload uid's: a process
+        with the uid and QEMU's label could create files there and move
+        inspect.json aside and back. Its
         directory is now root's (group: the workload's, to read it), so
         nothing running as the uid can replace what is in it."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -3275,9 +3263,9 @@ class TestConfigureSubuidSubgidMore(unittest.TestCase):
         return run, msgs
 
     def test_a_first_enable_skips_the_migrate(self):
-        # On the proving host (2026-11-07) every first enable logged
-        # "podman system migrate returned 1": the migrate runs before
-        # linger, so /run/user/<uid> isn't there and podman stops at lstat.
+        # On a first enable the migrate would run before linger, so
+        # /run/user/<uid> isn't there and podman stops at lstat: "podman
+        # system migrate returned 1".
         run, msgs = self._migrate(runtime_dir=False)
         self.assertFalse(any("migrate" in str(c) for c in run.call_args_list))
         self.assertTrue(any("No podman storage to migrate" in m for m in msgs))
@@ -3329,8 +3317,7 @@ class TestVolumeOnTheDataRootStaysClosed(unittest.TestCase):
     """A volume's host directory is made 0755 at each start. When the
     volume is `./`, that directory is data/ itself, which ensure_user made
     0700: under the root-owned 0755 workload root, every host account could
-    then list the workload's data (audit F7, measured on the proving host
-    2026-10-11 with the registry bundle)."""
+    then list the workload's data."""
 
     def _modes(self, setup, config):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3378,8 +3365,7 @@ class TestSetupVolumeDirectoriesNestedMounts(unittest.TestCase):
     outer volume's directory. crun creates missing ones as the container's
     root, so on a fresh home `./home:/home/dev` plus
     `@/b:/home/dev/.cache/JetBrains/RemoteDev/dist` left ~/.cache and
-    ~/.cache/JetBrains unwritable to the workload user (proven on a host,
-    2026-10-10). They must exist, owned by the workload user, before the
+    ~/.cache/JetBrains unwritable to the workload user. They must exist, owned by the workload user, before the
     container starts.
     """
 
@@ -3714,8 +3700,8 @@ class TestProvision(unittest.TestCase):
 
     def test_a_writers_share_groups_reach_the_subgid_step_alone(self):
         """The unit maps a writer's share group like an extra group; with
-        no subgid entry for it podman refused the start ("parent ID GID 980
-        is not mapped/delegated", proving host, 2026-10-14)."""
+        no subgid entry for it podman refuses the start ("parent ID GID 980
+        is not mapped/delegated")."""
         import shares as shares_mod
         mocks = self._patch_common("container")
         config = {"workload": {"name": "test"}, "container": {"image": "x"},
@@ -3942,12 +3928,11 @@ class TestEnsureManagerSlice(unittest.TestCase):
 
 
 class ContainerEgressCaGateTest(unittest.TestCase):
-    """G12's container half: the egress CA, the PKI directories and the
+    """The container half: the egress CA, the PKI directories and the
     inspector's runtime directory are provisioned for a container workload IF
     AND ONLY IF ``container_uses_inspect()`` fires.
 
-    This was the last §7 gate with no unit-level mutation check, deferred once
-    because ``provision()`` is a large integration surface. It is, but the
+    ``provision()`` is a large integration surface, but the
     gate itself is three calls behind one ``if``, and the surface is only in
     the way -- so every other step in the container branch is stubbed and the
     three calls under test are the only real assertion. Stubbing them all also
@@ -4006,7 +3991,7 @@ class ContainerEgressCaGateTest(unittest.TestCase):
         self.assertEqual(ran, {a: True for a in self._GATED}, ran)
 
     def test_an_untriggered_container_gets_none_of_it(self):
-        """R10's half of the gate. A workload with no [network] table must be
+        """The untriggered half of the gate. A workload with no [network] table must be
         provisioned exactly as it was before this feature existed -- no CA
         keypair on disk, no PKI subtree, no /run directory."""
         ran = self._drive(None)
@@ -4022,7 +4007,7 @@ class ContainerEgressCaGateTest(unittest.TestCase):
         self.assertEqual(ran, {a: True for a in self._GATED}, ran)
 
     def test_host_mode_gets_none_of_it_despite_a_trigger(self):
-        """Pins the P0-1 silent disable at this layer too: host mode is not
+        """Pins the host-mode silent disable at this layer too: host mode is not
         inspected, so provisioning it a CA would put trust material on disk for
         an inspector that never runs."""
         ran = self._drive({"mode": "host", "hosts": ["example.test"]})

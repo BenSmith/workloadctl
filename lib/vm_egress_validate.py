@@ -175,7 +175,7 @@ def _validate_policy(net: dict, splice_hosts, egress: str,
     left unwritten. `internal` and `splice` each get a "this entry
     matches no allowlisted name" error, because each of them is an exception
     TO the allowlist and one naming a host that is not on it is dead. A
-    `policy` entry is not: §3 makes it allowlist its own host, so an entry
+    `policy` entry is not: it allowlists its own host, so an entry
     matching nothing in `.hosts` is the ordinary way to write one, and a rule
     borrowed from the siblings for symmetry would refuse the
     configuration the schema documents.
@@ -188,9 +188,8 @@ def _validate_policy(net: dict, splice_hosts, egress: str,
                     f"{type(raw).__name__}"]
 
     known = {"host", "methods", "paths", "credential"}
-    # `placeholder` was on the entry in the design's §3 draft and moved onto the
-    # [[vm.network.credential]] block when the guest variable name had to land
-    # somewhere too. Named rather than reported as an unknown key, for the reason
+    # `placeholder` belongs on the [[vm.network.credential]] block, where the
+    # guest variable name lands too. Named rather than reported as an unknown key, for the reason
     # TLS_UNBUILT gives: an operator who wrote it followed a document that
     # said to, and should be told where it went rather than sent hunting for a
     # typo that is not there.
@@ -368,7 +367,7 @@ def _validate_policy(net: dict, splice_hosts, egress: str,
                     f"inspected, or drop the credential")
                 break
 
-    # §3's widening trap. Where more than one entry matches a host BY PATTERN,
+    # The widening trap. Where more than one entry matches a host BY PATTERN,
     # every one of those entries must state both keys -- one entry omitting
     # `paths` permits every path on that host and silently defeats every
     # sibling that was carefully narrowed, while the file reads as if it were
@@ -469,7 +468,7 @@ def _validate_policy(net: dict, splice_hosts, egress: str,
 
 def _validate_apex_coverage(hosts, entries, key: str, consequence: str, *,
                             self_allowlisting: bool = False) -> list[str]:
-    """§3's apex trap: an allowlisted apex that a wildcard entry leaves out.
+    """The apex trap: an allowlisted apex that a wildcard entry leaves out.
 
     Patterns are fnmatch, not DNS suffix matching, so `*.example.com` requires
     something before the dot and does NOT cover the bare `example.com`. Neither
@@ -490,7 +489,7 @@ def _validate_apex_coverage(hosts, entries, key: str, consequence: str, *,
     catch it instead.
 
     `self_allowlisting` says whether an entry naming something `.hosts` does
-    not cover means anything on its own. It does for `policy` (§3) and it does
+    not cover means anything on its own. It does for `policy` and it does
     not for `splice`, where such an entry is ALREADY refused as
     dead -- so there the apex message is suppressed rather than stacked on top
     of one that says a different thing about the same line.
@@ -625,11 +624,11 @@ def validate_egress(net: dict) -> list[str]:
         "it is a bypass of the internal-destination drop and carries one "
         "like `allow` does")
     errors.extend(internal_errors)
-    # Deferred until `policy` has been read: §3 says a name in `policy` need
+    # Deferred until `policy` has been read: a name in `policy` need
     # not also appear in `hosts`, so an `internal` entry for such a name is on
     # a list and this rule must see both lists or it refuses a working config.
     internal_deferred = list(internal_hosts)
-    # HLD §11 hatch 2. A host here is spliced on a workload that otherwise
+    # The splice escape hatch. A host here is spliced on a workload that otherwise
     # terminates, which is the remedy every non-HTTP refusal names -- so the
     # key has to exist before the messages that tell an operator to type it.
     splice_hosts, splice_errors = _validate_host_reason_entries(
@@ -672,7 +671,7 @@ def validate_egress(net: dict) -> list[str]:
     errors.extend(policy_errors)
     policy_hosts = [e.host for e in vm_policy_entries]
 
-    # §3's apex trap, for both keys that can fall into it, with the consequence
+    # The apex trap, for both keys that can fall into it, with the consequence
     # each one actually produces. They are not the same failure: a spliced apex
     # breaks as a TLS error on the host whose client cannot take the CA, while
     # an unconstrained apex is a security hole -- the operator believes a method
@@ -718,8 +717,8 @@ def validate_egress(net: dict) -> list[str]:
     # decision. Every host is spliced there, so these entries ask for something
     # that is already true -- the config's intent is satisfied, not
     # contradicted, which is the test every other "key with no effect" refusal
-    # in this function applies. And the mode they would fire under is HLD §11's
-    # third hatch, reached in the middle of an incident by an operator whose
+    # in this function applies. And the mode they would fire under is the
+    # workload-wide splice hatch, reached in the middle of an incident by an operator whose
     # toolchain is broken: new output there is a cost with nothing to buy.
     #
     # `internal` gets the same acceptance under `tls = "splice"` and for a
@@ -731,7 +730,7 @@ def validate_egress(net: dict) -> list[str]:
     # for it to govern. A later pass tidying the three for symmetry would take
     # the exemption away from exactly the workloads that need it.
 
-    # §5.3: `bridge` means a real LAN identity, and nothing of ours is in that
+    # `bridge` means a real LAN identity, and nothing of ours is in that
     # guest's data path — no host socket, so no uid to match on.
     if "bridge" in net:
         for key in ("egress", "allow", "tls", "tls_reason", "internal",
@@ -750,7 +749,7 @@ def validate_egress(net: dict) -> list[str]:
                 "LAN address with no host socket in the path")
         return errors
 
-    # `policy` counts as somewhere to go: §3 says a name in `policy` need not
+    # `policy` counts as somewhere to go: a name in `policy` need not
     # also appear in `hosts`, so a workload whose whole allowlist is written as
     # policy entries reaches those hosts and nothing else, which is a coherent
     # and rather good configuration.

@@ -43,7 +43,7 @@ CLONE_THREAD = 0x10000
 SIGCHLD = 17
 AF_NETLINK, NETLINK_AUDIT, AF_VSOCK = 16, 9, 40
 
-# The socket families in three tiers (audit F4's workload side). Allowed:
+# The socket families in three tiers. Allowed:
 # what workloads use. Refused: uncommon families with a record of kernel
 # bugs, and vsock. Logged, then allowed: the rest, until their use is known.
 ALLOWED_FAMILIES = {1, 2, 10}                     # unix, inet, inet6
@@ -176,9 +176,9 @@ class ProfileChecks:
         self.assertEqual(undone, set())
 
     def test_no_entry_names_an_argument_twice(self):
-        """libseccomp reads such a rule as matching every call: measured on
-        a Fedora 44 host (2026-10-04, podman 5.8.7, crun 1.28, libseccomp
-        2.6.1), a rule of family > 16 and != 40 let a vsock through."""
+        """libseccomp reads such a rule as matching every call: with
+        podman 5.8.7, crun 1.28 and libseccomp 2.6.1, a rule of family > 16
+        and != 40 lets a vsock through."""
         for s in self.profile["syscalls"]:
             indexes = [c["index"] for c in s.get("args") or ()]
             with self.subTest(names=s["names"][:3]):
@@ -402,8 +402,8 @@ class TestSeccompBaseline(ProfileChecks, unittest.TestCase):
         """A syscall the baseline never names falls to defaultErrnoRet, 38:
         gdb in a stock workload prints 'ptrace: Function not implemented',
         and docs promising 'Operation not permitted' send the reader looking
-        for the wrong layer. Measured 2026-10-04, a container per profile on
-        a Fedora 44 host, each syscall called with an argument the kernel
+        for the wrong layer. Measured with a container per profile, each
+        syscall called with an argument the kernel
         itself rejects, so the errno tells which layer refused:
 
             syscall            podman default    baseline   baseline + ptrace
@@ -604,8 +604,8 @@ class TestTheBaselineUnderLibseccomp(unittest.TestCase):
         # And x86_64's sub-architectures, as podman hands crun them: on x86,
         # libseccomp folds a socket rule onto socketcall, and two folded
         # rules with different actions fail the load with EEXIST, which a
-        # native-only filter never sees (dev host, 2026-10-14: every container
-        # workload failed to start).
+        # native-only filter never sees, and every container workload fails
+        # to start.
         for entry in profile["archMap"]:
             if entry["architecture"] == "SCMP_ARCH_X86_64":
                 for sub in entry["subArchitectures"]:

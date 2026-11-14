@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """smb-server's named users: exactly the ones the instance lists.
 
-Audit L19 item 4d (2026-10-17): the `agentic` handoff share was guest and
-writable from the whole LAN. The smb-server bundle was guest-only, so a
-share for two named users (one writes, one reads) needed users the
-instance could name, with passwords from secrets.
+A guest share is writable from the whole LAN. A share for two named users
+(one writes, one reads) needs users the instance can name, with passwords
+from secrets.
 
 `smb-users` runs here against stand-ins for getent, useradd, pdbedit and
-smbpasswd that keep their state in files; the real tools ran in the
-image on the proving host.
+smbpasswd that keep their state in files.
 """
 
 import subprocess

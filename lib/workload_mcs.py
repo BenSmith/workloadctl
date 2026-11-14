@@ -3,7 +3,7 @@
 
 Every container and VM of a workload runs at this level, and its whole
 tree and egress PKI carry it, so a process of another workload is refused
-them by SELinux whatever their modes say (audit F3). Derived from the
+them by SELinux whatever their modes say. Derived from the
 workload uid, like the per-workload addresses, so it survives a recreate
 and no two workloads share it. Nothing registers it as a rule: the setup
 unit stamps it at each boot (ensure_common.stamp_selinux_labels).

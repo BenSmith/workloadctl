@@ -76,7 +76,7 @@ def vm_ssh_command(
         *(["-t"] if sys.stdout.isatty() else []),
         "-p", str(port),
         "-i", str(key_path),
-        # Host-key pinning (S1): verify the guest against the per-workload
+        # Host-key pinning: verify the guest against the per-workload
         # known_hosts written at provisioning time, keyed by the stable
         # workload name via HostKeyAlias so address churn never invalidates the
         # pin. No trust-on-first-use, no MITM. The alias matters more under
@@ -105,7 +105,7 @@ def vm_ssh_command(
 
 
 # The guest-agent timeout and the nonce handshake live in vm_clock, which owns
-# the agent channel for the whole tree -- it grew a second caller at rung 3 (the
+# the agent channel for the whole tree -- it has a second caller (the
 # clock check, now the keeper's) and a duplicated client was the alternative.
 
 def vm_guest_agent_addresses(name: str, mac: str) -> list[str]:
@@ -196,9 +196,6 @@ def vm_guest_addresses(name: str, bridge: str | None = None) -> list[str]:
        a perfectly healthy long-idle VM drops out of it once the entry is
        garbage-collected. That gap is exactly what source 1 closes.
     3. **mDNS** ({name}.local), when avahi/nss-mdns are wired up on the host.
-
-    The dnsmasq lease file that used to sit between 1 and 2 went with the
-    managed bridge (ADR 006) — there is no dnsmasq of ours any more.
 
     Returns [] when nothing resolves — a runtime condition (not booted yet, no
     agent), not an error.

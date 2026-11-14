@@ -2,7 +2,7 @@
 """Whether a workload's images are older than an image should get.
 
 An image stays as it was pulled or built until someone refreshes it, and
-the known vulnerabilities in it grow while it sits (audit F26). Nothing
+the known vulnerabilities in it grow while it sits. Nothing
 refreshes it unattended: a host takes a newer one on `update` or `build`,
 so diagnose says when one is due.
 

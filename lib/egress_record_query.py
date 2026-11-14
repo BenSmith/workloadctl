@@ -78,7 +78,7 @@ def parse_when(text: str) -> datetime.datetime:
     time, with or without an offset.
 
     A NAIVE VALUE IS LOCAL, and converted here. The record's `ts` is UTC —
-    T1 chose that deliberately, since a record read on a host whose timezone
+    That is deliberate, since a record read on a host whose timezone
     changed has to stay comparable — but nobody remembers an incident in UTC.
     journalctl's `--since` reads naive input as local for the same reason, and
     an operator moving between the two commands must not have to change how

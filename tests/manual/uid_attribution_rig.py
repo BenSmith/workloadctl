@@ -1,13 +1,12 @@
 #!/usr/bin/python3
 """Which uid does a container's egress actually leave as, per network mode?
 
-Answers P0-1 from the container egress-parity build spec, and then guards the
-answer. Every egress rule in workload-filter.nft selects on ONE uid -- the
+Every egress rule in workload-filter.nft selects on ONE uid -- the
 workload's -- so the whole design rests on a container's packets carrying that
 uid. This measures whether they do, across the axis that turns out to decide
 it: the in-container uid, set by `[container] user`.
 
-WHAT IT FOUND (2026-09-05, on a KVM host under enforcing)
+WHAT IT MEASURES
 
     pasta:  image default -> uid   user="0" -> uid   user="1000" -> uid
     host:   image default -> uid   user="0" -> SUB   user="1000" -> SUB
@@ -21,8 +20,8 @@ sockets, and two arms of three leave as subuids that no shipped rule matches.
 Hence the refusal in validate_container_network(): host mode plus any egress
 key would filter whichever containers happened to run as the keep-id uid.
 
-The host's own traffic was never captured, on any arm -- root and an ordinary
-user both matched nothing, even with the namespace shared.
+The host's own traffic is never captured, on any arm -- root and an ordinary
+user both match nothing, even with the namespace shared.
 
 WHY COUNTERS AND NOT AN END-TO-END DIAL. Nothing is armed for a host-mode
 workload, so there is nothing to dial through. Three competing counters on one
@@ -85,8 +84,8 @@ class Arm(NamedTuple):
 # skipped by it without comment.
 ARMS = [Arm("hmspk"), Arm("hmspk0", "0"), Arm("hmspk1k", "1000")]
 
-# What each arm is expected to measure, per network mode -- established on
-# hardware 2026-09-05 and asserted rather than printed. `keep-id` maps exactly
+# What each arm is expected to measure, per network mode, asserted rather than
+# printed. `keep-id` maps exactly
 # one in-container uid to the workload uid; pasta re-originates every
 # container's traffic as a host socket it owns, which erases the distinction,
 # while host mode has no such indirection and exposes it.
@@ -97,7 +96,7 @@ EXPECTED = {
                "hmspk1k": "exact-uid"},
     # Bridge gives each container its OWN netns, unlike pod mode -- but it
     # re-originates the same way pasta does, so the in-container uid is erased
-    # identically. Measured 2026-09-05, not inferred from the pasta row.
+    # identically. Measured, not inferred from the pasta row.
     "bridge": {"hmspk": "exact-uid", "hmspk0": "exact-uid",
                "hmspk1k": "exact-uid"},
 }

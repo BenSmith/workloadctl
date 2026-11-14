@@ -2,7 +2,7 @@
 
 What this repository's CI does for the images the shipped bundles run, and
 where that protection stops. The workflows themselves are listed in
-`CLAUDE.md`.
+`CONTRIBUTING.md`.
 
 ## What it does
 

@@ -158,7 +158,7 @@ def _inspect_metric_lines(inspect_metrics):
             # The reasons are listener constants, not guest input — no guest
             # string reaches this label. Quotes and backslashes are escaped
             # anyway: the exposition format has no way to say "trust me", and a
-            # reason worded with an apostrophe one rung from now would produce a
+            # reason worded with an apostrophe some day would produce a
             # file node_exporter drops in full rather than one bad line.
             safe = reason.replace("\\", "\\\\").replace('"', '\\"')
             lines.append(f'workload_vm_inspect_drop_events_total'

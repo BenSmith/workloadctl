@@ -1567,9 +1567,9 @@ class TestGetNextUid(unittest.TestCase):
         self.assertNotEqual(first, second)
 
     def test_skips_a_uid_whose_gid_a_group_holds(self):
-        # 2026-10-16, on the proving host: a hand-made group took the next
-        # GID, sysusers gave the workload's user system UID 980, and enable
-        # failed with "UID 980 is below minimum workload UID 10000".
+        # A hand-made group holding the next GID would make sysusers give the
+        # workload's user system UID 980, and enable fail with "UID 980 is
+        # below minimum workload UID 10000".
         import types
         group = types.SimpleNamespace(gr_gid=workload_addr.UID_MIN)
         with patch.object(workload_uid, '_allocated_uids', set()), \
@@ -1965,7 +1965,7 @@ class TestUnitsFromOtherBuild(unittest.TestCase):
 
 
 class TestHostUsernsGate(unittest.TestCase):
-    """S5: userns=host is refused unless explicitly acknowledged."""
+    """userns=host is refused unless explicitly acknowledged."""
 
     def _cfg(self, security):
         return {"workload": {"name": "app"}, "container": {"image": "x:latest"},
@@ -2117,7 +2117,7 @@ class TestCollectConfigWarnings(unittest.TestCase):
 
 
 class TestSubidFileHelpers(unittest.TestCase):
-    """R6: one parser and one mutator for /etc/subuid + /etc/subgid.
+    """one parser and one mutator for /etc/subuid + /etc/subgid.
 
     These are the most security-relevant files the tool writes — a lost or
     mangled range silently removes a workload's isolation — so the format
@@ -2524,7 +2524,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         self.assertTrue(
             any("containers[proxy].network.ports" in e for e in errors), errors)
 
-    # --- the mode = "host" delta (build spec §6 delta 2), settled by P0-1 ---
+    # --- mode = "host", measured on hardware ---
     #
     # Measured on hardware: under the default `userns = "keep-id"` only ONE
     # in-container uid maps to the workload uid; `[container] user = "0"` and
@@ -2587,7 +2587,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         """`mode = "host"` in a BRIDGE-mode workload is a key nobody reads.
 
         The refusal exists because a host-netns container's processes span the
-        workload's whole subuid window rather than its single uid (P0-1). That
+        workload's whole subuid window rather than its single uid. That
         is a statement about `podman run --network=host` / `podman pod create
         --network=host`, and bridge mode issues neither -- every member joins
         `workload-<name>-net` instead, exactly as workload-level
@@ -2626,7 +2626,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
             len(validate_container_network(
                 {"mode": "host", "hosts": ["*.pypi.org"]})), 1)
 
-    def test_v3_overlapping_entries_must_both_state_methods_and_paths(self):
+    def test_overlapping_entries_must_both_state_methods_and_paths(self):
         net = {
             "hosts": ["api.example.com"],
             "policy": [
@@ -2638,7 +2638,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         errors = validate_container_network(net)
         self.assertTrue(any("shares a host with" in e for e in errors), errors)
 
-    def test_v4_apex_not_covered_by_wildcard_policy_entry(self):
+    def test_apex_not_covered_by_wildcard_policy_entry(self):
         net = {
             "hosts": ["example.com"],
             "policy": [{"host": "*.example.com"}],
@@ -2647,7 +2647,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         errors = validate_container_network(net)
         self.assertTrue(any("does not cover the apex" in e for e in errors), errors)
 
-    def test_v4_apex_covered_is_clean(self):
+    def test_apex_covered_is_clean(self):
         net = {
             "hosts": ["example.com"],
             "policy": [{"host": "*.example.com"}, {"host": "example.com"}],
@@ -2655,31 +2655,31 @@ class TestValidateContainerNetwork(unittest.TestCase):
         }
         self.assertEqual(validate_container_network(net), [])
 
-    def test_v5_unregistered_method_is_error(self):
+    def test_unregistered_method_is_error(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com", "methods": ["FETCH"]}],
                "ca_delivery": "env"}
         errors = validate_container_network(net)
         self.assertTrue(any("not a registered HTTP method" in e for e in errors), errors)
 
-    def test_v5_connect_is_refused_by_name(self):
+    def test_connect_is_refused_by_name(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com", "methods": ["CONNECT"]}],
                "ca_delivery": "env"}
         errors = validate_container_network(net)
         self.assertTrue(any("never sees" in e for e in errors), errors)
 
-    def test_v6_path_with_query_string_is_error(self):
+    def test_path_with_query_string_is_error(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com", "paths": ["/x?y=1"]}],
                "ca_delivery": "env"}
         errors = validate_container_network(net)
         self.assertTrue(any("query or fragment" in e for e in errors), errors)
 
-    def test_v7_credential_must_be_declared(self):
+    def test_credential_must_be_declared(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com", "credential": "nope"}],
                "ca_delivery": "env"}
         errors = validate_container_network(net)
         self.assertTrue(any("no [[network.credential]] block declares" in e for e in errors), errors)
 
-    def test_v8_wildcard_host_with_credential_is_error(self):
+    def test_wildcard_host_with_credential_is_error(self):
         net = {
             "hosts": ["example.com"],
             "policy": [{"host": "*.example.com", "credential": "c"}],
@@ -2689,12 +2689,12 @@ class TestValidateContainerNetwork(unittest.TestCase):
         errors = validate_container_network(net)
         self.assertTrue(any("attached per exact host" in e for e in errors), errors)
 
-    def test_v9_tls_splice_with_policy_is_error(self):
+    def test_tls_splice_with_policy_is_error(self):
         net = {"hosts": ["a.com"], "tls": "splice", "policy": [{"host": "a.com"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("tls = 'splice'" in e for e in errors), errors)
 
-    def test_v10_credential_env_cannot_shadow_ca_var(self):
+    def test_credential_env_cannot_shadow_ca_var(self):
         net = {
             "hosts": ["a.com"],
             "policy": [{"host": "a.com", "credential": "c"}],
@@ -2792,12 +2792,12 @@ class TestValidateContainerNetwork(unittest.TestCase):
                                "auth_format": "Bearer {secret}"}]}
         self.assertEqual(validate_container_network(net), [])
 
-    def test_v12_internal_entry_not_on_any_list_is_error(self):
+    def test_internal_entry_not_on_any_list_is_error(self):
         net = {"hosts": ["a.com"], "internal": [{"host": "nas.lan", "reason": "backup"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("[network].internal: 'nas.lan' is on no list" in e for e in errors), errors)
 
-    def test_v12_internal_entry_justified_by_policy_host_is_clean(self):
+    def test_internal_entry_justified_by_policy_host_is_clean(self):
         net = {
             "policy": [{"host": "nas.lan"}],
             "internal": [{"host": "nas.lan", "reason": "backup"}],
@@ -2805,18 +2805,18 @@ class TestValidateContainerNetwork(unittest.TestCase):
         }
         self.assertEqual(validate_container_network(net), [])
 
-    def test_v14_splice_entry_missing_reason_is_error(self):
+    def test_splice_entry_missing_reason_is_error(self):
         net = {"hosts": ["a.com"], "splice": [{"host": "a.com"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("has no `reason`" in e for e in errors), errors)
 
-    def test_v14_internal_entry_missing_reason_is_error(self):
+    def test_internal_entry_missing_reason_is_error(self):
         net = {"policy": [{"host": "nas.lan"}], "internal": [{"host": "nas.lan"}],
                "ca_delivery": "env"}
         errors = validate_container_network(net)
         self.assertTrue(any("has no `reason`" in e for e in errors), errors)
 
-    def test_v12_splice_entry_not_allowlisted_is_error(self):
+    def test_splice_entry_not_allowlisted_is_error(self):
         net = {"hosts": ["a.com"], "splice": [{"host": "b.com", "reason": "cert pinning"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("matches no allowlisted name" in e for e in errors), errors)
@@ -2847,7 +2847,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
                "ca_delivery": "env"}
         self.assertEqual(validate_container_network(net), [])
 
-    def test_v13_http2_is_refused_and_the_message_names_splice(self):
+    def test_http2_is_refused_and_the_message_names_splice(self):
         """Refused by name: the table is read by nothing, so one accepted
         in silence reads as h2 kept for the host."""
         net = {"hosts": ["a.com"],
@@ -2857,17 +2857,17 @@ class TestValidateContainerNetwork(unittest.TestCase):
         self.assertIn("[[network.http2]]", errors[0])
         self.assertIn("[[network.splice]]", errors[0])
 
-    def test_v16_policy_without_ca_delivery_is_error(self):
+    def test_policy_without_ca_delivery_is_error(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("ca_delivery is required" in e for e in errors), errors)
 
-    def test_v16_explicit_tls_inspect_also_requires_ca_delivery(self):
+    def test_explicit_tls_inspect_also_requires_ca_delivery(self):
         net = {"hosts": ["a.com"], "tls": "inspect"}
         errors = validate_container_network(net)
         self.assertTrue(any("ca_delivery is required" in e for e in errors), errors)
 
-    def test_v16_ca_delivery_mount_requires_mount_path(self):
+    def test_ca_delivery_mount_requires_mount_path(self):
         net = {"hosts": ["a.com"], "policy": [{"host": "a.com"}], "ca_delivery": "mount"}
         errors = validate_container_network(net)
         self.assertTrue(any("requires ca_mount_path" in e for e in errors), errors)
@@ -2877,7 +2877,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         errors = validate_container_network(net)
         self.assertTrue(any("ca_mount_path is set but ca_delivery" in e for e in errors), errors)
 
-    def test_v18_splice_entry_on_already_spliced_workload_is_error(self):
+    def test_splice_entry_on_already_spliced_workload_is_error(self):
         net = {"hosts": ["a.com"], "splice": [{"host": "a.com", "reason": "pinning"}]}
         errors = validate_container_network(net)
         self.assertTrue(any("is redundant" in e for e in errors), errors)
@@ -2890,7 +2890,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
         errors = validate_container_network(net)
         self.assertTrue(any("attached to nothing" in e for e in errors), errors)
 
-    def test_full_rung3_example_is_clean(self):
+    def test_full_terminating_example_is_clean(self):
         net = {
             "hosts": ["*.pypi.org", "files.pythonhosted.org"],
             "ca_delivery": "env",
@@ -2904,7 +2904,7 @@ class TestValidateContainerNetwork(unittest.TestCase):
 
 
 class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
-    """P1-14: the half of validate_container_network() the V-rule class above
+    """the half of validate_container_network() the V-rule class above
     does not reach.
 
     Every rule here is one the VM schema also has, which is exactly why it went
@@ -2975,7 +2975,7 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
                         errors)
 
     def test_port_80_is_refused_and_the_message_says_why(self):
-        """R5. 80 and 443 are redirected into the inspector before the filter
+        """80 and 443 are redirected into the inspector before the filter
         chain consults this list, so an element here is armed and never
         matched -- while the config reads as if the destination were exempt
         from inspection. That is the misreport, not the wasted element."""
@@ -3003,7 +3003,7 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
         self.assertTrue(any("`port` must be an integer" in e for e in errors),
                         errors)
 
-    def test_v14_an_allow_entry_needs_a_reason(self):
+    def test_an_allow_entry_needs_a_reason(self):
         errors = self._allow({"address": "10.0.0.1", "port": 22})
         self.assertTrue(any("has no `reason`" in e for e in errors), errors)
 
@@ -3021,8 +3021,8 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
             [])
 
     def test_an_allow_entry_alone_does_not_pull_in_the_ca_requirement(self):
-        """V16 keys on the EFFECTIVE tls mode, and an allow-only workload has
-        no policy entries, so it is rung 2 and needs no trust delivery. A
+        """The interlock keys on the EFFECTIVE tls mode, and an allow-only workload has
+        no policy entries, so it splices and needs no trust delivery. A
         version that keyed on `is_triggered` instead would demand ca_delivery
         from a workload whose traffic is never terminated."""
         errors = self._allow({"address": "10.0.0.1", "port": 22, "reason": "r"})
@@ -3037,8 +3037,8 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
     def test_an_unrecognised_tls_value_is_refused(self):
         """The dangerous one. container_effective_tls_mode() returns the
         literal verbatim, so a typo is an effective mode that is neither
-        'inspect' (V16 never asks for ca_delivery) nor 'splice' (V18 never
-        fires) -- it validates clean and runs with a mode the inspector does
+        'inspect' (nothing asks for ca_delivery) nor 'splice' (the
+        redundant-splice check never fires) -- it validates clean and runs with a mode the inspector does
         not implement."""
         errors = validate_container_network({"hosts": ["a.example.com"],
                                              "tls": "inspct"})
@@ -3059,7 +3059,7 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
     def test_splice_by_omission_requires_no_reason(self):
         """The container-only half, and the reason this is not a straight copy
         of the VM rule: a workload with no policy entries is spliced because
-        that is rung 2, not because anything narrower was given up. Demanding a
+        that is splicing, not because anything narrower was given up. Demanding a
         justification there would make the minimum filtered workload two keys,
         one of them an apology."""
         self.assertEqual(
@@ -3077,10 +3077,10 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
                                         "tls_reason": "vendor image"}),
             [])
 
-    # --- V15 ---
+    # --- internal under explicit splice ---
 
-    def test_v15_internal_is_not_refused_under_explicit_splice(self):
-        """The delta from V9, and the one that is easy to fold in by mistake.
+    def test_internal_is_not_refused_under_explicit_splice(self):
+        """The delta from the splice-plus-policy refusal, and the one that is easy to fold in by mistake.
         The internal-destination check lives on the inspector's UPSTREAM leg,
         which a spliced connection still has -- so a spliced host can still
         resolve into private space and still needs the exemption."""
@@ -3094,7 +3094,7 @@ class TestValidateContainerNetworkAllowAndHostPatterns(unittest.TestCase):
 
 
 class TestContainerFilterElements(unittest.TestCase):
-    """P1-7/P1-8: the nft element/command builders container_uses_inspect's
+    """The nft element/command builders container_uses_inspect's
     triggers feed into workload-container-filter."""
 
     def test_address_entry_needs_no_resolution(self):
@@ -3146,9 +3146,9 @@ class TestContainerFilterElements(unittest.TestCase):
 
 
 class TestContainerInspectPolicy(unittest.TestCase):
-    """P1-9: the JSON document workload-container-inspect writes for the
+    """the JSON document workload-container-inspect writes for the
     (substrate-generic) listener to read -- same shape vm_inspect_policy
-    produces, per D6."""
+    produces."""
 
     def test_shape_matches_listener_expectations(self):
         net = {
@@ -3183,11 +3183,8 @@ class TestContainerInspectPolicy(unittest.TestCase):
     def test_the_document_names_no_substrate(self):
         """Neither renderer says what kind of guest is behind the document.
 
-        For one rung the container renderer wrote `guest_agent: false` so the
-        listener's mint-time clock resync would not dial a QEMU socket a
-        container has never had. The resync left the inspector for the clock
-        keeper, a VM's own unit, so nothing in the listener has a substrate
-        to branch on -- and a key that nothing reads is a key the next
+        The clock is the clock keeper's, a VM's own unit, so nothing in the
+        listener has a substrate to branch on -- and a key that nothing reads is a key the next
         reader would trust without checking who still writes it.
         """
         import egress_policy

@@ -1,11 +1,11 @@
 """
 inspect_figures — the inspector's counters, derived once, rendered by two.
 
-Rung 5 T8/T9, and decision 9 is the whole of its shape: T8 and T9 RENDER, they
-do not compute. `doctor` prints these figures for a person and the exporter
+One producer is the whole of its shape: `doctor` and the exporter RENDER,
+they do not compute. `doctor` prints these figures for a person and the exporter
 publishes them for Prometheus, and both read them from here, so there is
 exactly one definition of what `connections_total` means. The erosion risk
-decision 9 names is T9's: a Prometheus label makes a second definition
+is the exporter's: a Prometheus label makes a second definition
 convenient — `drops_total{reason=...}` is one series, and summing it in the
 exporter while `doctor` sums it separately is two answers to one question that
 agree only until someone edits one of them.
@@ -23,7 +23,7 @@ verdict, and `doctor` adds none: every figure here is a COUNT OF EVENTS, and
 the fault-shaped conditions in the inspector already have verdicts in
 `inspect_check`, which `doctor` already aggregates through
 `collect_diagnose_checks`. A second, weaker pass/fail over the same document
-would be precisely the second definition decision 9 forbids — and a `doctor`
+would be precisely the second definition this module exists to prevent — and a `doctor`
 that reported UNHEALTHY because a guest was denied 147 times would be teaching
 an operator that the filter working is a fault, which is how a report stops
 being read. If a figure deserves a verdict it belongs in `inspect_check`,
@@ -141,7 +141,7 @@ FIGURES = (
            "refused for naming an internal destination",
            "Connections refused for resolving to an internal address",
            path=("internal_refusals_total",)),
-    # --- credentials (rung 6; zero on a workload that brokers nothing) ---
+    # --- credentials (zero on a workload that brokers nothing) ---
     #
     # IN `connections` RATHER THAN A GROUP OF THEIR OWN, deliberately. A group
     # is present or absent as a whole and its absence asserts something -- no

@@ -124,23 +124,21 @@ def validate_single(config: WorkloadConfig, manager: WorkloadManager, json_mode=
     # check looked at nothing and found nothing. Every other warning found
     # something and says `passed=False`.
     #
-    # It was stated as "found nothing" until 2026-09-07, and three checks had
-    # drifted under the looser wording: vm_memory_precision (the memory WAS
-    # truncated), custom_directives_conflict (a directive IS overridden) and
-    # generator_warning (the generator DID complain). Each is a finding about
-    # the config, reported and then flagged as if nothing were found -- so a
-    # consumer filtering --json for `passed == false` was silently missing
-    # them. Nothing in workloadctl reads the field (the totals derive from
-    # `severity`, the top-level `passed` is `errors == 0`), which is why it
-    # could drift with the suite green.
+    # "Found nothing" is the looser wording, and checks drift under it:
+    # vm_memory_precision (the memory IS truncated), custom_directives_conflict
+    # (a directive IS overridden) and generator_warning (the generator DID
+    # complain) are findings about the config, and flagged as if nothing were
+    # found a consumer filtering --json for `passed == false` would miss them.
+    # Nothing in workloadctl reads the field (the totals derive from
+    # `severity`, the top-level `passed` is `errors == 0`), so a drift here
+    # leaves the suite green.
     #
     # "Could not run" is the sharper test and the one to apply at a new call
     # site: it is a question about this process's ability to look, not a
     # judgement about the config. tests/test_cmd_validate.py pins every site.
     #
     # The counts are derived from `checks` below rather than incremented beside
-    # each append. There are forty-one appends, each of which used to carry its
-    # own `errors += 1` or `warnings += 1`; a check added without one would be
+    # each append: a check appended without its own `errors += 1` would be
     # reported and then not counted, which is an error that leaves `passed`
     # True.
     def _record(name, passed, severity, message, fix=None, **extra):
