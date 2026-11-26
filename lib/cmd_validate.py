@@ -21,6 +21,7 @@ from container_network_config import (
 from ensure_container import subgid_delegation_check_for
 from config_parser import infer_workload_mode
 from container_run_args import host_id_conflicts
+from gpu_select import uses_cdi
 from shares import load_shares, resolve as resolve_shares
 from workload_addr import UID_MAX, UID_MIN
 from workload_lib import (
@@ -102,10 +103,11 @@ def _userns_map_conflicts(config: dict, uid: int, name: str) -> list[str]:
     else:
         blocks = [c.get("security", {})
                   for c in normalize_containers(resolved)]
+    cdi = uses_cdi(resolved)
     found = []
     for security in blocks:
         found += [m for m in host_id_conflicts(security, uid, extra_groups,
-                                               name) if m not in found]
+                                               name, cdi) if m not in found]
     return found
 
 

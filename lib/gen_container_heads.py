@@ -18,6 +18,13 @@ from container_run_args import (
 from unit_file import Unit
 
 
+def cdi_subid_guard(user_name, uid):
+    """The ExecStartPre that refuses a CDI workload whose user has extra
+    subid lines (diagnose_subid.cdi_subid_refusal). It goes on the unit
+    that runs `podman system migrate`, ahead of it."""
+    return f"/usr/libexec/workloadctl/workload-cdi-subids {user_name} {uid}"
+
+
 def container_egress_exec(svc, name: str) -> None:
     """Element-lifecycle ExecStartPre/ExecStopPost for one container
     workload's egress policy. Mirrors the VM hook shape at generate_vm_workload's
@@ -46,7 +53,7 @@ def container_egress_exec(svc, name: str) -> None:
 
 def _head_unit(name, user_name, uid, slice_name, header_comment, description,
                 create_cmd, rm_cmd, uses_inspect=False, uses_credentials=False,
-                uses_resolve=False):
+                uses_resolve=False, cdi=False):
     """Shared skeleton for the pod-create and bridge-network-create head units.
 
     Both are single-command oneshot services that run before any member
@@ -123,6 +130,8 @@ def _head_unit(name, user_name, uid, slice_name, header_comment, description,
     svc.set("Group", user_name)
     svc.set("Environment", f'"HOME={home_dir}"')
     svc.set("EnvironmentFile", f"-/run/workload-env/workload-{name}.env")
+    if cdi:
+        svc.add("ExecStartPre", cdi_subid_guard(user_name, uid))
     svc.add("ExecStartPre", "-/usr/bin/podman system migrate")
     svc.add("ExecStartPre",
              f"-/usr/bin/rm -f /run/user/{uid}/libpod/tmp/pause.pid"
@@ -143,8 +152,11 @@ def _head_unit(name, user_name, uid, slice_name, header_comment, description,
     return unit.render()
 
 
-def generate_pod_service(workload, user_name, uid):
-    """Generate the workload-{name}-pod.service unit (pod mode only)."""
+def generate_pod_service(workload, user_name, uid, cdi=False):
+    """Generate the workload-{name}-pod.service unit (pod mode only).
+
+    `cdi` is gpu_select.uses_cdi(workload): the pod's userns is every
+    member's, so one CDI member puts the pod in the default namespace."""
     name = workload["workload"]["name"]
     slice_name = workload.get("resources", {}).get("slice", "workloads.slice")
 
@@ -180,7 +192,8 @@ def generate_pod_service(workload, user_name, uid):
     # top-level [security] block, not per-container [containers.*.security].
     extra_groups = workload.get("security", {}).get("extra_groups", [])
     pod_args.extend(
-        build_userns_args(workload.get("security", {}), uid, extra_groups, name)
+        build_userns_args(workload.get("security", {}), uid, extra_groups,
+                          name, cdi)
     )
     # The members run at the infra container's level, so the pod carries it.
     security = workload.get("security", {})
@@ -198,10 +211,11 @@ def generate_pod_service(workload, user_name, uid):
         uses_inspect=container_uses_inspect(workload),
         uses_credentials=container_uses_credentials(workload),
         uses_resolve=container_uses_resolve(workload),
+        cdi=cdi,
     )
 
 
-def generate_net_service(workload, user_name, uid):
+def generate_net_service(workload, user_name, uid, cdi=False):
     """Generate the workload-{name}-net.service unit (bridge mode only).
 
     Creates a per-workload podman bridge network. Member containers join it
@@ -220,6 +234,7 @@ def generate_net_service(workload, user_name, uid):
         uses_inspect=container_uses_inspect(workload),
         uses_credentials=container_uses_credentials(workload),
         uses_resolve=container_uses_resolve(workload),
+        cdi=cdi,
     )
 
 

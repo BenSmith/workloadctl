@@ -1,0 +1,36 @@
+#!/usr/bin/python3
+"""
+workload-cdi-subids: refuse to start a CDI workload whose user has more than
+one /etc/subuid or /etc/subgid line.
+
+Usage: workload-cdi-subids <username> <uid>
+
+The check is diagnose_subid.cdi_subid_refusal; this file is main().
+"""
+import sys
+
+from diagnose_subid import cdi_subid_refusal
+from workload_uid import subgid_file, subuid_file
+
+
+def _read(path):
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return ""
+
+
+def main(argv):
+    if len(argv) != 3 or not argv[2].isdigit():
+        print(f"Usage: {argv[0]} <username> <uid>", file=sys.stderr)
+        return 2
+    refusal = cdi_subid_refusal(_read(subuid_file()), _read(subgid_file()),
+                                argv[1], int(argv[2]))
+    if refusal:
+        print(f"ERROR: {refusal}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

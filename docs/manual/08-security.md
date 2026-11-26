@@ -261,6 +261,46 @@ inside the container: `sudo workloadctl exec <name> -- ls -ln <path>`.
 `incant <name> -- unshare` shows the workload user's own namespace
 numbering instead, which is not the container's.
 
+### NVIDIA GPUs
+
+A workload whose `gpu` resolves to `nvidia` (`"nvidia"`, `"nvidia:<spec>"`,
+or `"auto"` on a host whose first GPU is NVIDIA) gets its GPU through CDI.
+podman idmaps every mount a CDI device brings when the container has a user
+namespace of its own, and rootless podman cannot idmap a host filesystem,
+so such a container would not start. Every container of such a workload,
+in every mode, therefore runs with `--userns=host --user=0:0`: in the
+workload user's default rootless namespace, as its root. With one
+`/etc/subuid` and one `/etc/subgid` line, that namespace is container id 0
+on the workload user and container id N on `base + N - 1`, which is the map
+`keep-id:uid=0,gid=0` gives. Where `keep-id` would have run the container
+as the workload's own id, it also gets `--cap-drop=all`, so it holds only
+what `capabilities` adds, as before.
+
+What it costs:
+
+- No group is delegated. `extra_groups` still makes the workload user a
+  member, and `--group-add=keep-groups` hands the membership to the
+  container's first process. The group itself has no id inside, so a
+  process that calls `setgroups` (an init system's `initgroups`, `su`,
+  `setpriv`) loses it for good. NVIDIA's `/dev/nvidia*` nodes and the
+  render nodes are usually world-writable; the `card*` nodes are not.
+- `validate`, `enable` and the boot generator refuse `[[shares]]`,
+  `extra_uidmaps`, `extra_gidmaps` and any `userns` other than `"keep-id"`,
+  `"keep-id:uid=0,gid=0"` and `"host"`, which all mean the same here.
+- The unit that runs `podman system migrate` (the container's in single
+  mode, the pod or network unit otherwise) refuses to start while the
+  workload user has more than one line in either file: any other line
+  would renumber the namespace. `diagnose` reports a leftover delegation
+  as `subgid_delegations`.
+
+A workload that ran under keep-id with delegations needs the steps of
+[When a delegated group changes](#when-a-delegated-group-changes) once, for
+every delegated group: remove its images while the old lines are there,
+delete the lines, `system migrate`, and move the files on each group's
+gid `G` to `base + G - 1` (the keep-id target is now 0). Under the default
+`keep-id` the target was the workload's own gid `t`, so the files on
+container gids 1 to `t - 1` also move up by one.
+
 ## Capabilities
 
 A process running as root inside a container holds podman's default

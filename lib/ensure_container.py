@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 import service_runtime
 from diagnose_subid import extra_gidmap_host_gids, subgid_delegation_check
 from config_parser import parse_volume_spec, workload_root_dir
+from gpu_select import uses_cdi
 from shares import load_shares, resolve as resolve_shares
 from workload_lib import (
     expand_volume_path, normalize_containers, workload_state_dir,
@@ -46,10 +47,13 @@ def delegated_gids(config, warn=None):
     These are the `extra_groups` of the config as the units run it (pass it
     through shares.resolve first). A workload in the host user namespace
     needs none: its host gids are natively available, and a non-contiguous
-    subgid entry for one creates a spurious mapping. A group that does not
-    exist is skipped, and `warn` is called with the reason.
+    subgid entry for one creates a spurious mapping. Nor does a CDI
+    workload, which runs in the user's default namespace: a delegation
+    there would reorder it (diagnose_subid.cdi_subid_refusal). A group
+    that does not exist is skipped, and `warn` is called with the reason.
     """
-    if config.get("security", {}).get("userns", "") == "host":
+    if (config.get("security", {}).get("userns", "") == "host"
+            or uses_cdi(config)):
         return []
     gids = []
     for group_name in config.get("security", {}).get("extra_groups", []):

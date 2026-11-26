@@ -17,6 +17,8 @@ from unittest import mock
 import unittest
 from pathlib import Path
 
+import shipped_cdi
+
 from tests import REPO_ROOT as ROOT, script_env
 
 GENERATOR = os.path.join(os.path.dirname(__file__), '..', 'generators', 'workload-generate')
@@ -42,8 +44,10 @@ def expected_service_filenames(name, config_dir):
 
 
 def run_generator(config_dir, services_dir, sysusers_dir):
-    """Run the generator and return the CompletedProcess."""
-    env = script_env(WORKLOAD_CONFIG_DIR=config_dir, SYSUSERS_DIR=sysusers_dir)
+    """Run the generator and return the CompletedProcess. `gpu = "auto"`
+    resolves to nvidia, the deployment target, whatever this host has."""
+    env = script_env(WORKLOAD_CONFIG_DIR=config_dir, SYSUSERS_DIR=sysusers_dir,
+                     WORKLOAD_GPU_OVERRIDE=shipped_cdi.GPU)
     return subprocess.run(
         [sys.executable, GENERATOR, str(services_dir)],
         capture_output=True, text=True, env=env,
@@ -680,20 +684,10 @@ class TestShippedBundlesSystemdAnalyzeVerify(unittest.TestCase):
             gen_result = run_generator(config_dir, services_dir, sysusers_dir)
             self.assertEqual(gen_result.returncode, 0, gen_result.stderr)
 
-            # GPU workloads Require= nvidia-cdi-generator.service, shipped by
-            # the hypervisor image. systemd-analyze resolves unit references
-            # relative to the unit's own directory, so stub it there when the
-            # dev host lacks it (no NVIDIA hardware/driver stack).
-            if not os.path.exists("/usr/lib/systemd/system/nvidia-cdi-generator.service"):
-                print("[test_integration] nvidia-cdi-generator.service not found; "
-                      "stubbing it for systemd-analyze verify", file=sys.stderr)
-                (services_dir / "nvidia-cdi-generator.service").write_text(
-                    "[Unit]\nDescription=verify stub\n"
-                    "[Service]\nType=oneshot\nExecStart=/bin/true\n"
-                )
-
             for src in tomls:
                 name = src.parent.name
+                if shipped_cdi.cdi_refused_toml(src):
+                    continue  # refused under nvidia; test_shipped_bundles
                 with self.subTest(bundle=name):
                     unit_names = expected_service_filenames(name, config_dir)
                     service_files = []

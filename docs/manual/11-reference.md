@@ -431,7 +431,10 @@ the `${SECRET:name}` form for secrets.
 | `"keep-id:uid=0,gid=0"` | root, in a private user namespace | an image that has to run as root, including systemd |
 | `"host"` | root, in the namespace the workload's podman itself runs in | a container that must see host UIDs through a host mount; needs `unsafe_host_userns = true` |
 
-[User namespaces](08-security.md#user-namespaces) explains each one.
+[User namespaces](08-security.md#user-namespaces) explains each one. A
+workload whose `gpu` resolves to `nvidia` runs as root in the workload
+user's default namespace whichever of the first three it sets; see [NVIDIA
+GPUs](08-security.md#nvidia-gpus).
 
 ## Looking under the hood
 

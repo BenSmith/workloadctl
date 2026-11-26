@@ -2107,10 +2107,10 @@ class TestResolveAutoGpu(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # gen_container, not the entrypoint: `Path` is patched below, and a
-        # patch has to land on the module that READS the name.
+        # gpu_select, the module that READS `Path`: the patch below has to
+        # land there.
         import importlib
-        cls.wg = importlib.import_module("gen_container")
+        cls.wg = importlib.import_module("gpu_select")
 
     def setUp(self):
         self.root = tempfile.mkdtemp()

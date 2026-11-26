@@ -12,9 +12,6 @@ with a comment in the middle.
 Installed to /usr/libexec/workloadctl/gen_container.py.
 """
 
-import os
-from pathlib import Path
-
 from config_parser import infer_workload_mode, workload_root_dir
 from container_network_config import container_uses_inspect
 from egress_policy import container_uses_resolve
@@ -37,9 +34,11 @@ from gen_egress import (
     generate_resolve_service,
 )
 from container_run_args import RunSpec, volume_args, podman_run_args
+from gpu_select import resolve_auto_gpu, uses_cdi
 from image_fetch import START_TIMEOUT_SEC
 from gen_container_heads import (
-    container_egress_exec, generate_pod_service, generate_net_service,
+    cdi_subid_guard, container_egress_exec, generate_pod_service,
+    generate_net_service,
     generate_umbrella_service,
 )
 from unit_file import Unit
@@ -48,61 +47,6 @@ from workload_seccomp import (
     baseline_source, needs_derived_profile, render_derived_profile,
     seccomp_32bit, seccomp_allow, seccomp_netlink,
 )
-
-
-def resolve_auto_gpu(name=None):
-    """Detect the primary GPU from sysfs.
-
-    Returns 'nvidia', 'nouveau', 'amd', 'intel', or 'none'. For NVIDIA cards
-    the bound driver is checked: the proprietary driver uses the CDI path,
-    but nouveau has no NVIDIA Container Toolkit support and must use the plain
-    DRM render node instead — so it is reported separately.
-
-    On a multi-GPU host the pick (first card in sysfs sort order) is
-    arbitrary; if `name` is given, a warning is logged when more than one
-    candidate GPU is present so the operator knows "auto" isn't deterministic
-    across GPUs and can pin one via `devices.gpu = "nvidia:<uuid-or-index>"`.
-
-    WORKLOAD_GPU_OVERRIDE pins the result regardless of host hardware. This
-    makes the generated units deterministic for the snapshot tests (which must
-    pass on any runner, GPU or not) and lets an operator force a result.
-    """
-    override = os.environ.get("WORKLOAD_GPU_OVERRIDE")
-    if override:
-        return override
-
-    vendor_map = {"0x10de": "nvidia", "0x1002": "amd", "0x8086": "intel"}
-    candidates = []
-    try:
-        for vendor_path in sorted(Path("/sys/class/drm").glob("card*/device/vendor")):
-            vendor = vendor_path.read_text().strip().lower()
-            if vendor in vendor_map:
-                candidates.append((vendor_path, vendor_map[vendor]))
-    except OSError:
-        pass
-
-    if not candidates:
-        return "none"
-
-    if len(candidates) > 1 and name is not None:
-        cards = ", ".join(p.parent.parent.name for p, _ in candidates)
-        log_msg(
-            f"WARNING: {name} uses devices.gpu=\"auto\" with {len(candidates)} "
-            f"GPUs present ({cards}); picking {candidates[0][0].parent.parent.name} "
-            f"(sysfs sort order, arbitrary). Pin a specific GPU via "
-            f"devices.gpu=\"nvidia:<uuid-or-index>\" to avoid ambiguity.",
-            level="warning",
-        )
-
-    vendor_path, result = candidates[0]
-    if result == "nvidia":
-        try:
-            if (vendor_path.parent / "driver").resolve().name == "nouveau":
-                return "nouveau"
-        except OSError:
-            pass
-    return result
-
 
 
 def _unit_deps(u, workload, mode, unit_description, setup_service, pod_service,
@@ -137,8 +81,9 @@ def _unit_deps(u, workload, mode, unit_description, setup_service, pod_service,
         u.add("After", after_deps)
 
     if gpu_vendor == "nvidia":
-        u.add("Requires", "nvidia-cdi-generator.service")
-        u.add("After", "nvidia-cdi-generator.service")
+        # Ordering only: the toolkit's unit is enabled and udev/path
+        # triggered, and Wants= would re-run it at every workload start.
+        u.add("After", "nvidia-cdi-refresh.service")
 
     # A volume host path outside the workload tree can be its own filesystem.
     # RequiresMountsFor= pulls in and orders after the mount unit backing each
@@ -185,11 +130,11 @@ def _credential_loads(svc, credentials):
 
 
 def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid,
-                    fetches_image=False):
+                    fetches_image=False, cdi_guard=None):
     """ExecStartPre chain: the image fetch (filtered containers), write-env
     (the --env-file and the [[secrets.files]] copies), nvidia CDI-spec
-    check, and (single mode only) the fresh-pause cleanup that works around
-    the pasta stale-pause bug."""
+    check, and (single mode only) the CDI subid guard and the fresh-pause
+    cleanup that works around the pasta stale-pause bug."""
     if fetches_image:
         # Root, so it can hand the download to a DynamicUser= uid outside the
         # workload's filter; see lib/image_fetch.py.
@@ -215,10 +160,12 @@ def _exec_start_pre(svc, mode, name, container, writes_secrets, gpu_vendor, uid,
             "ExecStartPre",
             "/bin/bash -c "
             "'test -s /run/cdi/nvidia.yaml"
-            " || { echo \"NVIDIA CDI spec missing: check nvidia-cdi-generator.service\" >&2; exit 1; }'",
+            " || { echo \"NVIDIA CDI spec missing: check nvidia-cdi-refresh.service\" >&2; exit 1; }'",
         )
 
     if mode == "single":
+        if cdi_guard:
+            svc.add("ExecStartPre", cdi_guard)
         # Force a *fresh* libpod pause process before the first podman touch of
         # this invocation. Trigger: any pasta-networked workload. pasta's
         # prefork isolation does mount("","/tmp","tmpfs")+pivot_root (passt
@@ -392,6 +339,7 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
     # When a spec is set, only that GPU's DRM nodes are mounted — the umbrella
     # /dev/dri is dropped so the other GPUs are invisible inside the container.
     gpu_vendor, _, gpu_spec = gpu_type.partition(":")
+    cdi = uses_cdi(workload)
     setup_service = f"workload-{name}-setup.service"
     pod_service = f"workload-{name}-pod.service"
     net_service = f"workload-{name}-net.service"
@@ -504,7 +452,8 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
         )
         wl_lifecycle = "cattle"
     podman_args = podman_run_args(spec, service_type, wl_lifecycle, systemd_mode,
-                                  gpu_vendor, gpu_spec, volume_flags, image, command)
+                                  gpu_vendor, gpu_spec, volume_flags, image, command,
+                                  cdi)
     credentials = auto_detect_credentials({
         "container": container.get("container", {}),
         "secrets":   container.get("secrets", {}),
@@ -523,7 +472,8 @@ def generate_system_service(workload, container, user_name, uid, mode="single"):
 
     _exec_start_pre(svc, mode, name, container,
                     spec.has_secret_env_vars or spec.has_secret_files, gpu_vendor,
-                    uid, spec.fetches_image)
+                    uid, spec.fetches_image,
+                    cdi_subid_guard(user_name, uid) if cdi else None)
 
     _lifecycle_exec(svc, wl_lifecycle, podman_cmd, container_name_quoted, spec.pull_policy,
                      mode, uid, resources, spec.fetches_image)
@@ -706,8 +656,9 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
     else:
         # Network helper service: pod-create (pod mode) or
         # network-create (bridge mode).
+        cdi = uses_cdi(config)
         if mode == "pod":
-            helper = generate_pod_service(config, user_name, uid)
+            helper = generate_pod_service(config, user_name, uid, cdi)
             paths[("unit", "pod")][0].write_text(helper)
         else:  # bridge
             if config.get("network", {}).get("ports"):
@@ -715,7 +666,7 @@ def generate_container_workload(config, user_name: str, uid: int) -> bool:
                         f"is ignored in bridge mode; publish ports per "
                         f"container under [containers.network]",
                         level="warning")
-            helper = generate_net_service(config, user_name, uid)
+            helper = generate_net_service(config, user_name, uid, cdi)
             paths[("unit", "net")][0].write_text(helper)
         # Per-container services (podman's native user-manager healthcheck
         # timer works under option 1b — no system-manager timer needed)

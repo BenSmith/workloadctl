@@ -13,6 +13,9 @@ on_failure = "kill"
 
 [devices]
 # This configuration requires a render node (/dev/dri/renderD*)
+# Not on an NVIDIA host: an NVIDIA GPU runs the workload in the default user
+# namespace, where uid 1000 can't be the workload user (08-security.md
+# "NVIDIA GPUs"), so validate and the generator refuse it there.
 gpu = "auto"
 devices = ["/dev/uinput"]
 

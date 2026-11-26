@@ -187,6 +187,32 @@ def subgid_delegation_check(
 
 
 
+def cdi_subid_refusal(subuid_text: str, subgid_text: str, username: str,
+                      uid: int) -> str | None:
+    """Why a CDI workload must not start on these subid files, or None.
+
+    A CDI container runs in the user's default rootless namespace, which
+    podman builds from every subid line for the user, matched by name or
+    uid, with single-id lines first. Any line beyond one subuid and one
+    subgid range moves every id above it, so the files in the workload's
+    images and volumes would read as other ids.
+    """
+    problems = []
+    for file, text in (("/etc/subuid", subuid_text),
+                       ("/etc/subgid", subgid_text)):
+        lines = [raw.strip() for raw in text.splitlines()
+                 if raw.strip().split(":")[0] in (username, str(uid))]
+        if len(lines) != 1:
+            listed = ", ".join(lines) if lines else "none"
+            problems.append(f"{file} has {len(lines)} lines for {username} "
+                            f"({listed})")
+    if not problems:
+        return None
+    return (f"{username} runs a CDI GPU workload, which needs exactly one "
+            f"/etc/subuid and one /etc/subgid line: {'; '.join(problems)}. "
+            f"Remove the extra lines with the workload stopped. " + _MANUAL)
+
+
 _SHIFT_RANGE = 16
 
 

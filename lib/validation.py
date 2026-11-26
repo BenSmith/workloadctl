@@ -33,6 +33,7 @@ from container_network_config import (
 )
 from image_ref import names_registry
 from egress_policy import container_uses_resolve
+from gpu_select import uses_cdi
 
 
 def validate_container_name(name: str):
@@ -242,6 +243,7 @@ def validate_workload_config(config: dict) -> list[str]:
     errors.extend(_container_choice_errors(config))
     errors.extend(_fetched_image_errors(config))
     errors.extend(_health_cmd_errors(config))
+    errors.extend(cdi_errors(config))
 
     # Keep the shape (is_multi = "containers" in config) and the topology
     # (mode) in lockstep so `is_multi <=> mode != "single"` holds. The generator
@@ -290,6 +292,42 @@ def validate_workload_config(config: dict) -> list[str]:
             f'namespace.'
         )
 
+    return errors
+
+
+_CDI_USERNS = (None, "keep-id", "keep-id:uid=0,gid=0", "host")
+_CDI_CAUSE = ("podman idmaps the mounts it injects for a CDI device inside a "
+              "user namespace, which rootless podman cannot do, so a workload "
+              "whose gpu resolves to nvidia runs in the user's default "
+              "namespace with no group delegations")
+
+
+def cdi_errors(config: dict) -> list[str]:
+    """What a CDI GPU workload (gpu_select.uses_cdi) can't have: shares
+    and extra maps need delegated ids, and a userns other than the three
+    that all mean the default namespace would be silently replaced."""
+    if not uses_cdi(config):
+        return []
+    blocks = [("[security]", config.get("security", {}))]
+    for c in config.get("containers") or []:
+        if isinstance(c, dict):
+            blocks.append((f"containers[{c.get('name')!r}].security",
+                           c.get("security", {})))
+    errors = []
+    if config.get("shares"):
+        errors.append(f"[[shares]] can't be used here: {_CDI_CAUSE}")
+    for where, security in blocks:
+        if not isinstance(security, dict):
+            continue
+        for key in ("extra_uidmaps", "extra_gidmaps"):
+            if security.get(key):
+                errors.append(f"{where} {key} can't be used here: "
+                              f"{_CDI_CAUSE}")
+        if security.get("userns") not in _CDI_USERNS:
+            errors.append(
+                f"{where} userns = {security.get('userns')!r} can't be used "
+                f"here; use \"keep-id\", \"keep-id:uid=0,gid=0\" or \"host\", "
+                f"which all mean the default namespace: {_CDI_CAUSE}")
     return errors
 
 

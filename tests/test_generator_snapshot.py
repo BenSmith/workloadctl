@@ -45,11 +45,8 @@ GENERATOR = os.path.join(os.path.dirname(__file__), '..', 'generators', 'workloa
 # layer installed.
 #   - ExecStart*/ExecStop* command not present/executable (e.g. no podman
 #     installed on a dev sandbox)
-#   - nvidia-cdi-generator.service (Requires=/After=, emitted for GPU
-#     workloads) is provided by the nvidia driver layer, not workloadctl
 _BENIGN_VERIFY_PATTERNS = (
     re.compile(r"Command .* is not executable: No such file or directory"),
-    re.compile(r"Unit nvidia-cdi-generator\.service not found"),
 )
 
 

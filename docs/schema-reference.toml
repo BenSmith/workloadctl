@@ -243,7 +243,11 @@
 # detected when the units are generated. "none": nothing.
 # Type: string. Default: "none".
 # Needs extra_groups: "video" and "render" for amd, "video" for nvidia.
-# See: 04-containers.md "GPUs, input and audio"
+# A gpu that resolves to nvidia puts every container of the workload in the
+# workload user's default user namespace, as its root, with no delegated
+# groups; [[shares]], extra_uidmaps, extra_gidmaps and userns other than
+# "keep-id", "keep-id:uid=0,gid=0" or "host" are refused.
+# See: 04-containers.md "GPUs, input and audio"; 08-security.md "NVIDIA GPUs"
 # gpu = "amd"
 
 # /dev/input, mounted, and /dev/uinput.
@@ -296,7 +300,9 @@
 
 # Host groups the workload user joins, for device access (video, render,
 # input, audio, dialout, kvm, ...). Under keep-id each group's GID is mapped
-# into the container at the same number.
+# into the container at the same number. In an NVIDIA (CDI) workload it is
+# not mapped: the container's first process keeps the membership, and a
+# process that calls setgroups loses it.
 # Type: array of group names. Default: []. validate errors on a group the
 # host does not have.
 # See: 04-containers.md "Device nodes"; 08-security.md "Explicit ID maps"

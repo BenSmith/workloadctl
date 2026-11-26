@@ -32,6 +32,8 @@ import tomllib
 import unittest
 from pathlib import Path
 
+import shipped_cdi
+
 from tests import REPO_ROOT as ROOT, script_env
 
 GENERATOR = ROOT / "generators" / "workload-generate"
@@ -67,8 +69,10 @@ def expected_units(stem: str, toml_text: str) -> list[str]:
     return units
 
 
-def generate_all(dest: Path) -> tuple[list[Path], Path, Path]:
-    """Run the generator over every shipped bundle into `dest`.
+def generate_all(dest: Path, gpu: str = shipped_cdi.GPU
+                 ) -> tuple[list[Path], Path, Path]:
+    """Run the generator over every shipped bundle into `dest`, with
+    `gpu = "auto"` resolving to `gpu`.
 
     Returns (bundle TOML paths, sysusers dir, config dir). `dest` receives the
     units.
@@ -90,7 +94,7 @@ def generate_all(dest: Path) -> tuple[list[Path], Path, Path]:
     # Pin GPU auto-resolution: the generator otherwise reads the host's PCI
     # vendor IDs, so `gpu = "auto"` bundles would behave differently on an NVIDIA
     # dev box than on a GPU-less CI runner. NVIDIA is the deployment target.
-    env["WORKLOAD_GPU_OVERRIDE"] = "nvidia"
+    env["WORKLOAD_GPU_OVERRIDE"] = gpu
     r = subprocess.run(
         [sys.executable, str(GENERATOR), str(dest)],
         capture_output=True, text=True, env=env,
@@ -157,6 +161,8 @@ class TestShippedBundlesGenerate(unittest.TestCase):
 
             for src in tomls:
                 stem = src.parent.name
+                if shipped_cdi.cdi_refused_toml(src):
+                    continue  # TestBundlesRefusedUnderCdi
                 with self.subTest(workload=stem):
                     conf = sys_d / f"workload-{stem}.conf"
                     self.assertTrue(
@@ -168,6 +174,34 @@ class TestShippedBundlesGenerate(unittest.TestCase):
                             (svc / unit).is_file(),
                             f"generator did not emit {unit} for {stem}",
                         )
+
+
+class TestBundlesRefusedUnderCdi(unittest.TestCase):
+    """A bundle that needs a keep-id uid other than 0 cannot run in the
+    default namespace a CDI GPU puts it in (validation.cdi_errors), so on an
+    NVIDIA host the generator refuses it. These are the ones, and on any
+    other GPU they generate their full unit set."""
+
+    REFUSED = ["vncdesktop-labwc", "wolf-game-streaming"]
+
+    def test_refused_under_nvidia_and_whole_elsewhere(self):
+        tomls = sorted(WORKLOADS_DIR.glob("*/workload.toml"))
+        refused = [t for t in tomls if shipped_cdi.cdi_refused_toml(t)]
+        self.assertEqual([t.parent.name for t in refused], self.REFUSED)
+        with tempfile.TemporaryDirectory() as tmp:
+            for gpu, emitted in ((shipped_cdi.GPU, False), ("amd", True)):
+                svc = Path(tmp) / gpu / "svc"
+                svc.mkdir(parents=True)
+                _, sys_d, _ = generate_all(svc, gpu)
+                for src in refused:
+                    stem = src.parent.name
+                    with self.subTest(gpu=gpu, workload=stem):
+                        self.assertEqual(
+                            (sys_d / f"workload-{stem}.conf").is_file(),
+                            emitted)
+                        for unit in expected_units(stem, src.read_text()):
+                            self.assertEqual((svc / unit).is_file(), emitted,
+                                             unit)
 
 
 class TestShippedBundlesMapEachHostIdOnce(unittest.TestCase):
@@ -341,7 +375,9 @@ class TestTheSteamBundlesOptOutOfTheBaseline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             svc = Path(tmp) / "svc"
             svc.mkdir()
-            generate_all(svc)
+            # wolf-game-streaming is refused under nvidia
+            # (TestBundlesRefusedUnderCdi); the opt-ins don't depend on the GPU.
+            generate_all(svc, "amd")
             for name in self.BUNDLES:
                 with self.subTest(name=name):
                     profile_name = derived_profile_name(name)

@@ -448,10 +448,12 @@ extra_groups = ["video", "render", "input"]
   decided when the units are generated. With several GPUs the choice is
   arbitrary, and the generator warns.
 
-An NVIDIA workload's unit depends on `nvidia-cdi-generator.service` and will
-not start without the CDI specification at `/run/cdi/nvidia.yaml`.
-workloadctl ships neither: the host needs the NVIDIA Container Toolkit and a
-unit of that name that writes the specification.
+An NVIDIA workload's unit is ordered after the NVIDIA Container Toolkit's
+`nvidia-cdi-refresh.service` and will not start without the CDI
+specification it writes at `/run/cdi/nvidia.yaml`. workloadctl does not ship
+the toolkit. An NVIDIA workload also runs in the workload user's default
+user namespace rather than a keep-id one, with no delegated groups; [NVIDIA
+GPUs](08-security.md#nvidia-gpus) says why and what that rules out.
 
 `input = true` mounts `/dev/input` and passes `/dev/uinput`, for game
 streaming and virtual controllers; it needs the `input` group. `audio = true`

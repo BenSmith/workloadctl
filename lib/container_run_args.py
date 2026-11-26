@@ -57,23 +57,35 @@ def get_group_gid(group_name):
         return None
 
 
-def build_userns_args(security, uid, extra_groups, name):
+def _userns_mode(security, cdi):
+    """The userns the units write: `host` for a CDI workload (see
+    gpu_select.uses_cdi), else the block's own, keep-id when unset or
+    invalid."""
+    if cdi:
+        return "host"
+    userns_mode = security.get("userns", "keep-id")
+    return userns_mode if valid_userns_mode(userns_mode) else "keep-id"
+
+
+def build_userns_args(security, uid, extra_groups, name, cdi=False):
     """Return podman --userns / --uidmap / --gidmap args for a security dict.
 
     Used for single- and bridge-mode container services (per-container
     [security]) and for the `podman pod create` command in pod mode, where
     the user namespace is owned by the pod's infra container and is therefore
     workload-level (read from the top-level [security] block).
+
+    A CDI workload gets `--userns=host`: the user's default rootless
+    namespace, named so containers.conf can't change it.
     """
     args = []
-    userns_mode = security.get("userns", "keep-id")
-    if not valid_userns_mode(userns_mode):
-        log_msg(f"WARNING: Invalid userns mode '{userns_mode}' for {name}. "
-                f"Defaulting to 'keep-id'.",
+    if not cdi and not valid_userns_mode(security.get("userns", "keep-id")):
+        log_msg(f"WARNING: Invalid userns mode '{security.get('userns')}' "
+                f"for {name}. Defaulting to 'keep-id'.",
                 level="warning")
-        userns_mode = "keep-id"
+    userns_mode = _userns_mode(security, cdi)
 
-    if userns_mode == "host":
+    if userns_mode == "host" and not cdi:
         log_msg(f"WARNING: {name} uses userns=host. Container root maps to workload user. "
                 f"Container escape grants workload user privileges.", level="warning")
 
@@ -131,7 +143,7 @@ def _keep_id_pieces(uid, target, own):
     return pieces
 
 
-def host_id_conflicts(security, uid, extra_groups, name):
+def host_id_conflicts(security, uid, extra_groups, name, cdi=False):
     """A message for each map that names a host id an earlier map already
     gives a container id, as build_userns_args would write them.
 
@@ -140,9 +152,7 @@ def host_id_conflicts(security, uid, extra_groups, name):
     maps to no host id. Empty when the userns is written as --userns. A map
     with a flag or without `@` is not checked.
     """
-    userns_mode = security.get("userns", "keep-id")
-    if not valid_userns_mode(userns_mode):
-        userns_mode = "keep-id"
+    userns_mode = _userns_mode(security, cdi)
     if not _needs_auto_maps(security, userns_mode, extra_groups):
         return []
     held = {"uid": [], "gid": []}
@@ -195,7 +205,7 @@ def _keep_id_ids(userns_mode, uid):
     return ids["uid"], ids["gid"]
 
 
-def default_user(security, uid):
+def default_user(security, uid, cdi=False):
     """The --user= a container that names no user is given, or None.
 
     `security` is the block the container's userns comes from: the
@@ -212,10 +222,13 @@ def default_user(security, uid):
     unnamed pod member would get root's capabilities, and a `podman exec`
     or health check as that user would hold all of them, ambient. Named,
     the user holds what [security].capabilities adds, as in single mode.
+
+    A CDI workload runs as 0:0 in the default namespace, which is the
+    workload uid and gid on the host.
     """
-    userns_mode = security.get("userns", "keep-id")
-    if not valid_userns_mode(userns_mode):
-        userns_mode = "keep-id"
+    if cdi:
+        return "0:0"
+    userns_mode = _userns_mode(security, False)
     if not userns_mode.startswith("keep-id"):
         return None
     return "%d:%d" % _keep_id_ids(userns_mode, uid)
@@ -506,7 +519,7 @@ def label_level_args(uid, security_opts=(), privileged=False,
             f"{mcs_level(uid, share_categories)}"]
 
 
-def _security_args(spec):
+def _security_args(spec, cdi=False):
     """--user/--cap-add/--security-opt (selinux label, seccomp baseline,
     privileged)/--group-add=keep-groups flags from [security].
 
@@ -528,9 +541,14 @@ def _security_args(spec):
         # The block this mode's userns comes from.
         userns_block = (config.get("security", {}) if mode == "pod"
                         else container.get("security", {}))
-        default = default_user(userns_block, spec.uid)
+        default = default_user(userns_block, spec.uid, cdi)
         if default:
             args.append(f"--user={default}")
+        # Root by CDI where keep-id would have run it as another id: drop
+        # the capabilities podman gives root, so it holds what that id did.
+        keep_id_user = default_user(userns_block, spec.uid)
+        if cdi and keep_id_user and not keep_id_user.startswith("0:"):
+            args.append("--cap-drop=all")
 
     capabilities = container.get("security", {}).get("capabilities", [])
     for cap in capabilities:
@@ -941,13 +959,17 @@ def _container_ca_delivery_args(spec) -> list:
 
 
 def podman_run_args(spec, service_type, wl_lifecycle, systemd_mode,
-                    gpu_vendor, gpu_spec, volume_flags, image, command):
+                    gpu_vendor, gpu_spec, volume_flags, image, command,
+                    cdi=False):
     """The whole `podman run`/`podman create` argv, builder by builder.
 
     The three decided values go to _base_run_args (see its docstring);
     `volume_flags` is passed in because the caller expands the volumes ahead
     of the [Unit] section, where their out-of-tree host paths become
     RequiresMountsFor= -- see volume_args.
+
+    `cdi` is gpu_select.uses_cdi(workload), resolved by the caller because
+    `gpu = "auto"` reads sysfs.
 
     Quoting boundary: free-form values (image, command, env values, volume
     specs, the container name) go through dq(), because systemd would
@@ -975,10 +997,10 @@ def podman_run_args(spec, service_type, wl_lifecycle, systemd_mode,
     else:
         podman_args.extend(
             build_userns_args(container.get("security", {}), uid,
-                              spec.extra_groups, name)
+                              spec.extra_groups, name, cdi)
         )
 
-    podman_args.extend(_security_args(spec))
+    podman_args.extend(_security_args(spec, cdi))
 
     # GPU devices (convenience flag)
     podman_args.extend(_gpu_device_args(gpu_vendor, gpu_spec))

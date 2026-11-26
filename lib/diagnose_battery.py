@@ -44,6 +44,7 @@ from diagnose_subid import (
     image_shift_check, subid_derived_check, subid_overlap_check,
 )
 from ensure_container import subgid_delegation_check_for
+from gpu_select import uses_cdi
 from egress_selinux import (
     VM_SOCKET_FCONTEXT_PATTERN, VM_SOCKET_SELINUX_TYPE,
     VM_SOCKET_SELINUX_TYPE_REAL,
@@ -1080,7 +1081,7 @@ def collect_diagnose_checks(config, manager: WorkloadManager):
     _check_mcs_labels(config, _check)
 
     userns_mode = config.config.get("security", {}).get("userns", "keep-id")
-    if userns_mode == "host" and user_exists:
+    if (userns_mode == "host" or uses_cdi(config.config)) and user_exists:
         _uid_mapping_check(config, _check)
     if uses_host_userns(config.config):
         _host_userns_check(_check)

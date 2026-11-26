@@ -196,6 +196,8 @@ install -Dpm 0755 libexec/workload-ensure-user \
     %{buildroot}%{_libexecdir}/workloadctl/workload-ensure-user
 install -Dpm 0755 libexec/workload-write-env \
     %{buildroot}%{_libexecdir}/workloadctl/workload-write-env
+install -Dpm 0755 libexec/workload-cdi-subids \
+    %{buildroot}%{_libexecdir}/workloadctl/workload-cdi-subids
 install -Dpm 0755 libexec/workload-exporter \
     %{buildroot}%{_libexecdir}/workloadctl/workload-exporter
 install -Dpm 0755 libexec/workload-pcap \
@@ -575,6 +577,7 @@ fi
 %{_libexecdir}/workloadctl/workload-generate
 %{_libexecdir}/workloadctl/workload-ensure-user
 %{_libexecdir}/workloadctl/workload-write-env
+%{_libexecdir}/workloadctl/workload-cdi-subids
 %{_libexecdir}/workloadctl/workload-exporter
 %{_libexecdir}/workloadctl/workload-pcap
 %{_libexecdir}/workloadctl/workload-vm-build-disk

@@ -22,7 +22,9 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import shipped_cdi
 from tests import script_env
 
 
@@ -46,8 +48,17 @@ def _bundle_tomls():
 SKIP_FILES = {"example-multi-container.toml", "webproxy-demo.toml"}
 
 
+def _cdi(config):
+    import gpu_select
+    with mock.patch.dict(os.environ, {"WORKLOAD_GPU_OVERRIDE": shipped_cdi.GPU}):
+        return gpu_select.uses_cdi(config)
+
+
 def run_generator(config_dir, services_dir, sysusers_dir):
-    env = script_env(WORKLOAD_CONFIG_DIR=config_dir, SYSUSERS_DIR=sysusers_dir)
+    # `gpu = "auto"` resolves to nvidia, the deployment target, whatever
+    # this host has.
+    env = script_env(WORKLOAD_CONFIG_DIR=config_dir, SYSUSERS_DIR=sysusers_dir,
+                     WORKLOAD_GPU_OVERRIDE=shipped_cdi.GPU)
     return subprocess.run(
         [sys.executable, GENERATOR, str(services_dir)],
         capture_output=True, text=True, env=env,
@@ -226,7 +237,11 @@ class TestWorkloadGeneration(unittest.TestCase):
         # Copy all real workload configs and enable them (marker file) so the
         # generator processes them.
         cls.configs = {}
+        cls.refused = {}
         for filename, config in ALL_WORKLOADS:
+            if shipped_cdi.cdi_refused(config):
+                cls.refused[filename] = config
+                continue
             config_copy = _deep_copy_config(config)
             toml_text = _config_to_toml(config_copy)
             name = filename.removesuffix(".toml")
@@ -346,7 +361,11 @@ class TestWorkloadGeneration(unittest.TestCase):
             )
             with self.subTest(workload=name):
                 service = self._read_service(name)
-                if userns == "host":
+                if _cdi(config):
+                    # validation.cdi_errors: the default namespace, no maps.
+                    self.assertIn("--userns=host", service)
+                    self.assertNotRegex(service, r"--(uid|gid)map")
+                elif userns == "host":
                     # userns=host has no namespace to remap: the generator
                     # emits --userns=host and carries extra_groups via
                     # --group-add=keep-groups, never --uidmap/--gidmap.
