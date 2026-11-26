@@ -1070,6 +1070,45 @@ checkout's sunshine-streaming bundle and loads that bundle's `policy.cil`.
   `/dev/kfd`, and no denial. The control's own denials have a row, so an
   absence the policy caused cannot pass as one the configuration caused.
 
+## cdi_rig.py — does an NVIDIA (CDI) workload start in the default namespace, and refuse a reordered one?
+
+podman idmaps every mount a CDI device brings when the container has a user
+namespace of its own, which rootless podman can't do, so an NVIDIA workload
+runs with `--userns=host` (08-security.md "NVIDIA GPUs"). The unit tests see
+the argv; this rig sees podman, crun and the kernel take it.
+
+```
+sudo python3 tests/manual/cdi_rig.py
+```
+
+It needs no NVIDIA GPU: it writes a dummy `/run/cdi/nvidia.yaml` whose
+`nvidia.com/gpu=all` bind-mounts a host directory, the shape of every mount
+the toolkit's spec injects. It needs the RPM under test, a `/dev/dri/card*`
+node owned `root:video` 0660, the image from docker.io, and enforcing. Two
+arms, both `gpu = "nvidia"` and `extra_groups = ["video"]`: the default
+keep-id, and `keep-id:uid=0,gid=0`.
+
+### What it answers
+
+- **Premise:** as the workload user, the same CDI device under
+  `--userns=keep-id` fails to start, and its `config.json` carries `idmap`.
+  Without this row the fix is a preference.
+- **Wiring, read from systemd's parsed state:** the guard runs before
+  `podman system migrate`; the unit is ordered after
+  `nvidia-cdi-refresh.service` and requires no NVIDIA unit.
+- **It starts, with the mount:** the dummy file reads in the container and
+  the running container's `config.json` has no `idmap`.
+- **The map:** `uid_map` and `gid_map` are `0 → workload id` and
+  `1 → base` for the whole main range, i.e. `N → base + N - 1`.
+- **Identity and capabilities:** 0:0; no effective capability under the
+  default keep-id, root's under `keep-id:uid=0,gid=0`.
+- **The group limit:** the first process opens the `root:video` 0660 card
+  through `keep-groups`; after `setgroups([0])` it can't.
+- **The guard:** with an extra `user:39:1` line in `/etc/subgid` the unit
+  refuses to start, names the line and starts no container, and `diagnose`
+  reports `subgid_delegations`. Control: with the line gone it starts.
+- **No denial** for any container domain.
+
 ## image_fetch_rig.py — does a filtered container get its image from outside its filter?
 
 Needs root, the workloadctl RPM installed, SELinux enforcing, and anonymous
